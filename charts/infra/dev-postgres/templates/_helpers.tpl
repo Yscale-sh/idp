@@ -22,10 +22,13 @@ Fully qualified app name.
 {{- end }}
 
 {{/*
-Chart name + version label.
+Chart name + version label. The version is stripped of any build metadata (the
+"+<sha>" Flux appends under reconcileStrategy: Revision) so helm.sh/chart stays
+STABLE across commits — otherwise it churns the StatefulSet's IMMUTABLE
+volumeClaimTemplates labels (Forbidden on upgrade) and rolls pods on every commit.
 */}}
 {{- define "dev-postgres.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Chart.Name (.Chart.Version | toString | splitList "+" | first) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*

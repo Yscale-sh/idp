@@ -20,9 +20,12 @@ namespaced name. */}}
 {{- include "app.name" . }}
 {{- end }}
 
-{{/* Chart label value, e.g. app-0.1.0. */}}
+{{/* Chart label value, e.g. app-0.1.0. The version is stripped of any build
+metadata (the "+<sha>" Flux appends under reconcileStrategy: Revision) so
+helm.sh/chart stays STABLE across commits — otherwise the pod template label
+churns and every app rolls on every unrelated platform-repo commit. */}}
 {{- define "app.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Chart.Name (.Chart.Version | toString | splitList "+" | first) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
