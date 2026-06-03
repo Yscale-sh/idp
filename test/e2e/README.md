@@ -1,11 +1,34 @@
-# test/e2e — ephemeral end-to-end test
+# test/e2e — ephemeral end-to-end test (Flux + umbrella platform)
 
-`run.sh` spins up a **throwaway** [k3d](https://k3d.io) cluster, deploys the
-shared app chart (as `carshowdb`) plus the `dev-postgres` infra chart, installs
-KEDA, asserts everything becomes healthy, and **always tears the cluster down**.
+`run.sh` spins up a **throwaway** [k3d](https://k3d.io) cluster, installs **Flux**
+and **KEDA** (+ the HTTP add-on), serves *this* repo to Flux from an in-cluster git
+source, reconciles the **real rendered umbrella** (`clusters/dev/platform.yaml` — the
+HelmRelease that installs `charts/cluster`, which fans out one HelmRelease per app +
+its Postgres + each enabled module), proves the workloads, and **always tears the
+cluster down**.
 
-It proves the charts actually deploy and reconcile on a real Kubernetes cluster —
-the layer unit/golden tests can't cover.
+It proves the **post-ArgoCD Flux platform** actually reconciles on a real cluster —
+the layer unit/golden tests can't cover — and answers one homelab-cutover question
+that has no documented answer.
+
+## THE HEADLINE: does Flux's source-controller accept a `git://` daemon?
+
+ArgoCD's repo-server happily cloned our in-cluster `git://` daemon (see
+`scripts/homelab-bringup.sh`). Flux's docs only list `http(s)://` and `ssh://` for a
+`GitRepository`. Before the homelab cutover we need to know empirically whether
+Flux's **source-controller** will use a `git://` source.
+
+`run.sh` answers it: it stands up the **same** in-cluster git daemon the homelab uses
+(`buildpack-deps:bookworm-scm` running `git daemon` on `:9418`, populated by
+`kubectl cp` of a bare clone), applies a Flux `GitRepository`
+(`source.toolkit.fluxcd.io/v1`) at `git://…/platformctl.git`, waits, reads
+`status.conditions`, and prints the verdict as the headline line:
+
+```
+FLUX_GIT_PROTOCOL: accepted
+# or
+FLUX_GIT_PROTOCOL: rejected — <message from source-controller>
+```
 
 ## Run it
 
@@ -17,38 +40,73 @@ make e2e
 
 ## What it does
 
-1. **Detect k3d.** If `k3d` is not installed, it prints `brew install k3d` and
-   **exits 0 with a SKIP** — a machine/CI without k3d does not hard-fail.
-2. **Create** a uniquely named k3d cluster using an **isolated kubeconfig**, so it
-   can never touch a real cluster/context.
-3. **Install KEDA** via Helm (the app chart's autoscaling objects depend on it).
-4. **Deploy `dev-postgres`** (`helm template … | kubectl apply`) and wait until its
-   pod is **Ready** — this is the data store `carshowdb`'s `db: primary` needs.
-5. **Deploy `carshowdb`** from `charts/app`, assert the rendered Service is **not**
-   a LoadBalancer (policy guardrail), apply it, and wait until the Deployment is
-   **Available**.
-6. **Tear down** the cluster via a `trap` that runs on success, failure, or Ctrl-C.
+1. **Detect k3d.** If `k3d` is not installed, print `brew install k3d` and **exit 0
+   with a SKIP** — a machine/CI without k3d does not hard-fail.
+2. **Create** a uniquely named k3d cluster using an **isolated kubeconfig**, so it can
+   never touch a real cluster/context.
+3. **Build the CLI** (`go build -o platformctl ./cmd/platformctl`) and **render the
+   real desired state**: `platformctl render --env dev --file
+   examples/carshowdb/deploy.yaml --image ealen/echo-server:0.9.2` + `platformctl
+   infra render --env dev`, so `clusters/dev/platform.yaml` is current. Also assert the
+   rendered app/postgres/umbrella manifests contain **0** `type: LoadBalancer`.
+4. **Install Flux controllers.** Prefer the Flux CLI (`flux install --components
+   source-controller,kustomize-controller,helm-controller`) if present; otherwise
+   `helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator`
+   and apply a minimal **FluxInstance** (`fluxcd.controlplane.io/v1`). Wait until
+   source-controller + helm-controller are Available.
+5. **Install KEDA** (`kedacore/keda`) **and the HTTP add-on** (`kedacore/keda-add-ons-http`
+   `0.14.1`) so the `HTTPScaledObject` CRD exists — carshowdb is **scale-to-zero** —
+   plus the **Prometheus Operator CRDs** (`prometheus-operator-crds`), because the
+   rendered app chart ships a `ServiceMonitor` (the homelab gets that CRD from
+   kube-prometheus-stack; an ephemeral k3d cluster does not, and without it the
+   carshowdb HelmRelease install fails and Flux remediation tears it down).
+6. **Serve this repo in-cluster** from a single pod that runs **both** a `git://`
+   daemon (`:9418`, the thing under test) and a Flux-accepted **smart-HTTP** endpoint
+   (`nginx` + `fcgiwrap` + `git-http-backend`, `:80`) off the same `kubectl cp`'d bare
+   clone.
+7. **THE KEY TEST:** apply a `GitRepository` named `flux-system` in `flux-system` at
+   `git://…/platformctl.git`, wait, and read `status.conditions[Ready]`. Print
+   `FLUX_GIT_PROTOCOL: accepted` or `FLUX_GIT_PROTOCOL: rejected — <message>`.
+8. **Reconcile the umbrella:**
+   - **If `git://` accepted** → apply `clusters/dev/platform.yaml` (the umbrella
+     HelmRelease) against that `git://` source and let Flux's helm-controller
+     reconcile the inner releases (carshowdb, carshowdb-postgres, keda,
+     keda-http-add-on).
+   - **If `git://` rejected** → re-point the **same** `GitRepository` at the
+     smart-HTTP endpoint (which Flux **does** accept) and reconcile the **same**
+     umbrella over `http://`. If even that source can't go Ready, fall back to
+     installing the inner charts directly via `helm` (umbrella `spec.values`
+     extracted with `python3`). **The path that ran is printed** (`platform path:
+     …`).
+9. **PROVE the platform:** wait for the Postgres StatefulSet Ready and the
+   carshowdb HelmRelease to reconcile; assert the carshowdb **HTTPScaledObject**
+   (scale-to-zero) exists and the Service is **ClusterIP**; then run a `Job` in
+   `carshowdb-dev-api` (image `postgres:16-alpine`, `DATABASE_URL` from the
+   `carshowdb-runtime` Secret via `secretKeyRef`) that runs `pg_isready` + `psql -c
+   "select 'CONNECTED ok='||1"` and **must print `CONNECTED ok=1`** — the dead-Supabase
+   fix, proven live cross-namespace.
+10. **Tear down** the cluster + tmp via a `trap` that runs on success, failure, or
+    Ctrl-C.
 
 ## Safety / robustness
 
-- `set -euo pipefail` and a cleanup `trap` on `EXIT INT TERM` — the cluster is
-  never leaked, even on failure.
-- Isolated `KUBECONFIG` (a temp file) — the test only ever talks to the cluster it
-  just created. It never touches a live cluster.
-- **Graceful skips** while sibling work is in flight: if the app chart
-  (`charts/app/Chart.yaml`) or the `dev-postgres` chart isn't on disk yet, the
-  relevant step SKIPs instead of failing.
+- `set -euo pipefail` and a cleanup `trap` on `EXIT INT TERM` — the cluster and tmp
+  dir are never leaked, even on failure.
+- Isolated `KUBECONFIG` (a temp file) and a uniquely-named cluster — the test only
+  ever talks to the cluster it just created. **It never touches a live/remote
+  cluster** (k3d only — it creates its own throwaway cluster).
+- `k3d` absent → graceful **SKIP (exit 0)**, not a failure.
 
 ## Knobs (env vars)
 
 | Var | Default | Meaning |
 |---|---|---|
 | `E2E_KEEP` | `0` | `1` keeps the cluster up after the run (for debugging). |
-| `E2E_TIMEOUT` | `180` | Per-rollout wait, in seconds. |
-| `IMAGE` | a public nginx image | Image deployed for `carshowdb`. The real carshowdb image may be private; the e2e validates that the **chart** renders and rolls out, not app business logic, so it deploys a public image on the same port. |
-| `APP_PORT` | `8080` | Container/service port for the app. |
+| `E2E_TIMEOUT` | `240` | Per-wait/rollout timeout, in seconds. |
+| `APP_IMAGE` | `ealen/echo-server:0.9.2` | Image deployed for `carshowdb` (the real image is private). The DB-connectivity proof uses `postgres` directly, so app business logic isn't needed to prove the platform wiring. |
 
 ## Prerequisites
 
-`k3d`, `kubectl`, and `helm` on `PATH`. Only `k3d` is checked for the SKIP path;
-when k3d is present, missing `kubectl`/`helm` are hard errors.
+`k3d`, `kubectl`, `helm`, `go`, and `git` on `PATH` (the smart-HTTP fallback also uses
+`python3`). Only `k3d` is checked for the SKIP path; when k3d is present, the others
+are hard errors. A running Docker daemon is required for k3d to create the cluster.

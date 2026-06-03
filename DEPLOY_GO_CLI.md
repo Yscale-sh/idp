@@ -56,15 +56,21 @@ platform/
   charts/
     app/
     infra/
+    cluster/         # the umbrella chart: fans out to one inner HelmRelease per app/store/module
   schemas/
     deploy.schema.json
-  environments/
+  environments/      # renderer INPUT, not deployed
     prod/
-      cluster.yaml
-      apps/
+      cluster.yaml   # module matrix + flux source for prod
     dev/
-      cluster.yaml
-      apps/
+      cluster.yaml   # module matrix + flux source for dev
+  clusters/          # the rendered, deployed desired state (what Flux syncs)
+    prod/
+      platform.yaml       # the ONE umbrella HelmRelease (spec.values.apps + .modules)
+      flux-instance.yaml  # FluxInstance, sync.path = clusters/prod
+    dev/
+      platform.yaml
+      flux-instance.yaml
   apps/
     metabase.yaml    # optional central catalog entries
   .github/workflows/
@@ -96,9 +102,11 @@ writer for both dev and prod. The normal path is:
 1. Load `deploy.yaml`.
 2. Apply environment defaults.
 3. Validate schema and platform policy.
-4. Render app and capability desired state into `environments/<env>/`.
+4. Upsert the app's desired state into the umbrella at `clusters/<env>/platform.yaml`
+   (`spec.values.apps`; `infra render` sets `spec.values.modules`).
 5. Commit or apply that desired state through the platform repo.
-6. Flux reconciles the app, infra, and declared services into the target cluster.
+6. Flux installs the umbrella (`charts/cluster`), which fans out to an inner HelmRelease
+   per app, store, and module, reconciling them into the target cluster.
 7. Emit a concise plan/deploy summary and URLs.
 
 `plan` should do every read/validation/render step without mutating cluster or Cloudflare state.
@@ -110,28 +118,32 @@ Use Flux (the Flux Operator + `HelmRelease`/`GitRepository`) for steady-state re
 upgrades in every environment. This is the fixed deployment boundary:
 
 ```text
-developer intent -> platformctl render -> platform repo desired state -> Flux -> cluster
+developer intent -> platformctl render -> clusters/<env>/platform.yaml (the umbrella HelmRelease)
+                 -> Flux installs charts/cluster -> one inner HelmRelease per app/store/module -> cluster
 ```
 
-`platformctl` generates or updates desired state (a Flux `HelmRelease` per workload). Flux applies
-it. Avoid direct cluster mutation for normal app deploys so there is one source of truth. The Flux
-Operator's embedded Web UI (operator Service `:9080`) shows reconciliation state — no separate
-dashboard.
+`platformctl` generates or updates desired state — ONE umbrella `HelmRelease` per environment at
+`clusters/<env>/platform.yaml`, whose values list every app, store, and module. `render` upserts an
+app into `spec.values.apps`; `infra render` sets `spec.values.modules`. Flux installs the umbrella
+(`charts/cluster`), which templates an isolated inner `HelmRelease` per workload. Avoid direct
+cluster mutation for normal app deploys so there is one source of truth. The Flux Operator's embedded
+Web UI (operator Service `:9080`) shows reconciliation state — no separate dashboard.
 
 ```text
 platform repo
-  environments/prod/apps/dummy-api.yaml
-  environments/prod/apps/dummy-ui.yaml
-  environments/dev/apps/dummy-api.yaml
-  environments/dev/apps/dummy-ui.yaml
-  environments/prod/infra.yaml
-  environments/dev/infra.yaml
+  clusters/prod/platform.yaml        # umbrella HelmRelease: spec.values.apps + .modules
+  clusters/prod/flux-instance.yaml   # FluxInstance (sync.path = clusters/prod)
+  clusters/dev/platform.yaml
+  clusters/dev/flux-instance.yaml
+  charts/cluster/                    # the umbrella chart that fans out to inner HelmReleases
 ```
 
 Each environment has one `FluxInstance` (`clusters/<env>/flux-instance.yaml`) whose `spec.sync`
-creates the shared `GitRepository` source plus a Kustomization that applies the whole
-`environments/<env>` tree — the GitOps replacement for the old Argo CD app-of-apps. Prod and dev use
-the same charts and app contract, with environment-specific implementations:
+creates the shared `GitRepository` source plus a Kustomization that applies `clusters/<env>` — the
+umbrella `HelmRelease` (`platform.yaml`) and the FluxInstance itself. Installing the umbrella, and
+its fan-out into one inner `HelmRelease` per app / store / module, is the GitOps replacement for the
+old Argo CD app-of-apps. Prod and dev use the same charts and app contract, with environment-specific
+implementations:
 
 | Concern | dev local k3s | prod Linode k3s |
 |---|---|---|
@@ -147,12 +159,13 @@ The production deploy path can be:
 app repo push
   -> CI builds image
   -> platformctl render --env prod --file deploy.yaml --image <tag>
+     (upserts the app into clusters/prod/platform.yaml)
   -> commit/PR generated artifact into platform repo
   -> Flux syncs prod
 ```
 
-For the first implementation, manual commits into `environments/*/apps/` are fine. Automating that
-comes after the chart and YAML contract settle.
+For the first implementation, manual commits of the rendered `clusters/*/platform.yaml` are fine.
+Automating that comes after the chart and YAML contract settle.
 
 ### Local developer services
 
@@ -550,19 +563,21 @@ Source: https://docs.crossplane.io/latest/composition/composite-resources/
 Use one `FluxInstance` per environment:
 
 ```text
-clusters/dev/flux-instance.yaml   (syncs environments/dev)
-clusters/prod/flux-instance.yaml  (syncs environments/prod)
+clusters/dev/flux-instance.yaml   (sync.path = clusters/dev)
+clusters/prod/flux-instance.yaml  (sync.path = clusters/prod)
 ```
 
-The FluxInstance's sync Kustomization manages, under `environments/<env>/`:
+The FluxInstance's sync Kustomization applies `clusters/<env>` — the umbrella
+`HelmRelease` (`platform.yaml`) plus the FluxInstance itself. Installing the umbrella
+(`charts/cluster`) fans out, from `spec.values`, into one inner `HelmRelease` per:
 
-- platform infra (the infra `HelmRelease`s + `HelmRepository`s)
+- platform infra module (the module `HelmRelease`s + `HelmRepository`s)
 - shared services
-- app deployments (the per-app + per-store `HelmRelease`s)
+- app workload (the per-app + per-store `HelmRelease`s)
 - product groups such as `dummy-api` and `dummy-ui`
 
-This is the GitOps replacement for App-of-Apps/ApplicationSet. The point is inventory and clear sync
-boundaries, not a portal.
+This umbrella fan-out is the GitOps replacement for App-of-Apps/ApplicationSet. The point is
+inventory and clear sync boundaries, not a portal.
 
 ### Preview environments
 
@@ -605,7 +620,8 @@ Source: https://openfeature.dev/docs/reference/intro
 
 ### Progressive delivery
 
-Start with normal Kubernetes `Deployment`, but keep the chart shape ready for Argo Rollouts later.
+Start with normal Kubernetes `Deployment`, but keep the chart shape ready for Flagger (the
+Flux-native progressive-delivery controller) later.
 
 Potential contract:
 
@@ -723,7 +739,7 @@ These should be explicit policy errors, not buried Helm failures.
 
 1. Create `platformctl validate`, `platformctl plan`, and `platformctl render`.
 2. Port the shared chart skeleton from the existing IDP docs.
-3. Render one app into `environments/dev/apps/` with a Flux HelmRelease.
+3. Upsert one app into the dev umbrella (`clusters/dev/platform.yaml`), which Flux fans out into a per-app Flux HelmRelease.
 4. Render declared dev services for that app, starting with Postgres and Redis.
 5. Add S3-compatible local/dev storage wiring.
 6. Add Cloudflare Tunnel route sync for prod and local route handling for dev.

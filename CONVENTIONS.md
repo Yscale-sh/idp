@@ -14,13 +14,27 @@ The flow is always:
 
 ```
 deploy.yaml -> platformctl render --env <env> --file deploy.yaml --image <tag>
-            -> environments/<env>/apps/<app>.yaml (a Flux HelmRelease)
+            -> clusters/<env>/platform.yaml  (the ONE umbrella HelmRelease; render
+               UPSERTS this app into spec.values.apps)
+            -> Flux installs charts/cluster, which templates an ISOLATED Flux
+               HelmRelease per app (+ its Postgres) and per module
             -> Flux reconciles into the cluster
 ```
 
 Flux (Flux Operator + `HelmRelease`/`GitRepository`) is the **only writer**.
 "Deploying" is a git commit, never `kubectl`/`helm` by hand. The Flux Operator's
 embedded Web UI (operator Service `:9080`) shows reconciliation state.
+
+**Umbrella delivery model.** The rendered desired state for an env is ONE umbrella
+`HelmRelease` at `clusters/<env>/platform.yaml` (in `flux-system`) that installs the
+`charts/cluster` chart. That chart fans out — it templates an isolated Flux
+`HelmRelease` per app (chart `./charts/app`, into `<app>-<env>-<purpose>`), per app
+data store (`./charts/infra/dev-postgres`), and per enabled module (+ a
+`HelmRepository` for `chartRepo` modules) — the Helm-native replacement for the old
+Argo CD app-of-apps. `platformctl render` **upserts** an app entry into
+`spec.values.apps`; `platformctl infra render` **sets** `spec.values.modules`. There
+are no per-app `HelmRelease` files anymore. `environments/<env>/cluster.yaml` is
+renderer **input** (the module matrix + flux source), not deployed.
 
 ---
 
@@ -58,16 +72,17 @@ Every rendered workload gets its OWN namespace, sanitized to an RFC1123 DNS labe
   cache → `<app>-<env>-redis`). A second store of the same tool disambiguates
   with the store name: `<app>-<env>-<tool>-<name>`.
 
-**Create-from-yaml.** Reconciling the rendered YAML CREATES the namespace. Every
-rendered Flux `HelmRelease` — the app, each per-app store, and the shared infra
-modules (e.g. keda) — sets `spec.targetNamespace` (and `spec.storageNamespace`)
-to its computed namespace AND sets `spec.install.createNamespace: true` so Flux
-creates the namespace on first install. The HelmRelease itself lives in
-`flux-system` and references the shared `GitRepository` source cross-namespace;
-the platform inventory labels (`platform/app`, `platform/env`, `platform/component`,
-`platform/managed-by=platformctl`) are stamped on the HelmRelease. There is no
-separate namespace manifest and no `kubectl create ns` — the HelmRelease is
-self-contained.
+**Create-from-yaml.** The umbrella chart templates one inner `HelmRelease` per
+app / store / module, and reconciling each CREATES its namespace. Every inner Flux
+`HelmRelease` — the app, each per-app store, and the shared infra modules (e.g.
+keda) — sets `spec.targetNamespace` (and `spec.storageNamespace`) to its computed
+namespace AND sets `spec.install.createNamespace: true` so Flux creates the
+namespace on first install. The inner HelmRelease itself is templated into
+`flux-system` (the umbrella's source namespace) and references the shared
+`GitRepository` source cross-namespace; the platform inventory labels
+(`platform/app`, `platform/env`, `platform/component`,
+`platform/managed-by=platformctl`) are stamped on it. There is no separate
+namespace manifest and no `kubectl create ns` — the HelmRelease is self-contained.
 
 An app deploying into another app's (or another workload's) namespace is a policy
 violation; `policy.CheckHelmReleaseTarget` asserts the rendered app HelmRelease's
@@ -76,13 +91,15 @@ violation; `policy.CheckHelmReleaseTarget` asserts the rendered app HelmRelease'
 ### Per-app dev data stores (dev only)
 
 dev-postgres is NOT a shared module. In **dev**, when an app declares
-`db: postgres`, the render path emits a DEDICATED dev-postgres Flux `HelmRelease`
-(chart `./charts/infra/dev-postgres`) with `targetNamespace: <app>-<env>-postgres`,
-the per-app database name (the app name), a DEV PLACEHOLDER password, the
-`optiplex-pg` node pin, and `install.createNamespace: true`. It is written to
-`environments/<env>/apps/<app>-postgres.yaml` (the FluxInstance's Kustomization
-applies the whole `environments/<env>` tree, so it is picked up). The same applies
-to `cache: redis` → `<app>-redis.yaml` once a dev-redis chart exists.
+`db: postgres`, the render path attaches a DEDICATED dev-postgres store to the
+app's umbrella entry (`apps[].postgres`): the umbrella chart then templates a
+dev-postgres Flux `HelmRelease` (chart `./charts/infra/dev-postgres`) with
+`targetNamespace: <app>-<env>-postgres`, the per-app database name (the app name),
+a DEV PLACEHOLDER password, the `optiplex-pg` node pin, and
+`install.createNamespace: true`. The store rides inside the same
+`clusters/<env>/platform.yaml` upserted by `platformctl render` (there is no
+separate per-store file). The same applies to `cache: redis` once a dev-redis
+chart exists.
 
 The dev "data-store defaults" (per-app DB name, placeholder password, node pin,
 service/port) live in `internal/clusterenv` (`DevPostgres*` consts +
@@ -257,12 +274,21 @@ modules:
 - `chartRepo` -> chart pulled from a Helm repo or OCI registry; `version` is
   required and pinned.
 
-`platformctl infra render --env <env>` renders each ENABLED module to
-`environments/<env>/infra/<module>.yaml` as a Flux `HelmRelease` (in `flux-system`,
+`platformctl infra render --env <env>` SETS the ENABLED modules into the umbrella's
+`spec.values.modules` (in `clusters/<env>/platform.yaml`). The `charts/cluster`
+umbrella then templates, per module, a Flux `HelmRelease` (in `flux-system`,
 `install.createNamespace: true`). A `localChart` module references the shared
 `GitRepository` source (chart = the in-repo path); a `chartRepo` module ALSO emits
 a `HelmRepository` (`source.toolkit.fluxcd.io/v1`) for the chart's Helm repo and
-references it from `chart.spec.sourceRef`.
+references it from `chart.spec.sourceRef`. Because the module list is fully
+re-derived from `cluster.yaml` each run, `infra render` is a set (replace), not an
+upsert.
+
+**KEDA + the HTTP add-on.** dev enables two related modules: `keda` (chart `keda`)
+and `keda-http-add-on` (chart `keda-add-ons-http`). The first provides the
+`ScaledObject` CRD (cpu/memory/cron/prometheus triggers); the second provides the
+interceptor + scaler that power `HTTPScaledObject` and scale-to-zero (see §8). Both
+are required for `autoscale.scaleToZero` apps.
 
 **yscale** is a real chart (`ghcr.io/jakenesler/yscale-controller`) but ships
 `enabled: false` — it bursts ephemeral cloud nodes, so there is nothing to do on
@@ -304,6 +330,8 @@ sizing:
   profile: minimal             # minimal|small|medium|large
   replicas: 2
   autoscale: { enabled: true, min: 2, max: 5, kind: ScaledObject }
+  # scale-to-zero alternative (sugar for kind: HTTPScaledObject + min: 0):
+  # autoscale: { enabled: true, scaleToZero: true, max: 5 }
 db:
   - { name: primary, type: postgres, size: minimal }
 cache:
@@ -316,3 +344,33 @@ logging: { enabled: true }
 metrics: { enabled: true }
 tailscaleEgress: false
 ```
+
+---
+
+## 8. Autoscaling and scale-to-zero
+
+`sizing.autoscale` is KEDA-driven and picks between two KEDA object kinds:
+
+- **`kind: ScaledObject`** (the default) — standard `keda.sh` autoscaling on
+  cpu/memory/cron/prometheus triggers. The floor (`min`) stays ≥ the seeded
+  replica count; the chart REQUIRES at least one trigger, so the renderer always
+  emits one (explicit `triggers`, the `metric`/`target` pair, or a default CPU
+  trigger).
+- **`kind: HTTPScaledObject`** — request-rate autoscaling via the KEDA HTTP add-on,
+  capable of scaling all the way to **0**.
+
+**`autoscale.scaleToZero: true`** is sugar for `kind: HTTPScaledObject` + `min: 0`
+(authoritative — it overrides both `kind` and `min`). An idle app then scales
+fully to **0 replicas** and wakes on the first request:
+
+- the app's route flows through the KEDA HTTP add-on **interceptor**
+  (`keda-add-ons-http-interceptor-proxy`), which parks the first request, wakes the
+  Deployment from 0, then forwards it — so the **first request after idle eats a
+  cold start**;
+- it requires the **`keda-http-add-on`** module (chart `keda-add-ons-http`) enabled
+  in the env, in addition to the `keda` module;
+- the app's **DB does NOT scale to zero** — only the stateless app workload does.
+
+`carshowdb` is the worked example (`autoscale: { enabled: true, scaleToZero: true,
+max: 5 }`): rarely hit, so it parks at 0 and wakes on demand. Best for spiky /
+rarely-hit apps; latency-sensitive services should keep `min ≥ 1`.
