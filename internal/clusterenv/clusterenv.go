@@ -65,9 +65,10 @@ type Config struct {
 	// Defaults to "svc.cluster.local".
 	Domain string `json:"domain,omitempty"`
 
-	// Argo holds Argo CD wiring (the repo URL apps point their source at, and
-	// the namespace Argo runs in). Defaults applied if unset.
-	Argo ArgoConfig `json:"argo,omitempty"`
+	// Flux holds Flux wiring: the GitRepository source HelmReleases reference
+	// cross-namespace (name + namespace), the repo URL the FluxInstance syncs
+	// from, and the git branch it tracks. Defaults applied if unset.
+	Flux FluxConfig `json:"flux,omitempty"`
 
 	// Modules is the platform module registry for this env.
 	Modules map[string]Module `json:"modules,omitempty"`
@@ -105,19 +106,29 @@ type ResourceBounds struct {
 	MaxMemory string `json:"maxMemory,omitempty"` // e.g. "2Gi"
 }
 
-// ArgoConfig is the env's Argo CD wiring.
-type ArgoConfig struct {
-	// Namespace is where Argo CD runs (the Application objects' namespace).
+// FluxConfig is the env's Flux wiring.
+type FluxConfig struct {
+	// Namespace is the namespace Flux runs in and where the shared GitRepository
+	// source + every HelmRelease live (the Flux bootstrap creates the source
+	// named SourceName here). Defaults to "flux-system".
 	Namespace string `json:"namespace,omitempty"`
 
-	// RepoURL is the git repo Argo apps source from (this platform repo).
+	// RepoURL is the git repo the FluxInstance syncs from (this platform repo).
+	// A placeholder https URL by default; set per-env in cluster.yaml.
 	RepoURL string `json:"repoURL,omitempty"`
 
-	// TargetRevision is the git ref Argo tracks (e.g. HEAD, main, v1).
-	TargetRevision string `json:"targetRevision,omitempty"`
+	// Branch is the git branch the FluxInstance tracks; the GitRepository ref is
+	// refs/heads/<branch>. Defaults to "main".
+	Branch string `json:"branch,omitempty"`
+
+	// SourceName is the name of the GitRepository source the Flux bootstrap
+	// provides (the FluxInstance.sync creates one); HelmReleases reference it
+	// cross-namespace as {kind: GitRepository, name: SourceName, namespace:
+	// Namespace}. Defaults to "flux-system".
+	SourceName string `json:"sourceName,omitempty"`
 }
 
-// Module is one entry in the registry: a Helm release Argo reconciles.
+// Module is one entry in the registry: a Helm release Flux reconciles.
 type Module struct {
 	Enabled   bool           `json:"enabled,omitempty"`
 	Source    string         `json:"source,omitempty"` // localChart | chartRepo
@@ -130,11 +141,29 @@ type Module struct {
 
 // Defaults that apply when cluster.yaml omits a field.
 const (
-	DefaultDomain         = "svc.cluster.local"
-	DefaultArgoNamespace  = "argocd"
-	DefaultTargetRevision = "HEAD"
-	DefaultRefresh        = "1h"
+	DefaultDomain = "svc.cluster.local"
+	// DefaultFluxNamespace is where Flux runs and where the shared GitRepository
+	// source + every HelmRelease live.
+	DefaultFluxNamespace = "flux-system"
+	// DefaultFluxSourceName is the name of the GitRepository source the Flux
+	// bootstrap (FluxInstance.sync) provides; HelmReleases reference it
+	// cross-namespace.
+	DefaultFluxSourceName = "flux-system"
+	// DefaultBranch is the git branch the FluxInstance tracks (ref
+	// refs/heads/<branch>) when cluster.yaml omits flux.branch.
+	DefaultBranch = "main"
+	// DefaultRepoURL is the placeholder repo URL; set per-env in cluster.yaml.
+	DefaultRepoURL = "https://github.com/jakenesler/platformctl.git"
+	DefaultRefresh = "1h"
 )
+
+// BranchRef returns the GitRepository ref for a branch: refs/heads/<branch>.
+func BranchRef(branch string) string {
+	if branch == "" {
+		branch = DefaultBranch
+	}
+	return "refs/heads/" + branch
+}
 
 // Load reads and parses environments/<env>/cluster.yaml, applies defaults, and
 // validates it. The env name defaults from the path if the file omits it.
@@ -178,11 +207,17 @@ func (c *Config) ApplyDefaults() {
 	if c.Domain == "" {
 		c.Domain = DefaultDomain
 	}
-	if c.Argo.Namespace == "" {
-		c.Argo.Namespace = DefaultArgoNamespace
+	if c.Flux.Namespace == "" {
+		c.Flux.Namespace = DefaultFluxNamespace
 	}
-	if c.Argo.TargetRevision == "" {
-		c.Argo.TargetRevision = DefaultTargetRevision
+	if c.Flux.SourceName == "" {
+		c.Flux.SourceName = DefaultFluxSourceName
+	}
+	if c.Flux.Branch == "" {
+		c.Flux.Branch = DefaultBranch
+	}
+	if c.Flux.RepoURL == "" {
+		c.Flux.RepoURL = DefaultRepoURL
 	}
 	if c.Secrets.RefreshInterval == "" {
 		c.Secrets.RefreshInterval = DefaultRefresh
@@ -236,8 +271,8 @@ func (c *Config) Validate() error {
 
 // Per-app dev Postgres defaults. The shared dev-postgres MODULE is gone: in dev,
 // when an app declares db: postgres, the render path emits a DEDICATED
-// dev-postgres Argo Application per app, into its own namespace
-// <app>-<env>-postgres. The Helm release name is the Argo app name
+// dev-postgres Flux HelmRelease per app, with targetNamespace
+// <app>-<env>-postgres. The Helm release name is the per-app store name
 // (<app>-postgres); the dev-postgres chart's fullname helper collapses that
 // release to the Service name, so the in-cluster Service DNS is
 // <app>-postgres.<app>-<env>-postgres.svc.cluster.local.
@@ -245,18 +280,18 @@ func (c *Config) Validate() error {
 // These constants are the dev "data store defaults" (DB name, placeholder
 // password, node pin) that used to live in environments/dev/cluster.yaml's
 // dev-postgres module values. They now live here so the renderer and the
-// per-app Postgres Application stay in lockstep.
+// per-app Postgres HelmRelease stay in lockstep.
 const (
 	// DevPostgresTool is the store "tool"/purpose segment of the per-app Postgres
-	// namespace and the suffix of its Argo Application / Helm release name.
+	// namespace and the suffix of its Flux HelmRelease / Helm release name.
 	DevPostgresTool        = "postgres"
 	DevPostgresDefaultPort = "5432"
 	DevPostgresDefaultUser = "app"
 	// DevPostgresDefaultPassword is a clearly-marked DEV placeholder. The renderer
 	// only emits it for the local (dev) backend so an app can boot against its
 	// per-app in-cluster dev Postgres with no external-secrets operator. It is
-	// pinned identically into the rendered dev-postgres Application
-	// (auth.password) so the rendered DATABASE_URL matches what the chart
+	// pinned identically into the rendered dev-postgres HelmRelease
+	// (values.auth.password) so the rendered DATABASE_URL matches what the chart
 	// provisions. NEVER a real secret; prod uses backend=ssm and never sees this.
 	DevPostgresDefaultPassword = "dev-postgres-placeholder"
 	// DevPostgresNode optionally pins the per-app dev Postgres to a baseline node so
@@ -267,8 +302,8 @@ const (
 	DevPostgresNode = ""
 )
 
-// DevPostgresReleaseName is the Helm release / Argo Application name for an app's
-// dedicated dev Postgres: <app>-postgres.
+// DevPostgresReleaseName is the Helm release name for an app's dedicated dev
+// Postgres HelmRelease: <app>-postgres.
 func DevPostgresReleaseName(app string) string {
 	return app + "-" + DevPostgresTool
 }

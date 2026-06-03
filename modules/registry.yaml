@@ -57,9 +57,9 @@ modules:
   # NOTE: dev-postgres is NO LONGER a SHARED platform module. It is now a PER-APP
   # localChart: every dev workload that declares db: postgres gets its OWN
   # dedicated dev Postgres, rendered by the APP render path (platformctl render),
-  # NOT enabled here via a cluster.yaml modules block. Each per-app instance is an
-  # Argo Application named <app>-postgres in namespace <app>-<env>-postgres
-  # (CreateNamespace=true), written to environments/<env>/apps/<app>-postgres.yaml.
+  # NOT enabled here via a cluster.yaml modules block. Each per-app instance is a
+  # Flux HelmRelease named <app>-postgres targeting namespace <app>-<env>-postgres
+  # (install.createNamespace=true), written to environments/<env>/apps/<app>-postgres.yaml.
   # The dev "data store defaults" (per-app DB name, dev placeholder password,
   # optiplex-pg node pin) live in internal/clusterenv (DevPostgres* consts) +
   # internal/render/store.go. Replaced in prod by managed/HA Postgres (DATABASE_URL

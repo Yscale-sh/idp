@@ -35,7 +35,7 @@ func newPlanCmd() *cobra.Command {
 		Use:   "plan",
 		Short: "Dry run: validate + policy + render to stdout (no writes)",
 		Long: `plan reads and validates deploy.yaml, runs policy guardrails, and renders
-the Argo CD Application to stdout WITHOUT writing any files or touching the
+the Flux HelmRelease to stdout WITHOUT writing any files or touching the
 cluster. Use it as a CI preflight and for local debugging.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			app, err := loadApp(file)
@@ -55,8 +55,8 @@ cluster. Use it as a CI preflight and for local debugging.`,
 			out := cmd.OutOrStdout()
 			fmt.Fprintln(out, "── plan ───────────────────────────────────────")
 			fmt.Fprint(out, plan.Summary())
-			fmt.Fprintln(out, "── rendered Argo CD Application ────────────────")
-			y, err := plan.Result.ApplicationYAML()
+			fmt.Fprintln(out, "── rendered Flux HelmRelease ───────────────────")
+			y, err := plan.Result.HelmReleaseYAML()
 			if err != nil {
 				return err
 			}
@@ -74,8 +74,8 @@ func newRenderCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "render",
 		Short: "Render desired state to environments/<env>/apps/<app>.yaml",
-		Long: `render validates, runs policy, and writes the Argo CD Application to
-environments/<env>/apps/<app>.yaml under --root. Commit the result; Argo CD
+		Long: `render validates, runs policy, and writes the Flux HelmRelease to
+environments/<env>/apps/<app>.yaml under --root. Commit the result; Flux
 reconciles it. This is the default deploy path (a git commit, not kubectl).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			app, err := loadApp(file)
@@ -94,7 +94,7 @@ reconciles it. This is the default deploy path (a git commit, not kubectl).`,
 			}
 			out := cmd.OutOrStdout()
 			if stdout {
-				y, err := plan.Result.ApplicationYAML()
+				y, err := plan.Result.HelmReleaseYAML()
 				if err != nil {
 					return err
 				}
@@ -110,7 +110,7 @@ reconciles it. This is the default deploy path (a git commit, not kubectl).`,
 				fmt.Fprintf(out, "\nwrote: %s", p)
 			}
 			fmt.Fprintln(out)
-			fmt.Fprintln(out, "next: commit these files; Argo CD will reconcile them.")
+			fmt.Fprintln(out, "next: commit these files; Flux will reconcile them.")
 			return nil
 		},
 	}

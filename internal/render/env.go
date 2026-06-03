@@ -19,7 +19,7 @@ type EnvVar struct {
 
 // TierAEnv builds the Tier-A platform-injected vars (ENV.md). IMAGE_NAME is
 // intentionally NOT included (Helm sets the image). DEPLOY_TIME is supplied by
-// CI; when empty the renderer leaves it blank for Argo/CI to stamp.
+// CI; when empty the renderer leaves it blank for Flux/CI to stamp.
 func TierAEnv(app appconfig.App, env string, obs clusterenv.Observability, deployTime string) map[string]string {
 	return map[string]string{
 		"ENVIRONMENT":                 env,

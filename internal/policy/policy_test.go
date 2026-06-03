@@ -196,34 +196,38 @@ spec:
 	}
 }
 
-func TestCheckArgoDestination_Mismatch(t *testing.T) {
-	manifest := []byte(`apiVersion: argoproj.io/v1alpha1
-kind: Application
+func TestCheckHelmReleaseTarget_Mismatch(t *testing.T) {
+	manifest := []byte(`apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
 metadata:
   name: carshowdb
+  namespace: flux-system
 spec:
-  destination:
-    namespace: othersapp
-    server: https://kubernetes.default.svc
+  targetNamespace: othersapp
+  chart:
+    spec:
+      chart: ./charts/app
 `)
-	vs := CheckArgoDestination(manifest, "carshowdb")
+	vs := CheckHelmReleaseTarget(manifest, "carshowdb-dev-api")
 	if !errors.Is(vs, ErrNamespace) {
-		t.Errorf("expected ErrNamespace for cross-namespace destination, got %v", vs)
+		t.Errorf("expected ErrNamespace for cross-namespace targetNamespace, got %v", vs)
 	}
 }
 
-func TestCheckArgoDestination_OwnNamespaceClean(t *testing.T) {
-	manifest := []byte(`apiVersion: argoproj.io/v1alpha1
-kind: Application
+func TestCheckHelmReleaseTarget_OwnNamespaceClean(t *testing.T) {
+	manifest := []byte(`apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
 metadata:
   name: carshowdb
+  namespace: flux-system
 spec:
-  destination:
-    namespace: carshowdb
-    server: https://kubernetes.default.svc
+  targetNamespace: carshowdb-dev-api
+  chart:
+    spec:
+      chart: ./charts/app
 `)
-	if vs := CheckArgoDestination(manifest, "carshowdb"); len(vs) != 0 {
-		t.Errorf("own-namespace destination should be clean, got %v", vs)
+	if vs := CheckHelmReleaseTarget(manifest, "carshowdb-dev-api"); len(vs) != 0 {
+		t.Errorf("own-namespace targetNamespace should be clean, got %v", vs)
 	}
 }
 

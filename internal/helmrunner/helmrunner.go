@@ -1,6 +1,6 @@
 // Package helmrunner is a thin wrapper over the `helm` CLI for local rendering
 // and linting. platformctl never runs `helm upgrade --install` on the default
-// path (Argo CD is the only writer); helmrunner exists for preflight: rendering
+// path (Flux is the only writer); helmrunner exists for preflight: rendering
 // the chart from values (to scan output for guardrail violations) and linting.
 package helmrunner
 

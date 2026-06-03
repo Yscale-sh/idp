@@ -14,12 +14,13 @@ The flow is always:
 
 ```
 deploy.yaml -> platformctl render --env <env> --file deploy.yaml --image <tag>
-            -> environments/<env>/apps/<app>.yaml (an Argo CD Application)
-            -> Argo CD reconciles into the cluster
+            -> environments/<env>/apps/<app>.yaml (a Flux HelmRelease)
+            -> Flux reconciles into the cluster
 ```
 
-Argo CD is the **only writer**. "Deploying" is a git commit, never `kubectl`/`helm`
-by hand.
+Flux (Flux Operator + `HelmRelease`/`GitRepository`) is the **only writer**.
+"Deploying" is a git commit, never `kubectl`/`helm` by hand. The Flux Operator's
+embedded Web UI (operator Service `:9080`) shows reconciliation state.
 
 ---
 
@@ -37,7 +38,7 @@ truth: the methods on `appconfig.App`.
 | Helm release | `<app>` | `App.ReleaseName()` |
 | Service (ClusterIP) | `<app>` | `App.ServiceName()` |
 | Runtime Secret | `<app>-runtime` | `App.SecretName()` |
-| Argo CD Application | `<app>` | `App.ArgoAppName()` |
+| Flux HelmRelease | `<app>` (in `flux-system`) | `App.ReleaseHandle()` |
 | SSM app root | `/apps/<app>/<env>` | `App.SSMRoot(env)` |
 | SSM capability path | `/apps/<app>/<env>/<capability>/<name>` | `App.SSMCapabilityPath(...)` |
 | Shared secret group | `/shared/<group>/*` | (stripe, sendgrid, storage, google-oauth) |
@@ -57,29 +58,31 @@ Every rendered workload gets its OWN namespace, sanitized to an RFC1123 DNS labe
   cache → `<app>-<env>-redis`). A second store of the same tool disambiguates
   with the store name: `<app>-<env>-<tool>-<name>`.
 
-**Create-from-yaml.** Applying the rendered YAML CREATES the namespace. Every
-rendered Argo CD Application — the app, each per-app store, and the shared infra
-modules (e.g. keda) — sets `spec.destination.namespace` to its computed namespace
-AND includes `CreateNamespace=true` in `syncPolicy.syncOptions`, plus
-`syncPolicy.managedNamespaceMetadata.labels` stamping `platform/app`,
-`platform/env`, `platform/purpose`, `platform/managed-by=platformctl` onto the
-created namespace. There is no separate namespace manifest and no `kubectl create
-ns` — the Application is self-contained.
+**Create-from-yaml.** Reconciling the rendered YAML CREATES the namespace. Every
+rendered Flux `HelmRelease` — the app, each per-app store, and the shared infra
+modules (e.g. keda) — sets `spec.targetNamespace` (and `spec.storageNamespace`)
+to its computed namespace AND sets `spec.install.createNamespace: true` so Flux
+creates the namespace on first install. The HelmRelease itself lives in
+`flux-system` and references the shared `GitRepository` source cross-namespace;
+the platform inventory labels (`platform/app`, `platform/env`, `platform/component`,
+`platform/managed-by=platformctl`) are stamped on the HelmRelease. There is no
+separate namespace manifest and no `kubectl create ns` — the HelmRelease is
+self-contained.
 
 An app deploying into another app's (or another workload's) namespace is a policy
-violation; `policy.CheckArgoDestination` asserts the rendered app Application's
-`destination.namespace` equals `App.Namespace(env)`.
+violation; `policy.CheckHelmReleaseTarget` asserts the rendered app HelmRelease's
+`spec.targetNamespace` equals `App.Namespace(env)`.
 
 ### Per-app dev data stores (dev only)
 
 dev-postgres is NOT a shared module. In **dev**, when an app declares
-`db: postgres`, the render path emits a DEDICATED dev-postgres Argo Application
-(source `charts/infra/dev-postgres`) into namespace `<app>-<env>-postgres`, with
+`db: postgres`, the render path emits a DEDICATED dev-postgres Flux `HelmRelease`
+(chart `./charts/infra/dev-postgres`) with `targetNamespace: <app>-<env>-postgres`,
 the per-app database name (the app name), a DEV PLACEHOLDER password, the
-`optiplex-pg` node pin, and `CreateNamespace=true`. It is written to
-`environments/<env>/apps/<app>-postgres.yaml` (the root app-of-apps
-directory-recurses `environments/<env>`, so it is picked up). The same applies to
-`cache: redis` → `<app>-redis.yaml` once a dev-redis chart exists.
+`optiplex-pg` node pin, and `install.createNamespace: true`. It is written to
+`environments/<env>/apps/<app>-postgres.yaml` (the FluxInstance's Kustomization
+applies the whole `environments/<env>` tree, so it is picked up). The same applies
+to `cache: redis` → `<app>-redis.yaml` once a dev-redis chart exists.
 
 The dev "data-store defaults" (per-app DB name, placeholder password, node pin,
 service/port) live in `internal/clusterenv` (`DevPostgres*` consts +
@@ -97,7 +100,7 @@ fullname for release `<app>-postgres`) and `<db>` = the app name. The wiring int
 the runtime Secret / `secretKeyRef` is unchanged (Tier D).
 
 **Prod.** Prod provisions NO per-app Postgres (the DB is external/managed): no
-prod Postgres namespace, no dev-postgres Application. `DATABASE_URL` stays a
+prod Postgres namespace, no dev-postgres HelmRelease. `DATABASE_URL` stays a
 `secretKeyRef` whose value comes from SSM (the ExternalSecret path). The prod app
 namespace is still `<app>-prod-<component>`.
 
@@ -254,6 +257,13 @@ modules:
 - `chartRepo` -> chart pulled from a Helm repo or OCI registry; `version` is
   required and pinned.
 
+`platformctl infra render --env <env>` renders each ENABLED module to
+`environments/<env>/infra/<module>.yaml` as a Flux `HelmRelease` (in `flux-system`,
+`install.createNamespace: true`). A `localChart` module references the shared
+`GitRepository` source (chart = the in-repo path); a `chartRepo` module ALSO emits
+a `HelmRepository` (`source.toolkit.fluxcd.io/v1`) for the chart's Helm repo and
+references it from `chart.spec.sourceRef`.
+
 **yscale** is a real chart (`ghcr.io/jakenesler/yscale-controller`) but ships
 `enabled: false` — it bursts ephemeral cloud nodes, so there is nothing to do on
 a LAN cluster. It is a `chartRepo` module, disabled by default.
@@ -272,7 +282,7 @@ are explicit policy errors, never buried Helm failures:
 4. Resources are missing or outside allowed bounds (profile not in
    minimal|small|medium|large, or limits out of range).
 5. An app tries to deploy into another workload's namespace (the rendered app
-   Application's `destination.namespace` != `<app>-<env>-<purpose>`).
+   HelmRelease's `spec.targetNamespace` != `<app>-<env>-<purpose>`).
 6. Required SSM paths / external-secret references are missing.
 
 ---

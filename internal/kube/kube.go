@@ -1,5 +1,5 @@
 // Package kube holds optional, minimal Kubernetes helpers. platformctl's default
-// path never touches a live cluster (Argo CD reconciles desired state), so this
+// path never touches a live cluster (Flux reconciles desired state), so this
 // package is intentionally small: it parses kubeconfig context names and applies
 // manifests by shelling out to kubectl for the non-default `infra apply` /
 // emergency path. It pulls in no client-go dependency, keeping the binary lean.
@@ -46,7 +46,7 @@ func (c *Client) baseArgs() []string {
 
 // Apply runs `kubectl apply -f -` with the given manifest on stdin. This is the
 // NON-default emergency/infra path; the normal flow commits desired state for
-// Argo CD instead of applying directly.
+// Flux instead of applying directly.
 func (c *Client) Apply(ctx context.Context, manifest []byte) ([]byte, error) {
 	args := append(c.baseArgs(), "apply", "-f", "-")
 	cmd := exec.CommandContext(ctx, c.bin(), args...)

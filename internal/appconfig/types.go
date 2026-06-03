@@ -7,7 +7,7 @@
 //
 //	deploy.yaml -> appconfig.Load+ApplyDefaults -> policy.Validate
 //	            -> render charts/app values -> environments/<env>/apps/<app>.yaml
-//	            -> Argo CD reconciles.
+//	            -> Flux reconciles.
 //
 // Authoritative spec: DEPLOY_GO_CLI.md ("App contract") and ENV.md (env tiers).
 //
@@ -349,7 +349,7 @@ func (a *App) Purpose() string {
 // Namespace is the Kubernetes namespace for the app workload:
 // <app>-<env>-<purpose>, where purpose is the app's component (default "app").
 // Every rendered workload gets its OWN namespace, created from the rendered YAML
-// (the Argo Application sets destination.namespace + CreateNamespace=true).
+// (the Flux HelmRelease sets targetNamespace + install.createNamespace=true).
 func (a *App) Namespace(env string) string {
 	return SanitizeDNSLabel(a.App + "-" + env + "-" + a.Purpose())
 }
@@ -403,8 +403,8 @@ func (a *App) ServiceName() string { return a.App }
 // <app>-runtime.
 func (a *App) SecretName() string { return a.App + "-runtime" }
 
-// ArgoAppName is the Argo CD Application name: <app>.
-func (a *App) ArgoAppName() string { return a.App }
+// ReleaseHandle is the Flux HelmRelease name (and Helm release name): <app>.
+func (a *App) ReleaseHandle() string { return a.App }
 
 // SSMRoot returns the per-env SSM app root: /apps/<app>/<env>.
 func (a *App) SSMRoot(env string) string {

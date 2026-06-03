@@ -38,7 +38,7 @@ func newInfraPlanCmd() *cobra.Command {
 	var env, root string
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Show the enabled infra modules and their Argo Applications (no writes)",
+		Short: "Show the enabled infra modules and their Flux HelmReleases (no writes)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, planned, err := loadEnvModules(root, env)
 			if err != nil {
@@ -64,7 +64,7 @@ func newInfraRenderCmd() *cobra.Command {
 	var env, root string
 	cmd := &cobra.Command{
 		Use:   "render",
-		Short: "Write one Argo CD Application per enabled module to environments/<env>/infra/",
+		Short: "Write a Flux HelmRelease (+ HelmRepository) per enabled module to environments/<env>/infra/",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, planned, err := loadEnvModules(root, env)
 			if err != nil {
@@ -72,7 +72,8 @@ func newInfraRenderCmd() *cobra.Command {
 			}
 			// Policy guardrails over module render output BEFORE any write. A
 			// module that ships a LoadBalancer (inline values or templated
-			// manifest) fails here, never reaching environments/<env>/infra/.
+			// manifest) fails here, never reaching environments/<env>/infra/ for
+			// Flux to reconcile.
 			if err := modules.CheckAll(planned, root, env); err != nil {
 				return err
 			}
@@ -98,10 +99,10 @@ func newInfraApplyCmd() *cobra.Command {
 	var env, root, kubeContext string
 	cmd := &cobra.Command{
 		Use:   "apply",
-		Short: "(non-default) kubectl apply the infra Applications directly",
-		Long: `apply shells out to kubectl to apply the rendered infra Applications.
-This is NOT the default path — the default is render -> git commit -> Argo CD.
-Use apply only for bootstrap/emergency when Argo CD is not yet reconciling.`,
+		Short: "(non-default) kubectl apply the infra HelmReleases directly",
+		Long: `apply shells out to kubectl to apply the rendered infra HelmReleases.
+This is NOT the default path — the default is render -> git commit -> Flux.
+Use apply only for bootstrap/emergency when Flux is not yet reconciling.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, planned, err := loadEnvModules(root, env)
 			if err != nil {

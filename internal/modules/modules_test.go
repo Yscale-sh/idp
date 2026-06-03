@@ -10,10 +10,11 @@ import (
 func cfg() *clusterenv.Config {
 	c := &clusterenv.Config{
 		Env: "dev",
-		Argo: clusterenv.ArgoConfig{
-			Namespace:      "argocd",
-			RepoURL:        "https://github.com/jakenesler/platformctl.git",
-			TargetRevision: "HEAD",
+		Flux: clusterenv.FluxConfig{
+			Namespace:  "flux-system",
+			RepoURL:    "https://github.com/jakenesler/platformctl.git",
+			Branch:     "main",
+			SourceName: "flux-system",
 		},
 		Modules: map[string]clusterenv.Module{
 			"keda": {
@@ -59,16 +60,33 @@ func TestPlan_ChartRepoSource(t *testing.T) {
 			keda = p
 		}
 	}
-	src := keda.Application.Spec.Source
-	if src.Chart != "keda" || src.RepoURL != "https://kedacore.github.io/charts" {
-		t.Errorf("chartRepo source = %+v", src)
+	cs := keda.HelmRelease.Spec.Chart.Spec
+	// chartRepo: chart name + pinned version, sourceRef a HelmRepository in flux-system.
+	if cs.Chart != "keda" || cs.Version != "2.17.2" {
+		t.Errorf("chartRepo chart spec = %+v", cs)
 	}
-	// chartRepo pins the version into targetRevision.
-	if src.TargetRevision != "2.17.2" {
-		t.Errorf("chartRepo targetRevision = %q, want 2.17.2", src.TargetRevision)
+	if cs.SourceRef.Kind != "HelmRepository" || cs.SourceRef.Namespace != "flux-system" {
+		t.Errorf("chartRepo sourceRef = %+v", cs.SourceRef)
 	}
-	if keda.Application.Spec.Destination.Namespace != "keda" {
-		t.Errorf("dest ns = %q", keda.Application.Spec.Destination.Namespace)
+	if cs.SourceRef.Name != "kedacore" {
+		t.Errorf("chartRepo sourceRef name = %q, want kedacore", cs.SourceRef.Name)
+	}
+	// A HelmRepository is emitted for the chart's repo.
+	if keda.Repository == nil {
+		t.Fatal("chartRepo module should emit a HelmRepository")
+	}
+	if keda.Repository.Spec.URL != "https://kedacore.github.io/charts" {
+		t.Errorf("HelmRepository url = %q", keda.Repository.Spec.URL)
+	}
+	if keda.Repository.Metadata.Name != "kedacore" || keda.Repository.Metadata.Namespace != "flux-system" {
+		t.Errorf("HelmRepository meta = %+v", keda.Repository.Metadata)
+	}
+	// targetNamespace is the module namespace with createNamespace true.
+	if keda.HelmRelease.Spec.TargetNamespace != "keda" {
+		t.Errorf("targetNamespace = %q", keda.HelmRelease.Spec.TargetNamespace)
+	}
+	if !keda.HelmRelease.Spec.Install.CreateNamespace {
+		t.Error("install.createNamespace should be true")
 	}
 }
 
@@ -80,27 +98,37 @@ func TestPlan_LocalChartSource(t *testing.T) {
 			pg = p
 		}
 	}
-	src := pg.Application.Spec.Source
-	if src.Path != "charts/infra/dev-postgres" {
-		t.Errorf("localChart path = %q", src.Path)
+	cs := pg.HelmRelease.Spec.Chart.Spec
+	// localChart: chart path served by the GitRepository source, no version, no repo.
+	if cs.Chart != "./charts/infra/dev-postgres" {
+		t.Errorf("localChart chart path = %q", cs.Chart)
 	}
-	if src.RepoURL != "https://github.com/jakenesler/platformctl.git" {
-		t.Errorf("localChart repoURL should be the platform repo, got %q", src.RepoURL)
+	if cs.SourceRef.Kind != "GitRepository" || cs.SourceRef.Name != "flux-system" || cs.SourceRef.Namespace != "flux-system" {
+		t.Errorf("localChart sourceRef = %+v", cs.SourceRef)
 	}
-	if src.Chart != "" {
-		t.Errorf("localChart should not set chart name, got %q", src.Chart)
+	if cs.Version != "" {
+		t.Errorf("localChart should not pin a version, got %q", cs.Version)
+	}
+	if pg.Repository != nil {
+		t.Errorf("localChart should not emit a HelmRepository, got %+v", pg.Repository)
 	}
 }
 
-func TestPlan_SyncPolicyAndLabels(t *testing.T) {
+func TestPlan_RemediationAndLabels(t *testing.T) {
 	planned, _ := Plan(cfg())
 	p := planned[0]
-	sp := p.Application.Spec.SyncPolicy
-	if sp.Automated == nil || !sp.Automated.Prune || !sp.Automated.SelfHeal {
-		t.Errorf("syncPolicy automated should prune+selfHeal: %+v", sp.Automated)
+	sp := p.HelmRelease.Spec
+	if sp.Install.Remediation == nil || sp.Install.Remediation.Retries != 3 {
+		t.Errorf("install remediation should retry 3: %+v", sp.Install.Remediation)
 	}
-	if p.Application.Metadata.Labels["platform/managed-by"] != "platformctl" {
+	if sp.Upgrade.Remediation == nil || sp.Upgrade.Remediation.Retries != 3 {
+		t.Errorf("upgrade remediation should retry 3: %+v", sp.Upgrade.Remediation)
+	}
+	if p.HelmRelease.Metadata.Labels["platform/managed-by"] != "platformctl" {
 		t.Error("module should carry platform/managed-by label")
+	}
+	if p.HelmRelease.Metadata.Namespace != "flux-system" {
+		t.Errorf("HelmRelease should live in flux-system, got %q", p.HelmRelease.Metadata.Namespace)
 	}
 }
 
@@ -109,8 +137,8 @@ func TestPlan_SyncPolicyAndLabels(t *testing.T) {
 func TestCheckAll_RejectsLoadBalancerModule(t *testing.T) {
 	c := &clusterenv.Config{
 		Env: "dev",
-		Argo: clusterenv.ArgoConfig{
-			Namespace: "argocd", RepoURL: "https://example.com/r.git", TargetRevision: "HEAD",
+		Flux: clusterenv.FluxConfig{
+			Namespace: "flux-system", RepoURL: "https://example.com/r.git", Branch: "main", SourceName: "flux-system",
 		},
 		Modules: map[string]clusterenv.Module{
 			"bad-lb": {
@@ -140,7 +168,7 @@ func TestCheckAll_RejectsLoadBalancerModule(t *testing.T) {
 func TestCheckAll_RejectsNestedLoadBalancerModule(t *testing.T) {
 	c := &clusterenv.Config{
 		Env:  "dev",
-		Argo: clusterenv.ArgoConfig{Namespace: "argocd", RepoURL: "https://example.com/r.git", TargetRevision: "HEAD"},
+		Flux: clusterenv.FluxConfig{Namespace: "flux-system", RepoURL: "https://example.com/r.git", Branch: "main", SourceName: "flux-system"},
 		Modules: map[string]clusterenv.Module{
 			"bad-nested": {
 				Enabled: true, Source: clusterenv.SourceChartRepo, Chart: "bad-nested",
@@ -178,13 +206,25 @@ func mustPlan(t *testing.T) []PlannedModule {
 
 func TestPlannedModule_YAML(t *testing.T) {
 	planned, _ := Plan(cfg())
-	y, err := planned[0].YAML("dev")
+	var keda PlannedModule
+	for _, p := range planned {
+		if p.Name == "keda" {
+			keda = p
+		}
+	}
+	y, err := keda.YAML("dev")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(y)
-	if !strings.Contains(s, "kind: Application") {
-		t.Error("YAML should be an Argo Application")
+	if !strings.Contains(s, "kind: HelmRelease") {
+		t.Error("YAML should be a Flux HelmRelease")
+	}
+	if !strings.Contains(s, "kind: HelmRepository") {
+		t.Error("chartRepo module YAML should also emit a HelmRepository")
+	}
+	if !strings.Contains(s, "helm.toolkit.fluxcd.io/v2") {
+		t.Error("YAML should carry the Flux HelmRelease apiVersion")
 	}
 	if !strings.Contains(s, "DO NOT EDIT") {
 		t.Error("YAML should carry generated header")

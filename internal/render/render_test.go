@@ -40,13 +40,14 @@ func devCluster() *clusterenv.Config {
 			OTLPEndpoint: "http://otel-collector.monitoring.svc.cluster.local:4317",
 		},
 		Domain: "svc.cluster.local",
-		Argo: clusterenv.ArgoConfig{
-			Namespace:      "argocd",
-			RepoURL:        "https://github.com/jakenesler/platformctl.git",
-			TargetRevision: "HEAD",
+		Flux: clusterenv.FluxConfig{
+			Namespace:  "flux-system",
+			RepoURL:    "https://github.com/jakenesler/platformctl.git",
+			Branch:     "main",
+			SourceName: "flux-system",
 		},
 		// keda is the only SHARED infra module in dev now; the per-app dev Postgres
-		// is rendered by the app render path (BuildStoreApplications), NOT a shared
+		// is rendered by the app render path (BuildStoreReleases), NOT a shared
 		// module. The renderer's clusterenv.DevDatabaseURL computes the per-app
 		// Postgres namespace/service from the app name + env, so no dev-postgres
 		// module fixture is needed here.
@@ -73,7 +74,7 @@ func prodCluster() *clusterenv.Config {
 
 func boolPtr(b bool) *bool { return &b }
 
-// goldenCase renders an app for an env and compares the Argo Application YAML to
+// goldenCase renders an app for an env and compares the Flux HelmRelease YAML to
 // a golden file. The DEPLOY_TIME is fixed for determinism.
 func goldenCase(t *testing.T, deployFile, env string, c *clusterenv.Config, image, golden string) {
 	t.Helper()
@@ -86,7 +87,7 @@ func goldenCase(t *testing.T, deployFile, env string, c *clusterenv.Config, imag
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	got, err := res.ApplicationYAML()
+	got, err := res.HelmReleaseYAML()
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -165,12 +166,12 @@ func TestBuildValues_TierAAndStores(t *testing.T) {
 	}
 }
 
-// TestNamespaceAndStoreApplications verifies the create-from-yaml namespace
-// scheme end to end: the app Application targets <app>-<env>-<component> with
-// CreateNamespace=true, a dedicated dev-postgres Application is rendered into
-// <app>-<env>-postgres, and the app's DATABASE_URL host is the cross-namespace
-// FQDN of that per-app Postgres.
-func TestNamespaceAndStoreApplications(t *testing.T) {
+// TestNamespaceAndStoreReleases verifies the create-from-yaml namespace scheme
+// end to end: the app HelmRelease targets <app>-<env>-<component> with
+// install.createNamespace=true and a cross-namespace GitRepository sourceRef, a
+// dedicated dev-postgres HelmRelease targets <app>-<env>-postgres, and the app's
+// DATABASE_URL host is the cross-namespace FQDN of that per-app Postgres.
+func TestNamespaceAndStoreReleases(t *testing.T) {
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
 	app.Component = "api"
 
@@ -179,35 +180,49 @@ func TestNamespaceAndStoreApplications(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// App Application: own namespace + CreateNamespace + namespace labels.
-	dest := res.Application.Spec.Destination.Namespace
-	if dest != "carshowdb-dev-api" {
-		t.Errorf("app dest namespace = %q, want carshowdb-dev-api", dest)
+	// App HelmRelease: own namespace via targetNamespace + createNamespace true.
+	spec := res.HelmRelease.Spec
+	if spec.TargetNamespace != "carshowdb-dev-api" {
+		t.Errorf("app targetNamespace = %q, want carshowdb-dev-api", spec.TargetNamespace)
 	}
-	sp := res.Application.Spec.SyncPolicy
-	if !contains(sp.SyncOptions, "CreateNamespace=true") {
-		t.Errorf("app syncOptions missing CreateNamespace=true: %v", sp.SyncOptions)
+	if spec.StorageNamespace != "carshowdb-dev-api" {
+		t.Errorf("app storageNamespace = %q, want carshowdb-dev-api", spec.StorageNamespace)
 	}
-	if sp.ManagedNamespaceMetadata == nil || sp.ManagedNamespaceMetadata.Labels["platform/purpose"] != "api" {
-		t.Errorf("app managedNamespaceMetadata purpose label = %+v", sp.ManagedNamespaceMetadata)
+	if !spec.Install.CreateNamespace {
+		t.Error("app install.createNamespace should be true")
+	}
+	if spec.Install.Remediation == nil || spec.Install.Remediation.Retries != 3 {
+		t.Errorf("app install remediation should retry 3: %+v", spec.Install.Remediation)
+	}
+	// HelmRelease lives in flux-system and references the GitRepository source
+	// cross-namespace.
+	if res.HelmRelease.Metadata.Namespace != "flux-system" {
+		t.Errorf("HelmRelease ns = %q, want flux-system", res.HelmRelease.Metadata.Namespace)
+	}
+	sr := spec.Chart.Spec.SourceRef
+	if sr.Kind != "GitRepository" || sr.Name != "flux-system" || sr.Namespace != "flux-system" {
+		t.Errorf("app chart sourceRef = %+v", sr)
+	}
+	if spec.Chart.Spec.Chart != "./charts/app" {
+		t.Errorf("app chart path = %q, want ./charts/app", spec.Chart.Spec.Chart)
 	}
 
-	// Dedicated per-app dev Postgres Application.
-	if len(res.StoreApplications) != 1 {
-		t.Fatalf("expected 1 store application, got %d", len(res.StoreApplications))
+	// Dedicated per-app dev Postgres HelmRelease.
+	if len(res.StoreReleases) != 1 {
+		t.Fatalf("expected 1 store release, got %d", len(res.StoreReleases))
 	}
-	pg := res.StoreApplications[0]
+	pg := res.StoreReleases[0]
 	if pg.FileStem != "carshowdb-postgres" {
 		t.Errorf("store file stem = %q, want carshowdb-postgres", pg.FileStem)
 	}
-	if pg.Application.Spec.Destination.Namespace != "carshowdb-dev-postgres" {
-		t.Errorf("store dest namespace = %q, want carshowdb-dev-postgres", pg.Application.Spec.Destination.Namespace)
+	if pg.HelmRelease.Spec.TargetNamespace != "carshowdb-dev-postgres" {
+		t.Errorf("store targetNamespace = %q, want carshowdb-dev-postgres", pg.HelmRelease.Spec.TargetNamespace)
 	}
-	if pg.Application.Spec.Source.Path != "charts/infra/dev-postgres" {
-		t.Errorf("store source path = %q", pg.Application.Spec.Source.Path)
+	if pg.HelmRelease.Spec.Chart.Spec.Chart != "./charts/infra/dev-postgres" {
+		t.Errorf("store chart = %q", pg.HelmRelease.Spec.Chart.Spec.Chart)
 	}
-	if !contains(pg.Application.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true") {
-		t.Errorf("store syncOptions missing CreateNamespace=true")
+	if !pg.HelmRelease.Spec.Install.CreateNamespace {
+		t.Errorf("store install.createNamespace should be true")
 	}
 
 	// DATABASE_URL host is the cross-namespace FQDN of the per-app Postgres.
@@ -222,7 +237,7 @@ func TestNamespaceAndStoreApplications(t *testing.T) {
 }
 
 // TestProdNoPerAppPostgres confirms prod (backend=ssm) renders NO per-app
-// Postgres Application and NO dev connection URL (DATABASE_URL comes from SSM).
+// Postgres HelmRelease and NO dev connection URL (DATABASE_URL comes from SSM).
 func TestProdNoPerAppPostgres(t *testing.T) {
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
 	app.Component = "api"
@@ -230,24 +245,15 @@ func TestProdNoPerAppPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.StoreApplications) != 0 {
-		t.Errorf("prod should render no per-app store applications, got %d", len(res.StoreApplications))
+	if len(res.StoreReleases) != 0 {
+		t.Errorf("prod should render no per-app store releases, got %d", len(res.StoreReleases))
 	}
-	if res.Application.Spec.Destination.Namespace != "carshowdb-prod-api" {
-		t.Errorf("prod app namespace = %q, want carshowdb-prod-api", res.Application.Spec.Destination.Namespace)
+	if res.HelmRelease.Spec.TargetNamespace != "carshowdb-prod-api" {
+		t.Errorf("prod app targetNamespace = %q, want carshowdb-prod-api", res.HelmRelease.Spec.TargetNamespace)
 	}
 	if len(res.Values.DB) == 1 && res.Values.DB[0].Connection != nil {
 		t.Errorf("prod db should have no dev connection URL, got %+v", res.Values.DB[0].Connection)
 	}
-}
-
-func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 func TestDataStoreEnvKeys(t *testing.T) {

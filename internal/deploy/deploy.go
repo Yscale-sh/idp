@@ -2,7 +2,7 @@
 // (load -> applyDefaults -> validate -> policy -> render) and produces a Plan
 // the CLI prints and optionally writes. It is the single place that sequences
 // the guardrails before any desired-state is emitted, matching DEPLOY_GO_CLI.md
-// "normal path": validate -> render -> commit -> Argo reconciles.
+// "normal path": validate -> render -> commit -> Flux reconciles.
 package deploy
 
 import (
@@ -29,7 +29,7 @@ type Request struct {
 	// output to policy.CheckRenderedManifest (last-line LoadBalancer guardrail).
 	// When empty or helm is absent, that template scan is skipped — the typed
 	// Values struct has no service.type field, so the app values path cannot
-	// express a LoadBalancer, and the rendered Argo Application is still scanned.
+	// express a LoadBalancer, and the rendered Flux HelmRelease is still scanned.
 	Root string
 }
 
@@ -88,22 +88,22 @@ func Build(req Request) (*Plan, error) {
 
 // checkRenderedOutput runs policy over the actually-rendered manifests:
 //
-//   - the rendered Argo CD Application (its destination.namespace must equal the
+//   - the rendered Flux HelmRelease (its spec.targetNamespace must equal the
 //     app's own namespace — the real namespace-isolation guardrail), and
 //   - when --root + helm are available, a `helm template charts/app` of the
 //     rendered values, scanned for a forbidden type: LoadBalancer Service.
 //
 // This replaces the old valuesAsMap "defense in depth" that hand-built a map
 // omitting service.type and so could never observe a LoadBalancer (security
-// theater). The Argo destination check ALWAYS runs; the helm template scan is
+// theater). The HelmRelease target check ALWAYS runs; the helm template scan is
 // best-effort (skipped, not failed, when helm or the chart dir is unavailable).
 func checkRenderedOutput(root string, app appconfig.App, env string, result *render.Result) error {
-	// (a) Argo Application destination namespace == app namespace.
-	appYAML, err := result.ApplicationYAML()
+	// (a) HelmRelease targetNamespace == app namespace.
+	hrYAML, err := result.HelmReleaseYAML()
 	if err != nil {
-		return fmt.Errorf("serialize rendered application: %w", err)
+		return fmt.Errorf("serialize rendered helmrelease: %w", err)
 	}
-	if vs := policy.CheckArgoDestination(appYAML, app.Namespace(env)); len(vs) > 0 {
+	if vs := policy.CheckHelmReleaseTarget(hrYAML, app.Namespace(env)); len(vs) > 0 {
 		return fmt.Errorf("policy violations in rendered output: %w", vs.AsError())
 	}
 
@@ -158,8 +158,8 @@ func (p *Plan) Summary() string {
 	if len(r.SecretKeys) > 0 {
 		fmt.Fprintf(&b, "secret keys: %s\n", strings.Join(r.SecretKeys, ", "))
 	}
-	for _, s := range r.StoreApplications {
-		fmt.Fprintf(&b, "store:      %s -> ns %s (Argo app %s)\n", s.Tool, s.Namespace, s.Application.Metadata.Name)
+	for _, s := range r.StoreReleases {
+		fmt.Fprintf(&b, "store:      %s -> ns %s (HelmRelease %s)\n", s.Tool, s.Namespace, s.HelmRelease.Metadata.Name)
 	}
 	for _, c := range r.Connections {
 		fmt.Fprintf(&b, "connects:   %s=%s (%s -> %s)\n", c.EnvVar, c.Value, c.Mode, c.Target)

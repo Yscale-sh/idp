@@ -170,7 +170,7 @@ func CheckRenderedValues(values map[string]any) Violations {
 }
 
 // CheckRenderedManifest scans an already-serialized manifest (Helm template
-// output or Argo Application YAML) for a forbidden LoadBalancer Service. This is
+// output or Flux HelmRelease YAML) for a forbidden LoadBalancer Service. This is
 // the last-line guardrail over arbitrary rendered YAML. It is wired into the app
 // render path (helm-templated chart output) AND the infra/module path (templated
 // module manifests), so a chart that emits `type: LoadBalancer` fails before any
@@ -240,34 +240,29 @@ func hasLoadBalancerType(v any) bool {
 	return false
 }
 
-// CheckArgoDestination validates the namespace-isolation guardrail on the
-// RENDERED Argo CD Application: its spec.destination.namespace must equal the
-// app's own namespace (<app>). One-namespace-per-app means a developer can never
-// target another app's namespace; this is the real check (the old structural
-// app.Namespace()!=app.App test could never fire because they are equal by
-// construction). wantNamespace is the app's derived namespace.
-func CheckArgoDestination(manifest []byte, wantNamespace string) Violations {
+// CheckHelmReleaseTarget validates the namespace-isolation guardrail on the
+// RENDERED Flux HelmRelease: its spec.targetNamespace must equal the app's own
+// namespace (<app>-<env>-<purpose>). One-namespace-per-app means a developer can
+// never target another app's namespace; this is the real check. wantNamespace is
+// the app's derived namespace.
+func CheckHelmReleaseTarget(manifest []byte, wantNamespace string) Violations {
 	var vs Violations
 	for _, doc := range splitYAMLDocs(manifest) {
 		var obj map[string]any
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
 			continue
 		}
-		if kindOf(obj) != "Application" {
+		if kindOf(obj) != "HelmRelease" {
 			continue
 		}
 		spec, ok := obj["spec"].(map[string]any)
 		if !ok {
 			continue
 		}
-		dest, ok := spec["destination"].(map[string]any)
-		if !ok {
-			continue
-		}
-		got, _ := dest["namespace"].(string)
+		got, _ := spec["targetNamespace"].(string)
 		if got != wantNamespace {
 			vs = append(vs, &Violation{KindNamespace,
-				fmt.Sprintf("Argo Application destination namespace %q must equal app namespace %q",
+				fmt.Sprintf("HelmRelease targetNamespace %q must equal app namespace %q",
 					got, wantNamespace)})
 		}
 	}

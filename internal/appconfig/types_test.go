@@ -56,7 +56,7 @@ func TestDerivedNames(t *testing.T) {
 		a.ReleaseName():     "carshowdb",
 		a.ServiceName():     "carshowdb",
 		a.SecretName():      "carshowdb-runtime",
-		a.ArgoAppName():     "carshowdb",
+		a.ReleaseHandle():   "carshowdb",
 		a.SSMRoot("prod"):   "/apps/carshowdb/prod",
 		a.SSMCapabilityPath("dev", "db", "primary"): "/apps/carshowdb/dev/db/primary",
 	}

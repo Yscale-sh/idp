@@ -90,7 +90,7 @@ platformctl route sync --file deploy.yaml
 platformctl access ensure --file deploy.yaml
 ```
 
-`deploy` is not the primary production path when Argo CD is installed. Argo CD is the constant
+`deploy` is not the primary production path when Flux is installed. Flux is the constant
 writer for both dev and prod. The normal path is:
 
 1. Load `deploy.yaml`.
@@ -98,23 +98,25 @@ writer for both dev and prod. The normal path is:
 3. Validate schema and platform policy.
 4. Render app and capability desired state into `environments/<env>/`.
 5. Commit or apply that desired state through the platform repo.
-6. Argo CD reconciles the app, infra, and declared services into the target cluster.
+6. Flux reconciles the app, infra, and declared services into the target cluster.
 7. Emit a concise plan/deploy summary and URLs.
 
 `plan` should do every read/validation/render step without mutating cluster or Cloudflare state.
 That gives CI a useful preflight and makes local debugging less risky.
 
-## Argo CD model
+## Flux model
 
-Use Argo CD for steady-state reconciliation and upgrades in every environment. This is the fixed
-deployment boundary:
+Use Flux (the Flux Operator + `HelmRelease`/`GitRepository`) for steady-state reconciliation and
+upgrades in every environment. This is the fixed deployment boundary:
 
 ```text
-developer intent -> platformctl render -> platform repo desired state -> Argo CD -> cluster
+developer intent -> platformctl render -> platform repo desired state -> Flux -> cluster
 ```
 
-`platformctl` generates or updates desired state. Argo CD applies it. Avoid direct cluster mutation
-for normal app deploys so there is one source of truth.
+`platformctl` generates or updates desired state (a Flux `HelmRelease` per workload). Flux applies
+it. Avoid direct cluster mutation for normal app deploys so there is one source of truth. The Flux
+Operator's embedded Web UI (operator Service `:9080`) shows reconciliation state — no separate
+dashboard.
 
 ```text
 platform repo
@@ -126,8 +128,10 @@ platform repo
   environments/dev/infra.yaml
 ```
 
-Each environment has an Argo CD root app or app-of-apps. Prod and dev use the same charts and app
-contract, with environment-specific implementations:
+Each environment has one `FluxInstance` (`clusters/<env>/flux-instance.yaml`) whose `spec.sync`
+creates the shared `GitRepository` source plus a Kustomization that applies the whole
+`environments/<env>` tree — the GitOps replacement for the old Argo CD app-of-apps. Prod and dev use
+the same charts and app contract, with environment-specific implementations:
 
 | Concern | dev local k3s | prod Linode k3s |
 |---|---|---|
@@ -144,7 +148,7 @@ app repo push
   -> CI builds image
   -> platformctl render --env prod --file deploy.yaml --image <tag>
   -> commit/PR generated artifact into platform repo
-  -> Argo CD syncs prod
+  -> Flux syncs prod
 ```
 
 For the first implementation, manual commits into `environments/*/apps/` are fine. Automating that
@@ -474,7 +478,7 @@ Derived conventions:
 ```text
 namespaces:      dummy-api, dummy-ui
 SSM roots:       /apps/dummy-api/<env>, /apps/dummy-ui/<env>
-Argo apps:       dummy-api, dummy-ui
+Flux HelmReleases: dummy-api, dummy-ui (in flux-system)
 product label:   platform/product=dummy
 component label: platform/component=api|ui
 ```
@@ -487,7 +491,7 @@ Design for upgradeability now, cleanup automation later.
 
 Upgradeability requirements:
 
-- everything deploys through Helm releases reconciled by Argo CD
+- everything deploys through Helm releases reconciled by Flux (`HelmRelease`)
 - app and infra charts are versioned
 - generated resources carry stable labels and annotations
 - environment-specific overrides live under `environments/<env>/`
@@ -510,8 +514,9 @@ one so cleanup is not painful later.
 ## Developer experience posture
 
 This is developer experience, not button-clicker experience. The primary interface should be files,
-CLI commands, Git history, and Argo CD status. A portal can exist later as an inventory/read-only
-view, but it should not become the source of truth or hide the platform contract from developers.
+CLI commands, Git history, and Flux status (CLI or the Flux Operator Web UI). A portal can exist
+later as an inventory/read-only view, but it should not become the source of truth or hide the
+platform contract from developers.
 
 The good developer path is:
 
@@ -519,7 +524,7 @@ The good developer path is:
 edit deploy.yaml
 run platformctl validate/plan/render
 open PR
-watch Argo CD reconcile
+watch Flux reconcile (flux CLI or the operator Web UI on :9080)
 debug with normal Kubernetes/GitOps tools
 ```
 
@@ -540,23 +545,23 @@ cleanup.
 
 Source: https://docs.crossplane.io/latest/composition/composite-resources/
 
-### Argo CD root apps
+### Flux roots
 
-Use one root app per environment:
+Use one `FluxInstance` per environment:
 
 ```text
-platform-dev-root
-platform-prod-root
+clusters/dev/flux-instance.yaml   (syncs environments/dev)
+clusters/prod/flux-instance.yaml  (syncs environments/prod)
 ```
 
-The root app should manage child apps for:
+The FluxInstance's sync Kustomization manages, under `environments/<env>/`:
 
-- platform infra
+- platform infra (the infra `HelmRelease`s + `HelmRepository`s)
 - shared services
-- app deployments
+- app deployments (the per-app + per-store `HelmRelease`s)
 - product groups such as `dummy-api` and `dummy-ui`
 
-This can be implemented with App-of-Apps or ApplicationSet. The point is inventory and clear sync
+This is the GitOps replacement for App-of-Apps/ApplicationSet. The point is inventory and clear sync
 boundaries, not a portal.
 
 ### Preview environments
@@ -577,7 +582,7 @@ dummy-api-pr-123
 dummy-ui-pr-123
 postgres/redis/storage for that preview
 temporary routes
-Argo CD child apps
+Flux HelmReleases for the preview
 ```
 
 Cleanup matters more here than anywhere else, so all preview resources must carry ownership labels
@@ -657,7 +662,7 @@ jobs:
         run: .platform/bin/platformctl render --env prod --file deploy.yaml --image "$IMG"
 ```
 
-The CI job should then commit or open a PR against the platform repo environment path. Argo CD
+The CI job should then commit or open a PR against the platform repo environment path. Flux
 syncs from there. For early development, running `platformctl render --env dev` locally and
 committing the generated files manually is acceptable.
 
@@ -670,9 +675,9 @@ Use Helm for the app chart, but keep ownership clear:
   ExternalSecret resources.
 - The chart must never expose `Service type=LoadBalancer`.
 
-Implementation should start by rendering Helm/Argo desired state, not by running
+Implementation should start by rendering Helm/Flux desired state (a `HelmRelease`), not by running
 `helm upgrade --install` directly. Direct Helm apply can remain an emergency/debug command later,
-but it must not be the default path once Argo CD is the source of truth.
+but it must not be the default path once Flux is the source of truth.
 
 ## Extensibility model
 
@@ -693,7 +698,7 @@ Initial steps:
 - `RenderNamespace`
 - `RenderSecrets`
 - `RenderHelmValues`
-- `RenderArgoApplication`
+- `RenderHelmRelease`
 - `RenderTunnelRoute`
 - `RenderAccess`
 - `EmitSummary`
@@ -718,7 +723,7 @@ These should be explicit policy errors, not buried Helm failures.
 
 1. Create `platformctl validate`, `platformctl plan`, and `platformctl render`.
 2. Port the shared chart skeleton from the existing IDP docs.
-3. Render one app into `environments/dev/apps/` with an Argo CD Application.
+3. Render one app into `environments/dev/apps/` with a Flux HelmRelease.
 4. Render declared dev services for that app, starting with Postgres and Redis.
 5. Add S3-compatible local/dev storage wiring.
 6. Add Cloudflare Tunnel route sync for prod and local route handling for dev.
@@ -726,5 +731,5 @@ These should be explicit policy errors, not buried Helm failures.
 8. Add Cloudflare Access service-token minting.
 9. Use `platformctl new app` to make onboarding repeatable.
 
-The first useful milestone is: one app can deploy from `deploy.yaml` through Argo CD into local k3s,
+The first useful milestone is: one app can deploy from `deploy.yaml` through Flux into local k3s,
 including the services it declared, with no handwritten Kubernetes YAML and no NodeBalancer.

@@ -35,11 +35,29 @@ func TestApplyDefaults_Fills(t *testing.T) {
 	if c.Domain != DefaultDomain {
 		t.Errorf("domain = %q", c.Domain)
 	}
-	if c.Argo.Namespace != DefaultArgoNamespace {
-		t.Errorf("argo ns = %q", c.Argo.Namespace)
+	if c.Flux.Namespace != DefaultFluxNamespace {
+		t.Errorf("flux ns = %q", c.Flux.Namespace)
 	}
-	if c.Argo.TargetRevision != DefaultTargetRevision {
-		t.Errorf("targetRevision = %q", c.Argo.TargetRevision)
+	if c.Flux.SourceName != DefaultFluxSourceName {
+		t.Errorf("flux sourceName = %q", c.Flux.SourceName)
+	}
+	if c.Flux.Branch != DefaultBranch {
+		t.Errorf("flux branch = %q", c.Flux.Branch)
+	}
+	if c.Flux.RepoURL != DefaultRepoURL {
+		t.Errorf("flux repoURL = %q", c.Flux.RepoURL)
+	}
+}
+
+func TestBranchRef(t *testing.T) {
+	if got := BranchRef("main"); got != "refs/heads/main" {
+		t.Errorf("BranchRef(main) = %q", got)
+	}
+	if got := BranchRef(""); got != "refs/heads/main" {
+		t.Errorf("BranchRef(empty) should default to main, got %q", got)
+	}
+	if got := BranchRef("release"); got != "refs/heads/release" {
+		t.Errorf("BranchRef(release) = %q", got)
 	}
 }
 

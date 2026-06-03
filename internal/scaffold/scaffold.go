@@ -144,5 +144,5 @@ jobs:
           .platform/bin/platformctl render \
             --env prod --file deploy.yaml --image "$IMG" \
             --root .platform
-      # Commit/PR the generated environments/ change; Argo CD reconciles it.
+      # Commit/PR the generated environments/ change; Flux reconciles it.
 `
