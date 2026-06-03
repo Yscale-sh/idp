@@ -73,10 +73,12 @@ func newRenderCmd() *cobra.Command {
 	var stdout bool
 	cmd := &cobra.Command{
 		Use:   "render",
-		Short: "Render desired state to environments/<env>/apps/<app>.yaml",
-		Long: `render validates, runs policy, and writes the Flux HelmRelease to
-environments/<env>/apps/<app>.yaml under --root. Commit the result; Flux
-reconciles it. This is the default deploy path (a git commit, not kubectl).`,
+		Short: "Upsert the app into the env umbrella (clusters/<env>/platform.yaml)",
+		Long: `render validates, runs policy, and upserts the app (its app-chart values
++ its dedicated dev Postgres) into the environment's umbrella HelmRelease at
+clusters/<env>/platform.yaml under --root. Flux installs the charts/cluster
+umbrella, which templates an isolated HelmRelease per app. Commit the result;
+this is the default deploy path (a git commit, not kubectl).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			app, err := loadApp(file)
 			if err != nil {
@@ -101,16 +103,14 @@ reconciles it. This is the default deploy path (a git commit, not kubectl).`,
 				fmt.Fprint(out, string(y))
 				return nil
 			}
-			paths, err := plan.Result.WriteResult(root)
+			path, err := plan.Result.UpsertApp(root, cluster)
 			if err != nil {
 				return err
 			}
 			fmt.Fprint(out, plan.Summary())
-			for _, p := range paths {
-				fmt.Fprintf(out, "\nwrote: %s", p)
-			}
+			fmt.Fprintf(out, "\nupserted app into: %s", path)
 			fmt.Fprintln(out)
-			fmt.Fprintln(out, "next: commit these files; Flux will reconcile them.")
+			fmt.Fprintln(out, "next: commit the file; Flux installs charts/cluster and reconciles each app.")
 			return nil
 		},
 	}

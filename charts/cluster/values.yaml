@@ -1,0 +1,39 @@
+# charts/cluster — umbrella values (the whole environment's desired state).
+# platformctl maintains these in clusters/<env>/platform.yaml (the HelmRelease
+# that installs THIS chart). Hand-editing is not the workflow — run
+# `platformctl render` / `platformctl infra render`.
+
+# env name (dev|prod|...), stamped onto generated labels.
+env: ""
+
+# The Flux GitRepository the inner HelmReleases pull in-repo charts from. The Flux
+# bootstrap (FluxInstance.sync) provides it (named "flux-system" in flux-system).
+source:
+  name: flux-system
+  namespace: flux-system
+
+# Apps: each becomes its own isolated HelmRelease (chart ./charts/app) into
+# namespace <name'sNamespace>, plus an optional dedicated dev Postgres HelmRelease.
+# Entry shape:
+#   - name: carshowdb
+#     namespace: carshowdb-dev-api      # {app}-{env}-{purpose}
+#     releaseName: carshowdb
+#     component: api
+#     values: { ...charts/app values... }
+#     postgres:                         # optional
+#       enabled: true
+#       namespace: carshowdb-dev-postgres
+#       releaseName: carshowdb-postgres
+#       values: { ...charts/infra/dev-postgres values... }
+apps: []
+
+# Modules: each enabled infra module becomes a HelmRelease (chartRepo modules also
+# get a HelmRepository). Entry shape:
+#   - name: keda
+#     namespace: keda
+#     source: chartRepo                 # chartRepo | localChart
+#     chart: keda                       # repo chart name, or in-repo path for localChart
+#     repoURL: https://kedacore.github.io/charts
+#     version: 2.17.2
+#     values: { ... }
+modules: []

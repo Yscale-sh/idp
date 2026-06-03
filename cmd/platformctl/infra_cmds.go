@@ -8,6 +8,7 @@ import (
 	"github.com/jakenesler/platformctl/internal/clusterenv"
 	"github.com/jakenesler/platformctl/internal/kube"
 	"github.com/jakenesler/platformctl/internal/modules"
+	"github.com/jakenesler/platformctl/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -64,30 +65,38 @@ func newInfraRenderCmd() *cobra.Command {
 	var env, root string
 	cmd := &cobra.Command{
 		Use:   "render",
-		Short: "Write a Flux HelmRelease (+ HelmRepository) per enabled module to environments/<env>/infra/",
+		Short: "Set the enabled infra modules in the env umbrella (clusters/<env>/platform.yaml)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, planned, err := loadEnvModules(root, env)
+			c, planned, err := loadEnvModules(root, env)
 			if err != nil {
 				return err
 			}
 			// Policy guardrails over module render output BEFORE any write. A
 			// module that ships a LoadBalancer (inline values or templated
-			// manifest) fails here, never reaching environments/<env>/infra/ for
-			// Flux to reconcile.
+			// manifest) fails here, never reaching the umbrella for Flux to
+			// reconcile.
 			if err := modules.CheckAll(planned, root, env); err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			entries := make([]render.ModuleEntry, 0, len(planned))
 			for _, p := range planned {
-				path, err := p.Write(root, env)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(out, "wrote: %s\n", path)
+				entries = append(entries, render.ModuleEntry{
+					Name:      p.Name,
+					Namespace: p.Namespace,
+					Source:    p.Source,
+					Chart:     p.Chart,
+					RepoURL:   c.Modules[p.Name].RepoURL,
+					Version:   p.Version,
+					Values:    p.HelmRelease.Spec.Values,
+				})
 			}
-			if len(planned) == 0 {
-				fmt.Fprintf(out, "no enabled modules for env %s\n", env)
+			path, err := render.SetModules(root, env, c, entries)
+			if err != nil {
+				return err
 			}
+			fmt.Fprintf(out, "set %d enabled module(s) in: %s\n", len(entries), path)
+			fmt.Fprintln(out, "next: commit the file; the umbrella chart templates each module's HelmRelease.")
 			return nil
 		},
 	}

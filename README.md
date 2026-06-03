@@ -15,9 +15,10 @@ before it targets cloud k3s (`prod`). Repo is being kept private until it's read
 `platformctl` turns a small app contract into reconciled Kubernetes state:
 
 ```
- deploy.yaml  ──►  platformctl render  ──►  environments/<env>/apps/<app>.yaml   ──►  Flux  ──►  cluster
- (the dev's          (CLI: validate /        (a Flux HelmRelease carrying the           (the only
-  shopping list)      plan / render)           shared app-chart's values inline)          writer)
+ deploy.yaml  ──►  platformctl render  ──►  clusters/<env>/platform.yaml   ──►  Flux  ──►  cluster
+ (the dev's          (CLI: validate /        (ONE umbrella HelmRelease whose          (the only
+  shopping list)      plan / render)           values list every app; charts/cluster    writer)
+                                               templates an isolated HelmRelease each)
 ```
 
 The contract is a **shopping list**, not Kubernetes:
@@ -40,15 +41,14 @@ resource limits, autoscaling and observability wiring from that. The developer n
 **Deploying is a git commit, never `kubectl apply`/`helm upgrade`. Flux is the only writer.**
 
 - **Operator, once:** install the **Flux Operator** and apply one `FluxInstance`
-  (`clusters/<env>/flux-instance.yaml`). The FluxInstance bootstraps Flux: its `spec.sync` creates a
-  `GitRepository` source named `flux-system` **plus a Kustomization** that applies the whole
-  `environments/<env>/` tree — fanning out into the enabled infra modules and every app under `apps/`
-  (this Kustomization fan-out replaces the old Argo CD app-of-apps).
+  (`clusters/<env>/flux-instance.yaml`). Its `spec.sync` points Flux at `clusters/<env>`, which holds
+  the **umbrella HelmRelease** (`platform.yaml`). Flux installs the `charts/cluster` umbrella, and that
+  chart templates one **isolated `HelmRelease` per app** (+ its dedicated Postgres) and per enabled
+  module — the Helm-native replacement for the old Argo CD app-of-apps.
 - **Developer, every day:** push your app repo → CI builds & pushes the image → runs
-  `platformctl render --env <env> --file deploy.yaml --image <tag>` → commits the rendered
-  `environments/<env>/apps/<app>.yaml` (a Flux `HelmRelease`) into this platform repo → Flux
-  reconciles it. A new app is just **one new rendered file** the FluxInstance's Kustomization
-  auto-discovers.
+  `platformctl render --env <env> --file deploy.yaml --image <tag>` → which **upserts the app** into
+  `clusters/<env>/platform.yaml` → commit it → Flux reconciles. A new app is just **one new entry** in
+  the umbrella's `spec.values.apps` (each app stays its own isolated Helm release).
 
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
@@ -69,8 +69,8 @@ modules:
   unifi-controller: { enabled: false } # homelab service — modules aren't just "platform" tech
 ```
 
-`platformctl infra render --env <env>` emits a Flux `HelmRelease` per **enabled** module (plus a
-`HelmRepository` for each `chartRepo` module so its chart can be pulled).
+`platformctl infra render --env <env>` sets the **enabled** modules in the umbrella; `charts/cluster`
+then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `chartRepo` module).
 
 ## Layout
 
@@ -79,8 +79,9 @@ modules:
 | `cmd/platformctl`, `internal/*` | the Go CLI (validate / plan / render / infra / new) |
 | `charts/app` | the shared app chart (Deployment + ClusterIP Service + optional KEDA / ServiceMonitor / ExternalSecret / PDB) |
 | `charts/infra`, `modules/` | infra module charts + the module registry |
-| `environments/{dev,prod}` | per-env `cluster.yaml` (modules) + rendered `apps/`/`infra/` desired state (HelmReleases) |
-| `clusters/{dev,prod}` | the per-env `FluxInstance` (the one bootstrap) + its README |
+| `charts/cluster` | the **umbrella** chart — templates a HelmRelease per app / store / module from the env values |
+| `environments/{dev,prod}` | per-env `cluster.yaml` (module matrix + flux source) — renderer **input**, not deployed |
+| `clusters/{dev,prod}` | the per-env `FluxInstance` (the one bootstrap) + `platform.yaml` (the rendered umbrella HelmRelease) |
 | `examples/carshowdb` | the first onboarded app |
 | `schemas/`, `test/` | the `deploy.yaml` JSON schema + unit/golden/e2e tests |
 
