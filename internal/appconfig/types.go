@@ -139,6 +139,14 @@ type Autoscale struct {
 	// "HTTPScaledObject". Empty means the renderer chooses ScaledObject.
 	Kind string `json:"kind,omitempty" yaml:"kind,omitempty"`
 
+	// ScaleToZero makes the app scale ALL THE WAY DOWN to 0 replicas when idle
+	// and wake on the first request via the KEDA HTTP add-on interceptor. Sugar
+	// for kind: HTTPScaledObject + min: 0 (authoritative — overrides both). The
+	// first request after idle eats a cold start, and the app's route must flow
+	// through the interceptor. Best for spiky / rarely-hit apps; the DB does NOT
+	// scale to zero. Requires the keda-http-add-on module enabled in the env.
+	ScaleToZero bool `json:"scaleToZero,omitempty" yaml:"scaleToZero,omitempty"`
+
 	// Metric/Target are a convenience for the common single-trigger case, e.g.
 	// Metric "cpu" Target "70". Triggers (below) override for advanced cases.
 	Metric string `json:"metric,omitempty" yaml:"metric,omitempty"`

@@ -48,7 +48,7 @@ sizing:
   replicas: 2
   autoscale:
     enabled: true
-    min: 2
+    scaleToZero: true   # rarely hit -> go fully to 0 when idle, wake on first request
     max: 5
 
 db:

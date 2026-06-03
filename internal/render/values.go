@@ -392,8 +392,15 @@ func buildKeda(app appconfig.App) KedaValues {
 	if as.Kind != "" {
 		k.Kind = as.Kind
 	}
+	if as.ScaleToZero {
+		// scale-to-zero is sugar for HTTPScaledObject + min 0.
+		k.Kind = appconfig.HTTPScaledObjectK
+	}
 	if as.Min > 0 || k.Kind == appconfig.HTTPScaledObjectK {
 		k.MinReplicas = as.Min
+	}
+	if as.ScaleToZero {
+		k.MinReplicas = 0 // authoritative: idle apps go fully down
 	}
 	if as.Max > 0 {
 		k.MaxReplicas = as.Max

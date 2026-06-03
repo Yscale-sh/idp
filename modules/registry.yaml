@@ -51,6 +51,18 @@ modules:
       and, with the http-add-on, HTTPScaledObject (request-rate, scale-to-zero) —
       the two kinds the app chart's keda.kind selects between.
 
+  keda-http-add-on:
+    source: chartRepo
+    repoURL: https://kedacore.github.io/charts
+    chart: keda-add-ons-http
+    version: 0.14.1
+    defaultNamespace: keda
+    description: >-
+      KEDA HTTP add-on: the interceptor + scaler that powers HTTPScaledObject and
+      scale-to-zero. Apps with autoscale.scaleToZero route through the interceptor
+      (keda-add-ons-http-interceptor-proxy), which parks the first request, wakes
+      the app from 0, then forwards it. Requires the keda module (CRDs) too.
+
   # ── dev-postgres — PER-APP in-cluster Postgres for dev / on-prem ─────────────
   # The local chart authored in this repo. ClusterIP, generated password, PVC.
   #

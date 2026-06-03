@@ -97,6 +97,10 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
+            "scaleToZero": {
+              "type": "boolean",
+              "description": "Scale fully to 0 when idle, wake on first request (sugar for kind: HTTPScaledObject + min: 0; needs the keda-http-add-on module)."
+            },
             "min": {
               "type": "integer",
               "description": "Minimum replicas. 0 enables scale-to-zero (HTTPScaledObject).",
