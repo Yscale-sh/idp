@@ -40,15 +40,16 @@ spec:
     # point Argo CD at the pushed remote / a file-based repo you have registered).
     # For local k3d/dev you can also `argocd repo add <url>` first, or register a
     # path-based repo. The path + recurse below are what matter most.
-    repoURL: https://github.com/jakenesler/platformctl
+    repoURL: http://platformctl-git.platform-gitsrc.svc.cluster.local/platformctl.git
     targetRevision: HEAD
     path: environments/dev
     directory:
       recurse: true
-      # Only treat real desired-state manifests as children. cluster.yaml is the
-      # module *registry* (input to `platformctl infra render`), not an Argo object,
-      # so it is excluded from what Argo tries to apply.
-      include: '{apps/*.yaml,infra/*.yaml}'
+      # For this homelab bring-up KEDA is pre-installed out-of-band (a cluster
+      # operator / bootstrap concern), so the root manages only the per-app
+      # Applications under apps/. Infra modules (infra/*.yaml) can also be
+      # Argo-managed; add them back to the include to do so.
+      include: 'apps/*.yaml'
       exclude: 'cluster.yaml'
   destination:
     # In-cluster: the same cluster Argo CD runs in (homelab k3s "dev").
