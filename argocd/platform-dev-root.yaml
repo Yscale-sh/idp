@@ -40,7 +40,7 @@ spec:
     # point Argo CD at the pushed remote / a file-based repo you have registered).
     # For local k3d/dev you can also `argocd repo add <url>` first, or register a
     # path-based repo. The path + recurse below are what matter most.
-    repoURL: http://platformctl-git.platform-gitsrc.svc.cluster.local/platformctl.git
+    repoURL: git://platformctl-git.platform-gitsrc.svc.cluster.local/platformctl.git
     targetRevision: HEAD
     path: environments/dev
     directory:
