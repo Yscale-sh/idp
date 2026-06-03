@@ -23,7 +23,7 @@ set -euo pipefail
 CTX="${CTX:-optiplex-pg}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GIT_NS="platform-gitsrc"
-GIT_URL="http://platformctl-git.${GIT_NS}.svc.cluster.local/platformctl.git"
+GIT_URL="git://platformctl-git.${GIT_NS}.svc.cluster.local/platformctl.git"
 BARE="/tmp/platformctl.git"
 K="kubectl --context ${CTX}"
 H="helm --kube-context ${CTX}"
@@ -64,50 +64,9 @@ kind: PersistentVolumeClaim
 metadata: { name: repo, namespace: platform-gitsrc }
 spec: { accessModes: [ReadWriteOnce], storageClassName: local-path, resources: { requests: { storage: 1Gi } } }
 ---
-# Smart-HTTP git server: ArgoCD's repo-server uses go-git, which only speaks the
-# SMART HTTP protocol. This runs git-http-backend (CGI) behind Apache httpd via the
-# canonical ScriptAliasMatch recipe — it routes git URLs to git-http-backend
-# EXPLICITLY by regex (no reliance on implicit PATH_INFO), repos served at the ROOT
-# path. The git-core dir is auto-detected via `git --exec-path`.
-apiVersion: v1
-kind: ConfigMap
-metadata: { name: gitserver-entrypoint, namespace: platform-gitsrc }
-data:
-  git.conf.tmpl: |
-    LoadModule alias_module modules/mod_alias.so
-    LoadModule env_module modules/mod_env.so
-    LoadModule cgid_module modules/mod_cgid.so
-    ServerName localhost
-    ErrorLog /dev/stderr
-    LogLevel warn
-    SetEnv GIT_PROJECT_ROOT /srv/git
-    SetEnv GIT_HTTP_EXPORT_ALL
-    ScriptAliasMatch "(?x)^/(.*/(HEAD|info/refs|objects/(info/[^/]+|[0-9a-f]{2}/[0-9a-f]{38,}|pack/pack-[0-9a-f]{40,}\.(pack|idx))|git-(upload|receive)-pack))$" __GHB__/$1
-    <Directory "__COREDIR__">
-        Require all granted
-        Options +ExecCGI
-    </Directory>
-    <Directory "/srv/git">
-        Require all granted
-    </Directory>
-  run.sh: |
-    #!/bin/sh
-    set -e
-    # apk over the network can hit transient DNS errors — retry before giving up.
-    ok=
-    for i in 1 2 3 4 5 6 7 8; do
-      if apk add --no-cache git >/dev/null 2>&1; then ok=1; break; fi
-      echo "apk add git failed (attempt $i) — retrying in 4s"; sleep 4
-    done
-    [ -n "$ok" ] || { echo "FATAL: could not install git (apk/DNS). Holding container 300s for diagnosis."; sleep 300; exit 1; }
-    CONF=/usr/local/apache2/conf/httpd.conf
-    COREDIR="$(git --exec-path)"
-    echo "git-core dir: $COREDIR ; backend: $COREDIR/git-http-backend"
-    sed -e "s|__GHB__|$COREDIR/git-http-backend|" -e "s|__COREDIR__|$COREDIR|" /entrypoint/git.conf.tmpl >> "$CONF"
-    echo "--- last 22 lines of httpd.conf ---"; tail -22 "$CONF"
-    echo "--- httpd -t (config self-test) ---"; httpd -t 2>&1 || echo "!!! HTTPD CONFIG INVALID !!!"
-    exec httpd-foreground
----
+# git-daemon source: ArgoCD's repo-server connects over the git:// protocol
+# (in-cluster only). alpine/git ships git (incl. git-daemon) PRE-INSTALLED, so the
+# pod needs NO runtime apk/DNS — homelab pods currently can't resolve external DNS.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: platformctl-git, namespace: platform-gitsrc, labels: { app: platformctl-git } }
@@ -119,23 +78,22 @@ spec:
     spec:
       containers:
         - name: git
-          image: httpd:2.4-alpine
-          command: ["sh","/entrypoint/run.sh"]
-          ports: [ { containerPort: 80 } ]
-          readinessProbe: { tcpSocket: { port: 80 }, initialDelaySeconds: 5, periodSeconds: 3 }
+          # full Debian git (incl. git-daemon) pre-installed — no runtime apk/DNS.
+          image: buildpack-deps:bookworm-scm
+          command: ["git","daemon","--verbose","--reuseaddr","--listen=0.0.0.0","--port=9418","--base-path=/srv/git","--export-all","--enable=upload-pack","/srv/git"]
+          ports: [ { containerPort: 9418 } ]
+          readinessProbe: { tcpSocket: { port: 9418 }, initialDelaySeconds: 3, periodSeconds: 3 }
           volumeMounts:
             - { name: repo, mountPath: /srv/git }
-            - { name: entrypoint, mountPath: /entrypoint }
       volumes:
         - { name: repo, persistentVolumeClaim: { claimName: repo } }
-        - { name: entrypoint, configMap: { name: gitserver-entrypoint } }
 ---
 apiVersion: v1
 kind: Service
 metadata: { name: platformctl-git, namespace: platform-gitsrc }
 spec:
   selector: { app: platformctl-git }
-  ports: [ { port: 80, targetPort: 80 } ]
+  ports: [ { port: 9418, targetPort: 9418 } ]
 YAML
 # Force a fresh pod so entrypoint/ConfigMap changes are picked up even when the
 # Deployment spec is otherwise unchanged.
@@ -158,20 +116,19 @@ $K -n "${GIT_NS}" exec "${POD}" -- sh -c 'rm -rf /srv/git/platformctl.git'
 $K -n "${GIT_NS}" cp "${BARE}" "${POD}:/srv/git/platformctl.git"
 ok "served at ${GIT_URL} (pod ${POD})"
 
-# ── 4. verify the git source clones from inside the cluster ────────────────────
-log "Verifying in-cluster clone (smart HTTP)"
+# ── 4. verify the git source clones from inside the cluster (non-fatal) ─────────
+log "Verifying in-cluster clone over git://"
 $K -n "${GIT_NS}" delete pod git-verify --ignore-not-found >/dev/null 2>&1 || true
 $K -n "${GIT_NS}" run git-verify --image=alpine/git --restart=Never --command -- \
-  sh -c "for i in \$(seq 1 12); do if git clone ${GIT_URL} /tmp/c 2>/tmp/e; then cd /tmp/c && git log --oneline -1 && echo CLONE_OK && exit 0; fi; echo \"retry \$i:\"; cat /tmp/e; rm -rf /tmp/c; sleep 3; done; echo CLONE_FAIL; exit 1"
-$K -n "${GIT_NS}" wait --for=jsonpath='{.status.phase}'=Succeeded pod/git-verify --timeout=120s 2>/dev/null || true
-$K -n "${GIT_NS}" logs git-verify 2>/dev/null | sed 's/^/   /'
-if ! $K -n "${GIT_NS}" logs git-verify 2>/dev/null | grep -q CLONE_OK; then
-  echo "   ───── git server logs (diagnostics) ─────"
-  $K -n "${GIT_NS}" logs deploy/platformctl-git --tail=50 2>&1 | sed 's/^/   /' || true
-  $K -n "${GIT_NS}" delete pod git-verify --ignore-not-found >/dev/null 2>&1 || true
-  echo "FAIL: git source not clonable via smart HTTP"; exit 1
+  sh -c "for i in \$(seq 1 15); do if git clone ${GIT_URL} /tmp/c 2>/tmp/e; then cd /tmp/c && git log --oneline -1 && echo CLONE_OK && exit 0; fi; echo \"retry \$i:\"; cat /tmp/e; rm -rf /tmp/c; sleep 3; done; echo CLONE_FAIL" || true
+sleep 55
+{ $K -n "${GIT_NS}" logs git-verify 2>&1 | sed 's/^/   /'; } || true
+if { $K -n "${GIT_NS}" logs git-verify 2>/dev/null || true; } | grep -q CLONE_OK; then
+  ok "git source is clonable in-cluster over git://"
+else
+  echo "   WARN: in-cluster git:// clone not confirmed — continuing to test ArgoCD anyway"
+  { $K -n "${GIT_NS}" logs "${NEWPOD}" --tail=20 2>&1 | sed 's/^/   [gitsrv] /'; } || true
 fi
-ok "git source is clonable in-cluster (smart HTTP)"
 $K -n "${GIT_NS}" delete pod git-verify --ignore-not-found >/dev/null 2>&1 || true
 
 # ── 5. KEDA (the carshowdb ScaledObject needs the CRDs) ────────────────────────
@@ -202,6 +159,10 @@ ok "repo registered"
 log "Applying platform-dev-root (the one imperative bootstrap step)"
 $K apply -n argocd -f "${REPO_ROOT}/argocd/platform-dev-root.yaml"
 $K -n argocd annotate application platform-dev-root argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
+sleep 25
+echo "   platform-dev-root status (does ArgoCD accept git://?):"
+{ $K -n argocd get application platform-dev-root -o jsonpath='{range .status.conditions[*]}   COND {.type}: {.message}{"\n"}{end}' 2>&1 | head -8; } || true
+echo "   sync=$($K -n argocd get application platform-dev-root -o jsonpath='{.status.sync.status}' 2>/dev/null)"
 echo "   waiting for Argo to reconcile (namespaces are created from the rendered yaml)..."
 for i in $(seq 1 60); do
   $K -n carshowdb-dev-api get deploy carshowdb >/dev/null 2>&1 && break

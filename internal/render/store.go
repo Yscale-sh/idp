@@ -92,12 +92,17 @@ func buildDevPostgresApp(app appconfig.App, env string, c *clusterenv.Config, st
 		"service": map[string]any{"port": 5432},
 		// Pin to the homelab baseline node so the local-path PVC reschedules onto
 		// the box that physically holds the data volume.
-		"nodeSelector": map[string]any{"kubernetes.io/hostname": clusterenv.DevPostgresNode},
 		"persistence": map[string]any{
 			"enabled":      true,
 			"storageClass": "local-path",
 			"size":         "8Gi",
 		},
+	}
+	// Pin Postgres to a baseline node only when one is configured. In dev the pin is
+	// empty so the scheduler can place it on any node that can pull + run the image
+	// (the homelab's bare-metal node currently can't reach external registries).
+	if clusterenv.DevPostgresNode != "" {
+		values["nodeSelector"] = map[string]any{"kubernetes.io/hostname": clusterenv.DevPostgresNode}
 	}
 
 	appl := Application{

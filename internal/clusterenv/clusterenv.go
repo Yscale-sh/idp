@@ -259,9 +259,12 @@ const (
 	// (auth.password) so the rendered DATABASE_URL matches what the chart
 	// provisions. NEVER a real secret; prod uses backend=ssm and never sees this.
 	DevPostgresDefaultPassword = "dev-postgres-placeholder"
-	// DevPostgresNode pins the per-app dev Postgres to the homelab baseline node so
-	// the local-path PVC always reschedules onto the box that holds the data.
-	DevPostgresNode = "optiplex-pg"
+	// DevPostgresNode optionally pins the per-app dev Postgres to a baseline node so
+	// the local-path PVC always reschedules onto the box that holds the data. Empty
+	// = no pin (the scheduler picks any node that can pull + run the image). Left
+	// empty for the homelab because its bare-metal node ("optiplex") can't reach
+	// external registries; set this to a real node hostname to pin in other envs.
+	DevPostgresNode = ""
 )
 
 // DevPostgresReleaseName is the Helm release / Argo Application name for an app's
