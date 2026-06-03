@@ -1,0 +1,18 @@
+dev-postgres "{{ .Release.Name }}" installed in namespace "{{ .Release.Namespace }}".
+
+This is a DEV / on-prem Postgres. ClusterIP only — reachable in-cluster at:
+
+  Host: {{ include "dev-postgres.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  Port: {{ .Values.service.port }}
+  DB:   {{ .Values.auth.database }}
+  User: {{ .Values.auth.username }}
+
+Credentials live in Secret "{{ include "dev-postgres.secretName" . }}" (keys:
+POSTGRES_DB/USER/PASSWORD/HOST/PORT, DATABASE_URL). The password is GENERATED and
+never printed here. Read it with:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "dev-postgres.secretName" . }} \
+    -o jsonpath='{.data.DATABASE_URL}' | base64 -d
+
+The platformctl app chart wires DATABASE_URL into apps that declare `db: postgres`
+(ENV.md Tier D). Do not expose this Service publicly.

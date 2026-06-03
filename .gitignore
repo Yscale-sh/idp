@@ -1,0 +1,34 @@
+# ── Private operational data — NEVER commit (real creds / API dumps) ──
+/kube/
+/raw/
+/private/
+*kubeconfig*
+*.kubeconfig
+
+# ── Secrets / env ──
+.env
+.env.*
+*.pem
+*.key
+secrets.env
+secrets*.env
+**/secrets.env
+argocd-initial-admin-secret*
+
+# ── Go build artifacts ──
+/bin/
+/dist/
+*.test
+*.out
+/platformctl
+cmd/platformctl/platformctl
+
+# ── Helm ──
+charts/**/charts/
+*.tgz
+
+# ── Node / tooling / OS ──
+node_modules/
+.dist/
+.DS_Store
+*.log

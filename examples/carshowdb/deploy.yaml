@@ -1,0 +1,94 @@
+# carshowdb — first onboarded app.
+#
+# Onboarding carshowdb fixes it: it is currently crash-looping because its
+# DATABASE_URL points at a dead Supabase pooler. Declaring `db: primary` below
+# gives it the platform's dev Postgres and repoints DATABASE_URL.
+#
+# Image: legacy stackmaster/carshowdb-api, republished to ghcr.io/jakenesler/carshowdb-api.
+# Port: 8080 (ASSUMPTION — verify against the real container; carshowdb's port was
+#       not captured in ENV.md. Override here if the image listens elsewhere.)
+#
+# Render to dev:  platformctl render --env dev  --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
+# Render to prod: platformctl render --env prod --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
+
+app: carshowdb
+
+# component is the workload "purpose"; it becomes the {purpose} segment of the
+# app's own namespace (<app>-<env>-<component>). carshowdb is the API, so its dev
+# namespace is carshowdb-dev-api (prod: carshowdb-prod-api). Apps that omit
+# component default to purpose "app" (e.g. <app>-<env>-app).
+component: api
+
+runtime:
+  image: ghcr.io/jakenesler/carshowdb-api
+  port: 8080
+
+routes:
+  # A single deploy.yaml carries hosts for several envs. The renderer narrows the
+  # route set to the target env's approved zones (host policy). Cross-env hosts are
+  # kept INTERNAL (public: false) so they pass policy everywhere and are silently
+  # narrowed out of envs whose zone they do not match — a PUBLIC host must always
+  # be in-zone for the env it is built into, or policy rejects it (never silently
+  # dropped). The prod host stays a non-public placeholder until its real public
+  # zone is confirmed; flip it to public once carshowdb.example.com is the approved
+  # prod zone and Cloudflare Tunnel exposure is wired.
+  - host: carshowdb.local          # dev (.local, cluster-internal)
+    public: false
+    access:
+      humans: false
+      serviceToken: false
+  - host: carshowdb.example.com     # prod-ish placeholder (internal until zone confirmed)
+    public: false
+    access:
+      humans: false
+      serviceToken: false
+
+sizing:
+  profile: minimal
+  replicas: 2
+  autoscale:
+    enabled: true
+    min: 2
+    max: 5
+
+db:
+  # First/default db -> bare DATABASE_URL alias (repoints carshowdb off Supabase
+  # onto the platform Postgres) plus PRIMARY_DATABASE_URL.
+  - name: primary
+    type: postgres
+    size: minimal
+
+logging:
+  enabled: true
+
+metrics:
+  enabled: true
+
+# ── Secrets supplied by the env backend (dev=local, prod=ssm) ────────────────
+# These come from the env's SecretStore (NOT committed here). carshowdb's full
+# env, per ENV.md (/apps/carshowdb/<env>/* plus shared groups):
+#
+#   DATABASE_URL              # platform-provided from `db: primary` above (Tier D)
+#   JWT_SECRET                # /apps/carshowdb/<env>/JWT_SECRET
+#   CORS_ORIGIN               # /apps/carshowdb/<env>/CORS_ORIGIN
+#   PUBLIC_WEB_URL            # /apps/carshowdb/<env>/PUBLIC_WEB_URL
+#   GEMINI_API_KEY            # /apps/carshowdb/<env>/GEMINI_API_KEY
+#   GEMINI_MODEL              # /apps/carshowdb/<env>/GEMINI_MODEL
+#   S3_ACCESS_KEY             # storage -> /shared/storage/* (unified R2/S3 convention)
+#   S3_SECRET_KEY
+#   S3_ENDPOINT
+#   S3_BUCKET
+#   S3_REGION
+#   S3_PUBLIC_BASE_URL
+#   S3_USE_PATH_STYLE
+#   SENDGRID_API_KEY          # /shared/sendgrid/*
+#   FROM_EMAIL                # /shared/sendgrid/SENDGRID_FROM_EMAIL
+#   FROM_NAME                 # /shared/sendgrid/SENDGRID_FROM_NAME
+#   STRIPE_PUBLISHABLE_KEY    # /shared/stripe/*
+#   STRIPE_SECRET_KEY
+#   STRIPE_WEBHOOK_SECRET
+#   STRIPE_PRICE_*            # one or more price IDs
+#
+# Tier-A (ENVIRONMENT, LOKI_URL, OTEL_EXPORTER_OTLP_ENDPOINT, CONSOLE_LOGGING,
+# DEPLOY_TIME, PORT) is injected by the chart automatically — not listed here.
+# Sidecars TUNNEL_TOKEN / TS_* are Tier-B (platform-managed), not per-app secrets.

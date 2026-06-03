@@ -1,0 +1,233 @@
+# charts/app — the shared application chart VALUES CONTRACT.
+#
+# This file is the render target: `platformctl render` produces a values block of
+# exactly this shape from a deploy.yaml, and writes it into the Argo CD
+# Application at environments/<env>/apps/<app>.yaml. The chart templates consume
+# only these keys. Keep this file and internal/appconfig/types.go in lockstep.
+#
+# HARD POLICY (template + platformctl policy BOTH enforce):
+#   - Apps are ClusterIP ONLY. There is intentionally NO `service.type` key and
+#     the Service template hardcodes ClusterIP. A LoadBalancer can never render.
+#   - In prod, image.tag must be immutable (never "latest").
+#
+# KEY-BY-KEY:
+#   image.repository      ghcr.io/jakenesler/<app> (primary registry).
+#   image.tag             concrete immutable tag injected by CI (--image).
+#   image.pullPolicy      IfNotPresent.
+#   port                  container port; drives PORT env + probes.
+#   replicas              baseline replica count (ignored when keda.enabled).
+#   resources             requests/limits chosen by profile (renderer fills the
+#                         active profile into resources.requests/limits).
+#   service.port          ClusterIP service port. NO type field by design.
+#   routes                informational only (host/public/access). Public
+#                         exposure is wired by Cloudflare Tunnel out-of-chart;
+#                         the chart renders NO Ingress/LoadBalancer.
+#   env.tierA             platform-injected vars stamped into EVERY app (ENV.md
+#                         Tier A). IMAGE_NAME is intentionally absent (Helm sets
+#                         the image). DATABASE_URL/REDIS_URL/<NAME>_* are NOT here;
+#                         they are wired via secretKeyRef from db/cache (Tier D).
+#   env.extra             app-specific non-secret plain env (map[string]string).
+#   externalSecret        ExternalSecret generation. backend=local|ssm per env.
+#                         storeRef points at the env SecretStore/ClusterSecretStore.
+#                         dataFrom pulls the whole app SSM root; remoteRefs pin
+#                         individual keys (incl. shared groups).
+#   keda                  autoscaling. kind=ScaledObject|HTTPScaledObject.
+#   serviceMonitor        Prometheus discovery. releaseLabel MUST be a value
+#                         (default "prometheus") so the homelab kube-prometheus-
+#                         stack discovers it via `release: prometheus`.
+#   pdb                   PodDisruptionBudget.
+#   db / cache            data-store wiring. The Deployment emits each store's
+#                         urlKeys (DATABASE_URL/REDIS_URL/<NAME>_*) via secretKeyRef
+#                         to the runtime Secret <app>-runtime. For the dev (local)
+#                         backend the chart also assembles the in-cluster URL from
+#                         connection.url into that plain Secret; the data stores
+#                         themselves are separate releases/modules.
+#   devSecretPlaceholders dev-only placeholder app-secret keys (local backend) so
+#                         an app boots without the external-secrets operator.
+#   platform              the label set stamped on every generated object.
+#
+# NOTE: there is NO tailscaleEgress key. Tailscale egress is a deploy.yaml-level
+# concern (appconfig) and is NOT rendered into chart values (the chart never
+# consumed it). Re-add here only if a Tailscale sidecar template is introduced.
+
+# ── image ────────────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/jakenesler/REPLACE_ME   # ghcr.io/jakenesler/<app>
+  tag: ""                                       # REQUIRED, immutable; CI --image
+  pullPolicy: IfNotPresent
+
+# Kubernetes wants the {name: <secret>} object shape (NOT a bare string). The
+# renderer defaults this to [{name: ghcr-pull}] so pods can pull private ghcr
+# images. Align charts/app/ci/* with this shape.
+imagePullSecrets:
+  - name: ghcr-pull
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+port: 8080
+replicas: 1
+
+# ── pod scheduling / security passthrough (optional; chart-level, not in the
+#    deploy.yaml contract — platformctl may set these from env policy) ─────────
+podAnnotations: {}        # extra pod annotations (merged with the deploy stamp)
+podSecurityContext: {}    # pod-level securityContext
+securityContext: {}       # container-level securityContext
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# Active resource envelope. The renderer selects this from sizing.profile.
+# resourceProfiles below documents the presets (informational; not consumed
+# directly by the template — the renderer copies the chosen one into resources).
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+resourceProfiles:
+  minimal:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  small:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  medium:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: "1", memory: 1Gi }
+  large:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits:   { cpu: "2", memory: 2Gi }
+
+# ── service (ClusterIP ONLY — no `type` key on purpose) ──────────────────────
+service:
+  port: 8080
+
+# ── probes (generated from port unless overridden) ───────────────────────────
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# ── routes (INFORMATIONAL; ClusterIP only, no Ingress rendered) ──────────────
+routes: []
+#  - host: app.example.com
+#    public: true
+#    access: { humans: false, serviceToken: true }
+
+# ── env ──────────────────────────────────────────────────────────────────────
+env:
+  # Tier-A: platform injects these into EVERY app (ENV.md). NOT IMAGE_NAME.
+  tierA:
+    ENVIRONMENT: ""                     # e.g. dev|prod
+    LOKI_URL: ""                        # platform Loki endpoint
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""     # platform OTEL collector
+    CONSOLE_LOGGING: "true"
+    DEPLOY_TIME: ""                     # CI build stamp
+    PORT: "8080"                        # mirrors .port
+  # app-specific plain (non-secret) env.
+  extra: {}
+
+# ── secrets (per-env backend) ────────────────────────────────────────────────
+# backend selects WHICH runtime-Secret mechanism the chart renders into the same
+# Secret name <app>-runtime that the Deployment envFroms:
+#   backend=local (dev/on-prem) -> templates/secret.yaml: a PLAIN Kubernetes
+#     Secret. NO external-secrets operator. Carries the in-cluster dev DB/cache
+#     URLs (from db/cache .connection.url) plus dev placeholders
+#     (devSecretPlaceholders) so an app boots in dev.
+#   backend=ssm (prod/cloud) -> templates/externalsecret.yaml: an
+#     external-secrets.io/v1 ExternalSecret pulling the app SSM root + shared
+#     groups. dataFrom/remoteRefs/storeRef below apply to THIS path only.
+externalSecret:
+  enabled: false
+  backend: local                        # local (dev/on-prem) | ssm (prod/cloud)
+  refreshInterval: 1h
+  # storeRef references the env's SecretStore/ClusterSecretStore (configured in
+  # environments/<env>/cluster.yaml).
+  storeRef:
+    name: ""                            # e.g. platform-ssm | platform-local
+    kind: ClusterSecretStore            # ClusterSecretStore | SecretStore
+  # dataFrom pulls every key under the app's SSM root into the runtime Secret.
+  dataFrom: []
+  #  - extract: { key: /apps/<app>/<env> }
+  # remoteRefs pin individual keys, including shared groups (/shared/<group>/*).
+  remoteRefs: []
+  #  - secretKey: STRIPE_SECRET_KEY
+  #    remoteRef: { key: /shared/stripe/STRIPE_SECRET_KEY }
+
+# ── autoscaling (KEDA) ───────────────────────────────────────────────────────
+keda:
+  enabled: false
+  kind: ScaledObject                    # ScaledObject | HTTPScaledObject
+  minReplicas: 1
+  maxReplicas: 1
+  # ScaledObject triggers (cpu/memory/cron/prometheus/...).
+  triggers: []
+  #  - type: cpu
+  #    metadata: { type: Utilization, value: "70" }
+  # HTTPScaledObject request-rate config (used when kind=HTTPScaledObject).
+  http:
+    hosts: []
+    pathPrefixes: ["/"]
+    targetPendingRequests: 100
+    scaledownPeriod: 300
+
+# ── observability ────────────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  port: http
+  interval: 30s
+  # releaseLabel is a VALUE so the homelab kube-prometheus-stack discovers it.
+  releaseLabel: prometheus
+
+# ── disruption budget ────────────────────────────────────────────────────────
+pdb:
+  enabled: false
+  minAvailable: 1
+
+# ── data-store wiring (chart emits *_URL env from the runtime Secret) ────────
+# The data stores themselves are separate releases/modules; these entries tell
+# the Deployment which URL env vars to emit and where their VALUES come from:
+#   urlKeys    the env-var names this store contributes. The first/default entry
+#              of each class also gets the bare DATABASE_URL / REDIS_URL alias;
+#              every entry gets the prefixed <NAME>_DATABASE_URL / _REDIS_URL.
+#   connection (dev/local backend only) the assembled in-cluster connection URL
+#              the plain runtime Secret carries. Omitted for ssm/prod (the URL
+#              comes from SSM via the ExternalSecret). The Deployment ALWAYS wires
+#              urlKeys via secretKeyRef to <app>-runtime, so db/cache reach the pod
+#              for BOTH backends.
+db: []
+#  - name: primary
+#    type: postgres
+#    default: true
+#    urlKeys: [DATABASE_URL, PRIMARY_DATABASE_URL]
+#    connection: { url: "postgres://app:CHANGEME@dev-postgres:5432/app/app?sslmode=disable" }
+cache: []
+#  - name: default
+#    type: redis
+#    default: true
+#    urlKeys: [REDIS_URL, DEFAULT_REDIS_URL]
+
+# ── dev secret placeholders (local backend only) ─────────────────────────────
+# Clearly-marked DEV placeholder values for app-level secret keys the plain
+# runtime Secret carries so an app BOOTS in dev with no external-secrets operator.
+# Empty for the ssm/prod backend (SSM supplies the real values). NEVER real
+# secrets — every value is "dev-placeholder".
+devSecretPlaceholders: []
+#  - { name: JWT_SECRET, value: dev-placeholder }
+#  - { name: STRIPE_SECRET_KEY, value: dev-placeholder }
+
+# ── platform labels (stamped on every generated object) ──────────────────────
+platform:
+  app: ""           # platform/app + app.kubernetes.io/{name,instance}
+  env: ""           # platform/env
+  product: ""       # platform/product (optional)
+  component: ""     # platform/component (optional)
+  managedBy: platformctl   # platform/managed-by

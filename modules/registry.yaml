@@ -1,0 +1,209 @@
+# platformctl module registry — the CATALOG of platform infra + shared services.
+#
+# This file is the canonical definition of every module the platform knows how to
+# install: its source (in-repo chart vs upstream Helm/OCI repo), the chart it maps
+# to, its default target namespace, default values, and what it is for.
+#
+# A per-environment cluster.yaml (environments/<env>/cluster.yaml) references these
+# by name and decides which are ENABLED for that env and with what overrides.
+# Splitting "catalog" (here) from "toggles + overrides" (cluster.yaml) means the
+# enable matrix per env stays small and reviewable, and the source/version of a
+# chart is defined once.
+#
+# ENTRY SHAPE (see CONVENTIONS.md §5):
+#   modules.<name>:
+#     source:           localChart | chartRepo
+#     chart:            in-repo path (localChart) OR repo chart name (chartRepo)
+#     repoURL:             Helm repo / OCI URL          (chartRepo only)
+#     version:          pinned semver                (chartRepo: REQUIRED;
+#                                                      localChart: taken from the chart)
+#     defaultNamespace: target namespace for the release
+#     defaultValues:    inline values applied unless cluster.yaml overrides
+#     description:      what it is / why
+#
+# source=localChart -> chart lives in THIS repo under charts/ (path is relative to
+#   the repo root, e.g. charts/infra/dev-postgres); version comes from the chart.
+# source=chartRepo  -> chart pulled from a Helm repo or OCI registry; version is
+#   REQUIRED and pinned so a bad upstream release can't silently roll in.
+#
+# Enabling/disabling and per-env overrides live in environments/<env>/cluster.yaml,
+# NOT here. This catalog never says "enabled"; cluster.yaml does.
+
+apiVersion: platformctl.io/v1
+kind: ModuleRegistry
+
+modules:
+  # ── KEDA — event-driven autoscaling + scale-to-zero ──────────────────────────
+  # Backs the app chart's keda.* (ScaledObject + HTTPScaledObject). Enabled in
+  # every real env because autoscale is a first-class app feature.
+  keda:
+    source: chartRepo
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    version: 2.17.2
+    defaultNamespace: keda
+    defaultValues:
+      # CRDs install with the chart; the homelab has no separate CRD manager.
+      crds:
+        install: true
+    description: >-
+      KEDA autoscaler. Provides ScaledObject (cpu/memory/cron/prometheus triggers)
+      and, with the http-add-on, HTTPScaledObject (request-rate, scale-to-zero) —
+      the two kinds the app chart's keda.kind selects between.
+
+  # ── dev-postgres — PER-APP in-cluster Postgres for dev / on-prem ─────────────
+  # The local chart authored in this repo. ClusterIP, generated password, PVC.
+  #
+  # NOTE: dev-postgres is NO LONGER a SHARED platform module. It is now a PER-APP
+  # localChart: every dev workload that declares db: postgres gets its OWN
+  # dedicated dev Postgres, rendered by the APP render path (platformctl render),
+  # NOT enabled here via a cluster.yaml modules block. Each per-app instance is an
+  # Argo Application named <app>-postgres in namespace <app>-<env>-postgres
+  # (CreateNamespace=true), written to environments/<env>/apps/<app>-postgres.yaml.
+  # The dev "data store defaults" (per-app DB name, dev placeholder password,
+  # optiplex-pg node pin) live in internal/clusterenv (DevPostgres* consts) +
+  # internal/render/store.go. Replaced in prod by managed/HA Postgres (DATABASE_URL
+  # from SSM); prod provisions NO per-app Postgres namespace. This entry stays in
+  # the catalog so the chart's source/path/intent is documented in one place.
+  dev-postgres:
+    source: localChart
+    chart: charts/infra/dev-postgres
+    # No defaultNamespace: the render path computes <app>-<env>-postgres per app.
+    defaultValues:
+      persistence:
+        enabled: true
+        storageClass: local-path
+        size: 8Gi
+      # The render path pins nodeSelector to the homelab baseline node (optiplex-pg)
+      # so the local-path PVC always reschedules onto the node holding the data.
+      nodeSelector: {}
+    description: >-
+      Minimal single-replica PostgreSQL for dev / on-prem, provisioned PER APP (not
+      a shared module). ClusterIP only, password from the dev placeholder, local-path
+      PVC. Produces the DATABASE_URL-compatible Secret the app chart wires into the
+      app (ENV.md Tier D). Rendered by `platformctl render` into <app>-<env>-postgres.
+      NOT for production.
+
+  # ── redis — in-cluster cache ─────────────────────────────────────────────────
+  # Bitnami Redis from the secured OCI mirror (the classic charts.bitnami.com repo
+  # is being retired). Standalone, in-cluster, auth on; produces REDIS_URL wiring.
+  redis:
+    source: chartRepo
+    repoURL: oci://registry-1.docker.io/bitnamicharts
+    chart: redis
+    version: 20.6.3
+    defaultNamespace: platform-data
+    defaultValues:
+      architecture: standalone
+      auth:
+        enabled: true
+      master:
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 2Gi
+      replica:
+        replicaCount: 0
+    description: >-
+      Standalone in-cluster Redis (cache). ClusterIP, auth enabled, local-path PVC.
+      Backs apps that declare `cache: redis` (REDIS_URL / <NAME>_REDIS_URL, Tier D).
+
+  # ── external-secrets — SSM/local secret sync ─────────────────────────────────
+  # The operator that materializes ExternalSecret -> k8s Secret. Required wherever
+  # externalSecret.enabled apps run. In dev it backs the LOCAL provider (Kubernetes
+  # SecretStore); in prod it backs the AWS SSM ClusterSecretStore.
+  external-secrets:
+    source: chartRepo
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    version: 0.14.4
+    defaultNamespace: external-secrets
+    defaultValues:
+      installCRDs: true
+    description: >-
+      external-secrets operator. Reconciles ExternalSecret objects into k8s Secrets
+      from a backend SecretStore/ClusterSecretStore. Per-env backend: dev=local
+      (Kubernetes provider / in-cluster Secret), prod=AWS SSM. The app chart's
+      externalSecret.storeRef points at the env store this operator serves.
+
+  # ── monitoring — kube-prometheus-stack (Prometheus + Grafana + Alertmanager) ──
+  # DEFAULT-DISABLED: the homelab already runs one kube-prometheus-stack whose
+  # Prometheus discovers ServiceMonitors via `release: prometheus`. The app chart's
+  # serviceMonitor.releaseLabel defaults to "prometheus" so those existing
+  # Prometheus instances pick apps up WITHOUT installing this module. Enable this
+  # only on a cluster that has no monitoring stack yet.
+  monitoring:
+    source: chartRepo
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    version: 66.3.1
+    defaultNamespace: monitoring
+    defaultValues:
+      # If installed, name the Prometheus release "prometheus" so it matches the
+      # serviceMonitor.releaseLabel apps already carry.
+      fullnameOverride: prometheus
+      prometheus:
+        prometheusSpec:
+          serviceMonitorSelectorNilUsesHelmValues: false
+    description: >-
+      kube-prometheus-stack (Prometheus + Grafana + Alertmanager). DISABLED by
+      default — the homelab already runs one that discovers ServiceMonitors via
+      `release: prometheus`. Enable only on a cluster with no existing monitoring.
+
+  # ── cert-manager — TLS certificate automation ───────────────────────────────
+  # Disabled by default on the LAN homelab (Cloudflare Tunnel terminates TLS at the
+  # edge; in-cluster traffic is plain HTTP on a trusted network). Useful in prod or
+  # for in-cluster mTLS / webhook certs; enable per-env as needed.
+  cert-manager:
+    source: chartRepo
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    version: v1.16.2
+    defaultNamespace: cert-manager
+    defaultValues:
+      crds:
+        enabled: true
+    description: >-
+      cert-manager (ACME / internal CA TLS automation). Disabled by default —
+      Cloudflare Tunnel terminates public TLS at the edge and the LAN is plain HTTP.
+      Enable for in-cluster certs (webhooks, mTLS) or cloud envs that need ACME.
+
+  # ── yscale — ephemeral cloud-node burst autoscaler (DEFERRED, disabled) ──────
+  # Real chart (image ghcr.io/jakenesler/yscale-controller); it bursts EPHEMERAL
+  # cloud nodes (Fly.io) joined over Tailscale in k3s mode. On a LAN cluster there
+  # is nothing to burst into, so it ships enabled:false everywhere. chartRepo so it
+  # is pinned; do NOT deploy.
+  yscale:
+    source: chartRepo
+    repoURL: oci://ghcr.io/jakenesler/charts
+    chart: yscale
+    version: 0.1.0
+    defaultNamespace: yscale-system
+    defaultValues:
+      # Belt-and-suspenders: even if mistakenly enabled, the controller itself is
+      # configured to do nothing here. (Real config lives in the yscale chart.)
+      enabled: false
+    description: >-
+      yscale ephemeral-cloud-node burst autoscaler (join.mode=k3s + Fly.io burst +
+      Tailscale). DEFERRED / disabled — it bursts ephemeral CLOUD nodes, so there
+      is nothing to do on a LAN cluster. Pinned here for catalog completeness only.
+
+  # ── unifi-controller — homelab network controller (example module, disabled) ─
+  # A homelab-flavored EXAMPLE of a stateful community-chart module: shows the
+  # registry shape for a stock app the platform can adopt. Disabled by default.
+  unifi-controller:
+    source: chartRepo
+    repoURL: https://charts.gabe565.com
+    chart: unifi-controller
+    version: 0.7.2
+    defaultNamespace: unifi
+    defaultValues:
+      persistence:
+        config:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi
+    description: >-
+      UniFi Network controller — a homelab EXAMPLE module (stock community chart)
+      demonstrating the registry shape for adopting a stateful third-party service.
+      Disabled by default; enable on the homelab if you want platformctl to own it.

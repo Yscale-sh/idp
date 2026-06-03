@@ -1,0 +1,19 @@
+apiVersion: v2
+name: dev-postgres
+description: >-
+  Minimal, single-replica PostgreSQL for platformctl dev / on-prem environments.
+  ClusterIP only (never a LoadBalancer), password generated into a Secret (never
+  hardcoded), local-path PVC. Exposes a DATABASE_URL-compatible Secret the app
+  chart wires into apps as DATABASE_URL / <NAME>_DATABASE_URL (ENV.md Tier D).
+  Not for production: prod uses a managed/HA Postgres (see environments/prod).
+type: application
+version: 0.1.0
+appVersion: "16"
+keywords:
+  - postgres
+  - database
+  - dev
+  - homelab
+maintainers:
+  - name: Jake Nesler
+    url: https://github.com/jakenesler

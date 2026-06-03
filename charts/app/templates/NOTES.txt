@@ -1,0 +1,36 @@
+{{ include "app.name" . }} deployed via platformctl shared app chart (charts/app).
+
+  Environment : {{ .Values.platform.env | default "(unset)" }}
+  Namespace   : {{ .Release.Namespace }}
+  Image       : {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  Service     : {{ include "app.fullname" . }} (ClusterIP) :{{ .Values.service.port }}
+
+This app is ClusterIP ONLY — there is no LoadBalancer and no Ingress in this
+chart. Public exposure (if any) is wired by Cloudflare Tunnel out-of-chart based
+on the app's routes.
+
+In-cluster address (server-to-server):
+  http://{{ include "app.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+{{- if .Values.keda.enabled }}
+
+Autoscaling: KEDA {{ .Values.keda.kind | default "ScaledObject" }} ({{ .Values.keda.minReplicas }}..{{ .Values.keda.maxReplicas }} replicas).
+{{- else }}
+
+Replicas: {{ .Values.replicas }} (static; enable sizing.autoscale to use KEDA).
+{{- end }}
+{{- if .Values.externalSecret.enabled }}
+
+Secrets: ExternalSecret -> Secret/{{ include "app.secretName" . }} via backend={{ .Values.externalSecret.backend }} (store {{ .Values.externalSecret.storeRef.name }}).
+{{- else }}
+
+Secrets: externalSecret disabled — the pod has only Tier-A + plain env. Enable a
+secrets backend before this app can reach its database / shared groups.
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+
+Metrics: ServiceMonitor enabled (release={{ .Values.serviceMonitor.releaseLabel | default "prometheus" }}, path={{ .Values.serviceMonitor.path }}).
+{{- end }}
+
+Reminder: Argo CD is the only writer. Reconcile by committing the rendered
+environments/{{ .Values.platform.env | default "<env>" }}/apps/{{ include "app.name" . }}.yaml, never by `helm install` by hand.

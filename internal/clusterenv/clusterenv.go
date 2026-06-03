@@ -1,0 +1,382 @@
+// Package clusterenv models environments/<env>/cluster.yaml: the per-environment
+// configuration that the renderer, policy, secrets, and modules packages consume.
+//
+// One file per environment carries everything that is NOT in a developer's
+// deploy.yaml: the secrets backend + SecretStore, the platform observability
+// endpoints injected as Tier-A env, the approved route zones, the resource
+// bounds for policy, and the module registry (platform infra to reconcile).
+//
+// This file is platform-authored (committed, OSS-clean: no secret values, only
+// references and endpoints). It is the single source of env-specific truth.
+package clusterenv
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"sigs.k8s.io/yaml"
+)
+
+// Backend selects the secrets backend for an environment.
+const (
+	BackendLocal = "local" // dev/on-prem: external-secrets Kubernetes provider or plain Secret.
+	BackendSSM   = "ssm"   // prod/cloud: AWS SSM Parameter Store via external-secrets.
+)
+
+// SecretStore kinds (external-secrets).
+const (
+	KindClusterSecretStore = "ClusterSecretStore"
+	KindSecretStore        = "SecretStore"
+)
+
+// Module source kinds.
+const (
+	SourceLocalChart = "localChart" // chart lives in this repo under charts/.
+	SourceChartRepo  = "chartRepo"  // chart pulled from a Helm repo or OCI registry.
+)
+
+// Config is the parsed environments/<env>/cluster.yaml.
+type Config struct {
+	// Env is the environment name (dev|prod|local|...). Defaults from the path.
+	Env string `json:"env,omitempty"`
+
+	// Secrets configures the per-env secrets backend and the SecretStore the app
+	// chart's ExternalSecret references.
+	Secrets SecretsConfig `json:"secrets,omitempty"`
+
+	// Observability holds the platform endpoints injected into every app as
+	// Tier-A env (LOKI_URL, OTEL_EXPORTER_OTLP_ENDPOINT, CONSOLE_LOGGING).
+	Observability Observability `json:"observability,omitempty"`
+
+	// Zones is the set of approved DNS zones (suffixes) a route host must fall
+	// under. A route host outside every zone is a policy violation.
+	Zones []string `json:"zones,omitempty"`
+
+	// ResourceBounds caps per-app resource requests/limits for policy.
+	ResourceBounds *ResourceBounds `json:"resourceBounds,omitempty"`
+
+	// AllowMutableTags lets a non-prod env tolerate :latest. Prod is hard-coded
+	// to reject it regardless of this flag.
+	AllowMutableTags bool `json:"allowMutableTags,omitempty"`
+
+	// Domain is the cluster-internal DNS domain for clusterService connections.
+	// Defaults to "svc.cluster.local".
+	Domain string `json:"domain,omitempty"`
+
+	// Argo holds Argo CD wiring (the repo URL apps point their source at, and
+	// the namespace Argo runs in). Defaults applied if unset.
+	Argo ArgoConfig `json:"argo,omitempty"`
+
+	// Modules is the platform module registry for this env.
+	Modules map[string]Module `json:"modules,omitempty"`
+}
+
+// SecretsConfig is the env's secrets backend + store reference.
+type SecretsConfig struct {
+	// Backend is local|ssm.
+	Backend string `json:"backend,omitempty"`
+
+	// StoreRef points the app chart's ExternalSecret at the env's
+	// SecretStore/ClusterSecretStore.
+	StoreRef StoreRef `json:"storeRef,omitempty"`
+
+	// RefreshInterval is how often external-secrets re-reads the backend.
+	RefreshInterval string `json:"refreshInterval,omitempty"`
+}
+
+// StoreRef references an external-secrets SecretStore or ClusterSecretStore.
+type StoreRef struct {
+	Name string `json:"name,omitempty"`
+	Kind string `json:"kind,omitempty"`
+}
+
+// Observability holds the platform endpoints injected as Tier-A env.
+type Observability struct {
+	LokiURL        string `json:"lokiURL,omitempty"`
+	OTLPEndpoint   string `json:"otlpEndpoint,omitempty"`
+	ConsoleLogging *bool  `json:"consoleLogging,omitempty"`
+}
+
+// ResourceBounds caps requests/limits. Values are Kubernetes quantity strings.
+type ResourceBounds struct {
+	MaxCPU    string `json:"maxCPU,omitempty"`    // e.g. "2"
+	MaxMemory string `json:"maxMemory,omitempty"` // e.g. "2Gi"
+}
+
+// ArgoConfig is the env's Argo CD wiring.
+type ArgoConfig struct {
+	// Namespace is where Argo CD runs (the Application objects' namespace).
+	Namespace string `json:"namespace,omitempty"`
+
+	// RepoURL is the git repo Argo apps source from (this platform repo).
+	RepoURL string `json:"repoURL,omitempty"`
+
+	// TargetRevision is the git ref Argo tracks (e.g. HEAD, main, v1).
+	TargetRevision string `json:"targetRevision,omitempty"`
+}
+
+// Module is one entry in the registry: a Helm release Argo reconciles.
+type Module struct {
+	Enabled   bool           `json:"enabled,omitempty"`
+	Source    string         `json:"source,omitempty"` // localChart | chartRepo
+	Chart     string         `json:"chart,omitempty"`  // charts/infra/<x> OR repo chart name
+	RepoURL   string         `json:"repoURL,omitempty"`
+	Version   string         `json:"version,omitempty"` // required for chartRepo
+	Namespace string         `json:"namespace,omitempty"`
+	Values    map[string]any `json:"values,omitempty"`
+}
+
+// Defaults that apply when cluster.yaml omits a field.
+const (
+	DefaultDomain         = "svc.cluster.local"
+	DefaultArgoNamespace  = "argocd"
+	DefaultTargetRevision = "HEAD"
+	DefaultRefresh        = "1h"
+)
+
+// Load reads and parses environments/<env>/cluster.yaml, applies defaults, and
+// validates it. The env name defaults from the path if the file omits it.
+func Load(path string) (*Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read cluster config %q: %w", path, err)
+	}
+	var c Config
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		return nil, fmt.Errorf("parse cluster config %q: %w", path, err)
+	}
+	if c.Env == "" {
+		c.Env = envFromPath(path)
+	}
+	c.ApplyDefaults()
+	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid cluster config %q: %w", path, err)
+	}
+	return &c, nil
+}
+
+// LoadForEnv loads environments/<env>/cluster.yaml relative to a platform repo
+// root.
+func LoadForEnv(root, env string) (*Config, error) {
+	return Load(filepath.Join(root, "environments", env, "cluster.yaml"))
+}
+
+// envFromPath extracts <env> from .../environments/<env>/cluster.yaml.
+func envFromPath(path string) string {
+	dir := filepath.Dir(path)    // .../environments/<env>
+	parent := filepath.Base(dir) // <env>
+	if filepath.Base(filepath.Dir(dir)) == "environments" {
+		return parent
+	}
+	return parent
+}
+
+// ApplyDefaults fills env-conventional defaults in place (idempotent).
+func (c *Config) ApplyDefaults() {
+	if c.Domain == "" {
+		c.Domain = DefaultDomain
+	}
+	if c.Argo.Namespace == "" {
+		c.Argo.Namespace = DefaultArgoNamespace
+	}
+	if c.Argo.TargetRevision == "" {
+		c.Argo.TargetRevision = DefaultTargetRevision
+	}
+	if c.Secrets.RefreshInterval == "" {
+		c.Secrets.RefreshInterval = DefaultRefresh
+	}
+	// Backend default by env name when unset.
+	if c.Secrets.Backend == "" {
+		if c.Env == "prod" {
+			c.Secrets.Backend = BackendSSM
+		} else {
+			c.Secrets.Backend = BackendLocal
+		}
+	}
+	if c.Secrets.StoreRef.Kind == "" {
+		c.Secrets.StoreRef.Kind = KindClusterSecretStore
+	}
+}
+
+// Validate checks the env config is internally consistent.
+func (c *Config) Validate() error {
+	if c.Secrets.Backend != BackendLocal && c.Secrets.Backend != BackendSSM {
+		return fmt.Errorf("secrets.backend %q must be %q or %q", c.Secrets.Backend, BackendLocal, BackendSSM)
+	}
+	if c.Secrets.StoreRef.Name == "" {
+		return fmt.Errorf("secrets.storeRef.name is required")
+	}
+	if k := c.Secrets.StoreRef.Kind; k != KindClusterSecretStore && k != KindSecretStore {
+		return fmt.Errorf("secrets.storeRef.kind %q must be %q or %q", k, KindClusterSecretStore, KindSecretStore)
+	}
+	for name, m := range c.Modules {
+		if !m.Enabled {
+			continue
+		}
+		switch m.Source {
+		case SourceLocalChart:
+			if m.Chart == "" {
+				return fmt.Errorf("module %q: chart path required for localChart", name)
+			}
+		case SourceChartRepo:
+			if m.Chart == "" {
+				return fmt.Errorf("module %q: chart name required for chartRepo", name)
+			}
+			if m.Version == "" {
+				return fmt.Errorf("module %q: version is required for chartRepo (must be pinned)", name)
+			}
+		default:
+			return fmt.Errorf("module %q: source %q must be %q or %q", name, m.Source, SourceLocalChart, SourceChartRepo)
+		}
+	}
+	return nil
+}
+
+// Per-app dev Postgres defaults. The shared dev-postgres MODULE is gone: in dev,
+// when an app declares db: postgres, the render path emits a DEDICATED
+// dev-postgres Argo Application per app, into its own namespace
+// <app>-<env>-postgres. The Helm release name is the Argo app name
+// (<app>-postgres); the dev-postgres chart's fullname helper collapses that
+// release to the Service name, so the in-cluster Service DNS is
+// <app>-postgres.<app>-<env>-postgres.svc.cluster.local.
+//
+// These constants are the dev "data store defaults" (DB name, placeholder
+// password, node pin) that used to live in environments/dev/cluster.yaml's
+// dev-postgres module values. They now live here so the renderer and the
+// per-app Postgres Application stay in lockstep.
+const (
+	// DevPostgresTool is the store "tool"/purpose segment of the per-app Postgres
+	// namespace and the suffix of its Argo Application / Helm release name.
+	DevPostgresTool        = "postgres"
+	DevPostgresDefaultPort = "5432"
+	DevPostgresDefaultUser = "app"
+	// DevPostgresDefaultPassword is a clearly-marked DEV placeholder. The renderer
+	// only emits it for the local (dev) backend so an app can boot against its
+	// per-app in-cluster dev Postgres with no external-secrets operator. It is
+	// pinned identically into the rendered dev-postgres Application
+	// (auth.password) so the rendered DATABASE_URL matches what the chart
+	// provisions. NEVER a real secret; prod uses backend=ssm and never sees this.
+	DevPostgresDefaultPassword = "dev-postgres-placeholder"
+	// DevPostgresNode pins the per-app dev Postgres to the homelab baseline node so
+	// the local-path PVC always reschedules onto the box that holds the data.
+	DevPostgresNode = "optiplex-pg"
+)
+
+// DevPostgresReleaseName is the Helm release / Argo Application name for an app's
+// dedicated dev Postgres: <app>-postgres.
+func DevPostgresReleaseName(app string) string {
+	return app + "-" + DevPostgresTool
+}
+
+// DevPostgresService is the in-cluster Service name for an app's dedicated dev
+// Postgres. The dev-postgres chart fullname helper collapses to the release name
+// when the chart name ("dev-postgres") is already contained in the release;
+// <app>-postgres does NOT contain "dev-postgres", so the fullname is
+// <release>-<chartname> = <app>-postgres-dev-postgres.
+func DevPostgresService(app string) string {
+	return DevPostgresReleaseName(app) + "-dev-postgres"
+}
+
+// DevPostgresNamespace is the dedicated namespace for an app's dev Postgres:
+// <app>-<env>-postgres.
+func DevPostgresNamespace(app, env string) string {
+	return appDNSLabel(app + "-" + env + "-" + DevPostgresTool)
+}
+
+// DevPostgresDatabase is the per-app database name on the app's dedicated dev
+// Postgres. It is derived from the app name so each app gets its own DB.
+func DevPostgresDatabase(app string) string {
+	return appDNSLabel(app)
+}
+
+// DevDatabaseURL returns a working in-cluster Postgres connection URL for the dev
+// (local) backend, pointing at the app's DEDICATED per-app dev Postgres. app is
+// the owning app name; dbName is the requested db's logical handle (informational
+// — the per-app dev Postgres serves a single database named after the app).
+// Returns "" when there is no env config.
+//
+// The URL host is the CROSS-NAMESPACE FQDN
+// <pg-service>.<app>-<env>-postgres.svc.cluster.local:<port>/<db> with
+// sslmode=disable (in-cluster dev traffic). User/password/db come from the dev
+// data-store defaults above; password is the marked dev placeholder.
+func DevDatabaseURL(c *Config, app, dbName string) string {
+	if c == nil {
+		return ""
+	}
+	ns := DevPostgresNamespace(app, c.Env)
+	svc := DevPostgresService(app)
+	user := DevPostgresDefaultUser
+	pass := DevPostgresDefaultPassword
+	db := DevPostgresDatabase(app)
+	port := DevPostgresDefaultPort
+	// c.Domain is the cluster-internal DNS domain (defaults to svc.cluster.local),
+	// so the FQDN is <service>.<ns>.<domain> — no extra "svc." literal.
+	host := fmt.Sprintf("%s.%s.%s", svc, ns, c.Domain)
+	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable", user, pass, host, port, db)
+}
+
+// appDNSLabel lowercases s and reduces it to a valid RFC1123 DNS label (only
+// [a-z0-9-], no leading/trailing/double dashes, max 63 chars). It mirrors
+// appconfig.SanitizeDNSLabel; it is duplicated here (a few lines) only to keep
+// clusterenv dependency-free of appconfig (appconfig must not import clusterenv,
+// and clusterenv is imported by render alongside appconfig).
+func appDNSLabel(s string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 63 {
+		out = strings.Trim(out[:63], "-")
+	}
+	return out
+}
+
+// ConsoleLoggingValue returns the effective CONSOLE_LOGGING string ("true" by
+// default), suitable for direct injection as a Tier-A env value.
+func (o Observability) ConsoleLoggingValue() string {
+	if o.ConsoleLogging != nil && !*o.ConsoleLogging {
+		return "false"
+	}
+	return "true"
+}
+
+// HostInZone reports whether host falls under any approved zone. A zone matches
+// if the host equals it or ends with "."+zone. An empty zone list means no
+// zones are configured (policy treats that as "unrestricted" for dev usability;
+// prod configs should always set zones).
+func (c *Config) HostInZone(host string) bool {
+	if len(c.Zones) == 0 {
+		return true
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	for _, z := range c.Zones {
+		z = strings.TrimSuffix(strings.ToLower(z), ".")
+		// Wildcard zone "*.example.com" matches any subdomain of example.com
+		// (and the apex example.com itself).
+		if strings.HasPrefix(z, "*.") {
+			base := z[2:]
+			if host == base || strings.HasSuffix(host, "."+base) {
+				return true
+			}
+			continue
+		}
+		// Exact zone "carshowdb.local" matches that host or any subdomain.
+		if host == z || strings.HasSuffix(host, "."+z) {
+			return true
+		}
+	}
+	return false
+}

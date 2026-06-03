@@ -1,0 +1,69 @@
+# platform-dev-root — the dev app-of-apps (root Argo CD Application).
+#
+# This is the ONE imperative bootstrap step for the dev environment. After it is
+# applied once, Argo CD becomes the only writer: every infra module and every app
+# is reconciled from git. "Deploying" is then a git commit into this repo, never
+# `kubectl apply` / `helm upgrade` by hand.
+#
+# What it does:
+#   source.path = environments/dev  with directory.recurse=true  →  Argo CD watches
+#   EVERY manifest under environments/dev/ (apps/*.yaml + infra/*.yaml). Each of
+#   those files is itself an Argo CD Application (rendered by `platformctl render`
+#   and `platformctl infra render`), so this is a classic app-of-apps fan-out:
+#
+#     platform-dev-root
+#       ├─ environments/dev/infra/*.yaml   (enabled module Applications: keda, dev-postgres, ...)
+#       └─ environments/dev/apps/*.yaml    (per-app Applications: carshowdb, ...)
+#
+#   A new app or module is just one new rendered file under environments/dev/ that
+#   this root auto-discovers on the next sync — no edit to this file is needed.
+#
+# Bootstrap (operator, once):
+#   kubectl apply -n argocd -f argocd/platform-dev-root.yaml
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-dev-root
+  namespace: argocd
+  labels:
+    platform/managed-by: platformctl
+    platform/env: dev
+    platform/role: root
+  # Keep the root app itself from being pruned by an accidental parent sync.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # THIS repo. Placeholder URL — replace with the real remote (or, for local dev,
+    # point Argo CD at the pushed remote / a file-based repo you have registered).
+    # For local k3d/dev you can also `argocd repo add <url>` first, or register a
+    # path-based repo. The path + recurse below are what matter most.
+    repoURL: https://github.com/jakenesler/platformctl
+    targetRevision: HEAD
+    path: environments/dev
+    directory:
+      recurse: true
+      # Only treat real desired-state manifests as children. cluster.yaml is the
+      # module *registry* (input to `platformctl infra render`), not an Argo object,
+      # so it is excluded from what Argo tries to apply.
+      include: '{apps/*.yaml,infra/*.yaml}'
+      exclude: 'cluster.yaml'
+  destination:
+    # In-cluster: the same cluster Argo CD runs in (homelab k3s "dev").
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true       # remove children whose rendered file was deleted from git
+      selfHeal: true    # revert out-of-band drift back to git
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

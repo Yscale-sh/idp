@@ -1,0 +1,25 @@
+{{/*
+ClusterIP Service — the ONLY exposure this chart renders.
+
+HARD GUARDRAIL: type is the literal string "ClusterIP". There is intentionally
+no path that interpolates .Values.service.type into the type field, so a
+LoadBalancer can never be produced. The guard below additionally FAILS the
+render if anyone smuggles a non-ClusterIP service.type into the values, so a
+mistake is a loud policy error rather than a silently-exposed NodeBalancer.
+*/}}
+{{- include "app.serviceTypeGuard" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "app.selectorLabels" . | nindent 4 }}

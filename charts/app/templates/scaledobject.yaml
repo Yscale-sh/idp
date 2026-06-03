@@ -1,0 +1,63 @@
+{{- if .Values.keda.enabled -}}
+{{- $kind := .Values.keda.kind | default "ScaledObject" -}}
+{{- if eq $kind "HTTPScaledObject" -}}
+{{/*
+HTTP request-rate autoscaling (scale-to-zero capable). KEDA's http-add-on
+interceptor routes traffic and scales the workload off pending request depth.
+*/}}
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  hosts:
+    {{- if .Values.keda.http.hosts }}
+    {{- toYaml .Values.keda.http.hosts | nindent 4 }}
+    {{- else }}
+    []
+    {{- end }}
+  pathPrefixes:
+    {{- toYaml (.Values.keda.http.pathPrefixes | default (list "/")) | nindent 4 }}
+  scaleTargetRef:
+    name: {{ include "app.fullname" . }}
+    kind: Deployment
+    apiVersion: apps/v1
+    service: {{ include "app.fullname" . }}
+    port: {{ .Values.service.port }}
+  replicas:
+    min: {{ .Values.keda.minReplicas }}
+    max: {{ .Values.keda.maxReplicas }}
+  scalingMetric:
+    requestRate:
+      granularity: 1s
+      targetValue: {{ .Values.keda.http.targetPendingRequests | default 100 }}
+      window: 1m
+  scaledownPeriod: {{ .Values.keda.http.scaledownPeriod | default 300 }}
+{{- else -}}
+{{/*
+Standard KEDA ScaledObject (cpu/memory/cron/prometheus/...). Triggers are passed
+through verbatim from values.keda.triggers, so any KEDA scaler works without this
+chart enumerating them.
+*/}}
+{{- if not .Values.keda.triggers -}}
+{{- fail "keda.enabled with kind=ScaledObject requires at least one entry in keda.triggers" -}}
+{{- end -}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "app.fullname" . }}
+  minReplicaCount: {{ .Values.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.keda.maxReplicas }}
+  triggers:
+    {{- toYaml .Values.keda.triggers | nindent 4 }}
+{{- end -}}
+{{- end -}}

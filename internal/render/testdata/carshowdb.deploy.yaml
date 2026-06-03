@@ -1,0 +1,40 @@
+app: carshowdb
+
+# component is the workload "purpose": the {purpose} segment of the app's own
+# namespace (<app>-<env>-<component>). carshowdb is the API, so its namespace is
+# carshowdb-dev-api / carshowdb-prod-api. Mirrors examples/carshowdb/deploy.yaml.
+component: api
+
+runtime:
+  image: ghcr.io/jakenesler/carshowdb-api
+  port: 8080
+
+routes:
+  - host: carshowdb.local
+    public: false
+    access:
+      humans: false
+      serviceToken: false
+  - host: carshowdb.example.com
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+
+sizing:
+  profile: minimal
+  replicas: 2
+  autoscale:
+    enabled: true
+    min: 2
+    max: 5
+
+db:
+  - name: primary
+    type: postgres
+    size: minimal
+
+logging:
+  enabled: true
+metrics:
+  enabled: true

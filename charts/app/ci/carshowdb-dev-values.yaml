@@ -1,0 +1,144 @@
+# Hand-rendered values for `helm template carshowdb charts/app`, derived from
+# examples/carshowdb/deploy.yaml per the phase-1 contract (App.Resolve("dev")).
+# This is the shape platformctl render would write into the Argo CD Application.
+# It also doubles as the helm-lint values file (image.tag is populated).
+#
+# Render basis:
+#   app: carshowdb, env: dev, profile: minimal, replicas: 2,
+#   autoscale{enabled, min:2, max:5} -> KEDA ScaledObject (cpu trigger, v2.17 shape),
+#   db: [{primary, postgres}] -> DATABASE_URL + PRIMARY_DATABASE_URL,
+#   dev backend = local -> plain runtime Secret <carshowdb-runtime> (no operator):
+#     DATABASE_URL points at the in-cluster dev Postgres; app keys are dev placeholders.
+
+image:
+  repository: ghcr.io/jakenesler/carshowdb-api
+  tag: dev-abc1234            # CI --image injects the immutable tag
+  pullPolicy: IfNotPresent
+
+# Object form {name: <secret>} (k8s shape), NOT a bare string.
+imagePullSecrets:
+  - name: ghcr-pull
+
+port: 8080
+replicas: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+service:
+  port: 8080
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+routes:
+  - host: carshowdb.local
+    public: false
+    access: { humans: false, serviceToken: false }
+
+env:
+  tierA:
+    ENVIRONMENT: dev
+    LOKI_URL: http://loki.monitoring.svc.cluster.local:3100
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.monitoring.svc.cluster.local:4317
+    CONSOLE_LOGGING: "true"
+    DEPLOY_TIME: "2026-06-02T00:00:00Z"
+    PORT: "8080"
+  extra: {}
+
+# Dev backend = local: the chart renders a PLAIN Secret carshowdb-runtime (no
+# external-secrets operator). storeRef/dataFrom/remoteRefs are inert for local
+# (they apply to the ssm/prod ExternalSecret path); kept here for shape parity and
+# made consistent with the env (ClusterSecretStore).
+externalSecret:
+  enabled: true
+  backend: local
+  refreshInterval: 1h
+  storeRef:
+    name: platform-local
+    kind: ClusterSecretStore
+  dataFrom:
+    - extract:
+        key: /apps/carshowdb/dev
+  remoteRefs:
+    - secretKey: STRIPE_SECRET_KEY
+      remoteRef: { key: /shared/stripe/STRIPE_SECRET_KEY }
+    - secretKey: SENDGRID_API_KEY
+      remoteRef: { key: /shared/sendgrid/SENDGRID_API_KEY }
+
+keda:
+  enabled: true
+  kind: ScaledObject
+  minReplicas: 2
+  maxReplicas: 5
+  triggers:
+    # KEDA v2.17+ shape: trigger-level metricType + metadata.value (NOT metadata.type).
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+  http:
+    hosts: []
+    pathPrefixes: ["/"]
+    targetPendingRequests: 100
+    scaledownPeriod: 300
+
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  port: http
+  interval: 30s
+  releaseLabel: prometheus
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# db -> DATABASE_URL (alias) + PRIMARY_DATABASE_URL, wired into the pod via
+# secretKeyRef to carshowdb-runtime. connection.url is the in-cluster dev Postgres
+# the plain Secret carries (dev backend); prod omits connection (URL comes from SSM).
+db:
+  - name: primary
+    type: postgres
+    default: true
+    urlKeys:
+      - DATABASE_URL
+      - PRIMARY_DATABASE_URL
+    connection:
+      # Cross-namespace FQDN of carshowdb's DEDICATED per-app dev Postgres (rendered
+      # as a sibling Argo Application into namespace carshowdb-dev-postgres). Service
+      # name is the dev-postgres chart fullname for release <app>-postgres:
+      # <app>-postgres-dev-postgres. Matches clusterenv.DevDatabaseURL / the renderer.
+      url: postgres://app:CHANGEME@dev-postgres:5432/app/carshowdb?sslmode=disable
+
+cache: []
+
+# Dev placeholders so carshowdb boots with no external-secrets operator. NEVER
+# real secrets; prod overrides every key from SSM via the ExternalSecret.
+devSecretPlaceholders:
+  - { name: JWT_SECRET, value: dev-placeholder }
+  - { name: GEMINI_API_KEY, value: dev-placeholder }
+  - { name: GEMINI_MODEL, value: dev-placeholder }
+  - { name: SENDGRID_API_KEY, value: dev-placeholder }
+  - { name: STRIPE_SECRET_KEY, value: dev-placeholder }
+  - { name: STRIPE_PUBLISHABLE_KEY, value: dev-placeholder }
+  - { name: STRIPE_WEBHOOK_SECRET, value: dev-placeholder }
+
+platform:
+  app: carshowdb
+  env: dev
+  product: ""
+  component: api            # carshowdb's component/purpose -> namespace carshowdb-dev-api
+  managedBy: platformctl
