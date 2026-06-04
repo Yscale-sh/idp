@@ -75,6 +75,14 @@ nodeSelector: {}
 affinity: {}
 tolerations: []
 
+# ── platform-injected pod splice points (NOT in the deploy.yaml contract) ─────
+# The Go renderer appends fully-formed container/volume specs here from rendered
+# values — e.g. the cloudflared Cloudflare-Tunnel sidecar + its config volume for
+# public routes. Empty by default, so the splice templates in deployment.yaml are
+# a no-op for every app that doesn't opt in.
+sidecars: []   # extra containers appended to the pod (e.g. cloudflared)
+volumes: []    # extra pod volumes (e.g. the cloudflared tunnel-config ConfigMap)
+
 # Active resource envelope. The renderer selects this from sizing.profile.
 # resourceProfiles below documents the presets (informational; not consumed
 # directly by the template — the renderer copies the chosen one into resources).

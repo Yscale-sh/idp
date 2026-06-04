@@ -111,6 +111,14 @@ spec:
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- /*
+        Platform-injected sidecars (e.g. the cloudflared Cloudflare-Tunnel sidecar
+        for public routes). The Go renderer appends fully-formed container specs
+        here from rendered values; empty by default so this is a no-op.
+        */}}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -121,5 +129,11 @@ spec:
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- /* Platform-injected pod volumes (e.g. the cloudflared tunnel config
+      ConfigMap). Empty by default; the Go renderer populates it alongside sidecars. */}}
+      {{- with .Values.volumes }}
+      volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}
