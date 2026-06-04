@@ -1,0 +1,148 @@
+# Reusable JDP ship workflow. An app repo calls this (uses: jakenesler/jdp/.github/
+# workflows/ship.yml@v1) and the platform does the rest: build + push the app image,
+# render its deploy.yaml into the env umbrella (clusters/<env>/platform.yaml) in the
+# jdp repo, and commit it — Flux then reconciles. Teardown (inputs.remove=true)
+# removes the app from the umbrella instead, so Flux prunes it.
+#
+# The render/remove runs jdpctl via `docker run` (the jdpctl image bundles helm so
+# the no-LB guardrail stays at full strength) rather than a job container, so the
+# app-image `docker build` works on the host runner without Docker-in-Docker.
+name: ship
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: "Target environment (dev | prod)"
+        type: string
+        required: true
+      deploy-file:
+        type: string
+        default: deploy.yaml
+      jdpctl-tag:
+        description: "ghcr.io/jakenesler/jdpctl image tag to run (pin a major, e.g. v1)"
+        type: string
+        default: v1
+      remove:
+        description: "Tear down: remove the app from the platform instead of deploying"
+        type: boolean
+        default: false
+    secrets:
+      JDP_APP_ID:
+        required: false
+      JDP_APP_PRIVATE_KEY:
+        required: false
+      PLATFORM_REPO_TOKEN:
+        required: false
+
+# Serialize writers to a given env's platform.yaml so concurrent ships don't clobber.
+concurrency:
+  group: ship-${{ inputs.env }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    env:
+      JDPCTL_IMAGE: ghcr.io/jakenesler/jdpctl:${{ inputs.jdpctl-tag }}
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      - name: Read app name from deploy.yaml
+        id: app
+        run: |
+          set -euo pipefail
+          NAME="$(grep -E '^app:[[:space:]]*' "${{ inputs.deploy-file }}" | head -1 | sed -E 's/^app:[[:space:]]*//; s/[[:space:]"#].*$//')"
+          [ -n "$NAME" ] || { echo "could not read 'app:' from ${{ inputs.deploy-file }}" >&2; exit 1; }
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/jakenesler/$NAME" >> "$GITHUB_OUTPUT"
+
+      # Prefer a GitHub App (short-lived, repo-scoped) to write the platform repo;
+      # fall back to a fine-grained PAT. One of the two must be provided by the caller.
+      - name: Mint platform token (GitHub App)
+        id: apptoken
+        if: ${{ secrets.JDP_APP_ID != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.JDP_APP_ID }}
+          private-key: ${{ secrets.JDP_APP_PRIVATE_KEY }}
+          owner: jakenesler
+          repositories: jdp
+
+      - name: Resolve platform token
+        id: tok
+        env:
+          APP_TOKEN: ${{ steps.apptoken.outputs.token }}
+          PAT: ${{ secrets.PLATFORM_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          TOKEN="${APP_TOKEN:-$PAT}"
+          [ -n "$TOKEN" ] || { echo "no platform token: pass JDP_APP_ID/JDP_APP_PRIVATE_KEY or PLATFORM_REPO_TOKEN" >&2; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build + push app image (tag = commit sha)
+        if: ${{ !inputs.remove }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.app.outputs.image }}:${{ github.sha }}
+
+      - name: Checkout platform repo (jdp) into .platform
+        uses: actions/checkout@v4
+        with:
+          repository: jakenesler/jdp
+          path: .platform
+          token: ${{ steps.tok.outputs.token }}
+          ref: ${{ inputs.env == 'prod' && 'prod' || 'main' }}
+
+      - name: Render (deploy) or remove (teardown) via jdpctl
+        run: |
+          set -euo pipefail
+          docker pull "$JDPCTL_IMAGE"
+          if [ "${{ inputs.remove }}" = "true" ]; then
+            docker run --rm -v "$PWD":/w -w /w "$JDPCTL_IMAGE" \
+              remove --app "${{ steps.app.outputs.name }}" --env "${{ inputs.env }}" --root .platform
+          else
+            docker run --rm -v "$PWD":/w -w /w "$JDPCTL_IMAGE" \
+              render --env "${{ inputs.env }}" --file "${{ inputs.deploy-file }}" \
+                     --image "${{ steps.app.outputs.image }}:${{ github.sha }}" \
+                     --deploy-time "${{ github.sha }}" --root .platform
+          fi
+
+      - name: "Commit platform change (dev push to main; prod PR vs prod branch)"
+        working-directory: .platform
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "jdp-ship-bot"
+          git config user.email "jdp-ship-bot@users.noreply.github.com"
+          if git diff --quiet; then echo "no platform change — nothing to commit"; exit 0; fi
+          ACT="deploy"; [ "${{ inputs.remove }}" = "true" ] && ACT="remove"
+          MSG="ship(${{ inputs.env }}): $ACT ${{ steps.app.outputs.name }} @ ${GITHUB_SHA::12}"
+          git add -A
+          git commit -m "$MSG"
+          if [ "${{ inputs.env }}" = "prod" ]; then
+            BR="ship/${{ steps.app.outputs.name }}-${GITHUB_SHA::12}"
+            git checkout -b "$BR"
+            git push origin "$BR"
+            gh pr create --base prod --head "$BR" --title "$MSG" \
+              --body "Automated by ship.yml from ${{ github.repository }}@${{ github.sha }}. Review + merge to release to prod."
+          else
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi

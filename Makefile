@@ -6,7 +6,7 @@
 #
 # Conventions honored here:
 #   - binary is `./jdpctl` at the repo root, built from ./cmd/jdpctl
-#     (matches .gitignore's /platformctl entry; Argo CD/CI reference ./jdpctl).
+#     (matches .gitignore's /jdpctl entry; Flux/CI reference ./jdpctl).
 #   - charts live at charts/app and charts/infra/<x> (helm lint targets below).
 #   - the example app is examples/carshowdb/deploy.yaml.
 #
@@ -15,8 +15,10 @@
 # hard-fail when their inputs are missing. `make build` / `make test` always run.
 
 # ── config ───────────────────────────────────────────────────────────────────
-BINARY      := platformctl
+BINARY      := jdpctl
 CMD_PKG     := ./cmd/jdpctl
+IMAGE_REPO  ?= ghcr.io/jakenesler/jdpctl
+TAG         ?= dev
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
 EXAMPLE     := examples/carshowdb/deploy.yaml
@@ -93,6 +95,15 @@ render: build ## Render carshowdb into environments/$(ENV)/apps (IMAGE=... ENV=.
 .PHONY: infra-render
 infra-render: build ## Render enabled infra modules into environments/$(ENV)/infra.
 	./$(BINARY) infra render --env $(ENV)
+
+# ── image (the jdpctl container the reusable ship workflow runs) ─────────────────
+.PHONY: docker-build
+docker-build: ## Build the jdpctl image (jdpctl+helm+git+gh). Override TAG=...
+	docker build -t $(IMAGE_REPO):$(TAG) .
+
+.PHONY: docker-push
+docker-push: docker-build ## Build + push the jdpctl image to ghcr.
+	docker push $(IMAGE_REPO):$(TAG)
 
 # ── e2e ─────────────────────────────────────────────────────────────────────────
 .PHONY: e2e

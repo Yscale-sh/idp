@@ -12,7 +12,7 @@ import (
 	"text/template"
 )
 
-// Options drives `platformctl new app`.
+// Options drives `jdpctl new app`.
 type Options struct {
 	Name    string // app name (DNS-1123); also the image repo suffix.
 	Host    string // primary route host (optional).
@@ -36,13 +36,11 @@ func Generate(o Options) (Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	ship, err := render(shipTmpl, o)
-	if err != nil {
-		return nil, err
-	}
+	// ship.yml is a STATIC thin caller stub (literal GitHub Actions ${{ }} syntax,
+	// no Go-template vars), so it is emitted verbatim rather than through render().
 	return Files{
 		"deploy.yaml":                deploy,
-		".github/workflows/ship.yml": ship,
+		".github/workflows/ship.yml": []byte(shipTmpl),
 	}, nil
 }
 
@@ -80,7 +78,7 @@ func render(tmpl string, o Options) ([]byte, error) {
 }
 
 const deployTmpl = `# {{.Name}} — deploy.yaml (developer shopping list).
-# Render:  platformctl render --env dev --file deploy.yaml --image ghcr.io/jakenesler/{{.Name}}:<tag>
+# Render:  jdpctl render --env dev --file deploy.yaml --image ghcr.io/jakenesler/{{.Name}}:<tag>
 
 app: {{.Name}}
 {{- if .Product}}
@@ -117,32 +115,39 @@ metrics:
   enabled: true
 `
 
-const shipTmpl = `name: Ship
+// shipTmpl is the app-repo .github/workflows/ship.yml — a THIN caller stub for the
+// reusable JDP workflow. On push it builds + pushes this repo's image, renders its
+// deploy.yaml into the platform umbrella, and commits it (Flux reconciles). It is
+// STATIC (literal Actions ${{ }} syntax, no Go-template vars) so it is emitted as
+// raw bytes, not rendered. Teardown: run it manually with remove=true (or
+// `jdpctl remove`) to delete the app from the platform.
+const shipTmpl = `# Ship — onboards/updates (or tears down) this app on JDP via the reusable
+# workflow in jakenesler/jdp. The platform owns build -> render -> commit; Flux
+# reconciles. No deploy.yaml -> render details here; just the call.
+name: Ship
 on:
-  workflow_dispatch: {}
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      remove:
+        description: "Tear down: remove this app from the platform instead of deploying"
+        type: boolean
+        default: false
 
 jobs:
   ship:
-    runs-on: [self-hosted, k8s]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and push image
-        run: |
-          TAG=prod-${GITHUB_SHA::8}
-          IMG=ghcr.io/jakenesler/{{.Name}}:$TAG
-          docker buildx build --platform linux/amd64 -t "$IMG" --push .
-          echo "IMG=$IMG" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-        with:
-          repository: jakenesler/jdp
-          path: .platform
-          token: ${{"{{"}} secrets.PLATFORM_REPO_TOKEN {{"}}"}}
-      - name: Render desired state
-        run: |
-          .platform/bin/platformctl render \
-            --env prod --file deploy.yaml --image "$IMG" \
-            --root .platform
-      # Commit/PR the generated environments/ change; Flux reconciles it.
+    uses: jakenesler/jdp/.github/workflows/ship.yml@v1   # pin a released major
+    permissions:
+      contents: read
+      packages: write
+    with:
+      env: dev                      # prod apps set env: prod
+      jdpctl-tag: v1
+      remove: ${{ github.event.inputs.remove == 'true' }}
+    secrets:
+      # Prefer a GitHub App (org secrets => zero-config onboarding); PAT fallback.
+      JDP_APP_ID: ${{ secrets.JDP_APP_ID }}
+      JDP_APP_PRIVATE_KEY: ${{ secrets.JDP_APP_PRIVATE_KEY }}
+      # PLATFORM_REPO_TOKEN: ${{ secrets.PLATFORM_REPO_TOKEN }}
 `

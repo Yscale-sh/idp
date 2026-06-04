@@ -39,15 +39,22 @@ func TestGenerate_ShipWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	ship := string(files[".github/workflows/ship.yml"])
-	if !strings.Contains(ship, "ghcr.io/jakenesler/dummy-api") {
-		t.Error("ship.yml should reference the ghcr image repo")
+	// Thin caller stub: it delegates build -> render -> commit to the reusable JDP
+	// workflow rather than doing it inline.
+	if !strings.Contains(ship, "uses: jakenesler/jdp/.github/workflows/ship.yml@") {
+		t.Errorf("ship.yml should call the reusable JDP workflow:\n%s", ship)
 	}
-	if !strings.Contains(ship, "platformctl render") {
-		t.Error("ship.yml should call platformctl render")
+	// Teardown path is exposed (we must be able to tear it down too).
+	if !strings.Contains(ship, "remove:") {
+		t.Error("ship.yml should expose the teardown 'remove' input")
 	}
-	// The ${{ secrets.* }} GitHub expression must survive templating intact.
-	if !strings.Contains(ship, "${{ secrets.PLATFORM_REPO_TOKEN }}") {
+	// GitHub ${{ }} expressions must survive verbatim (static emit, no templating).
+	if !strings.Contains(ship, "${{ secrets.JDP_APP_ID }}") {
 		t.Errorf("ship.yml lost the GitHub secret expression:\n%s", ship)
+	}
+	// The old never-built binary path must be gone (confirmed bug fix).
+	if strings.Contains(ship, ".platform/bin/") {
+		t.Error("ship.yml still references the never-built .platform/bin path")
 	}
 }
 
