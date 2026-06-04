@@ -1,12 +1,12 @@
-# platformctl — developer Makefile.
+# jdpctl — developer Makefile.
 #
 # The everyday loop: `make build` (compile the CLI), `make test` (unit/golden),
 # `make lint` (go vet + helm lint), `make validate`/`make render`/`make infra-render`
 # (drive the binary on the carshowdb example), `make e2e` (ephemeral k3d cluster).
 #
 # Conventions honored here:
-#   - binary is `./platformctl` at the repo root, built from ./cmd/platformctl
-#     (matches .gitignore's /platformctl entry; Argo CD/CI reference ./platformctl).
+#   - binary is `./jdpctl` at the repo root, built from ./cmd/jdpctl
+#     (matches .gitignore's /platformctl entry; Argo CD/CI reference ./jdpctl).
 #   - charts live at charts/app and charts/infra/<x> (helm lint targets below).
 #   - the example app is examples/carshowdb/deploy.yaml.
 #
@@ -16,7 +16,7 @@
 
 # ── config ───────────────────────────────────────────────────────────────────
 BINARY      := platformctl
-CMD_PKG     := ./cmd/platformctl
+CMD_PKG     := ./cmd/jdpctl
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
 EXAMPLE     := examples/carshowdb/deploy.yaml
@@ -33,14 +33,14 @@ HELM        ?= helm
 # ── help ─────────────────────────────────────────────────────────────────────
 .PHONY: help
 help: ## Show this help.
-	@echo "platformctl — make targets:"
+	@echo "jdpctl — make targets:"
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | sort \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # ── build / test ───────────────────────────────────────────────────────────────
 .PHONY: build
-build: ## Compile the platformctl binary to ./platformctl.
+build: ## Compile the platformctl binary to ./jdpctl.
 	$(GO) build -o $(BINARY) $(CMD_PKG)
 
 .PHONY: test

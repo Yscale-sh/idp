@@ -131,11 +131,11 @@ ok "cluster up: $(kubectl get nodes --no-headers | wc -l | tr -d ' ') node(s)"
 
 # ── 2. build the CLI + render the REAL desired state ─────────────────────────
 log "Building platformctl and rendering the dev umbrella (the real desired state)"
-( cd "${REPO_ROOT}" && go build -o platformctl ./cmd/platformctl )
+( cd "${REPO_ROOT}" && go build -o jdpctl ./cmd/jdpctl )
 ok "built ${REPO_ROOT}/platformctl"
-( cd "${REPO_ROOT}" && ./platformctl render --env dev \
+( cd "${REPO_ROOT}" && ./jdpctl render --env dev \
     --file examples/carshowdb/deploy.yaml --image "${APP_IMAGE}" >/dev/null )
-( cd "${REPO_ROOT}" && ./platformctl infra render --env dev >/dev/null )
+( cd "${REPO_ROOT}" && ./jdpctl infra render --env dev >/dev/null )
 PLATFORM_YAML="${REPO_ROOT}/clusters/dev/platform.yaml"
 [[ -f "${PLATFORM_YAML}" ]] || fail "render did not produce ${PLATFORM_YAML}"
 ok "umbrella rendered: clusters/dev/platform.yaml"

@@ -20,7 +20,7 @@ argocd-initial-admin-secret*
 /dist/
 *.test
 *.out
-/platformctl
+/jdpctl
 cmd/platformctl/platformctl
 
 # ── Helm ──

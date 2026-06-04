@@ -1,4 +1,4 @@
-module github.com/jakenesler/platformctl
+module github.com/jakenesler/jdp
 
 go 1.25.0
 

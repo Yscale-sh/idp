@@ -1,8 +1,8 @@
 package render
 
 import (
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
 // HelmRelease is the subset of helm.toolkit.fluxcd.io/v2 HelmRelease we render.

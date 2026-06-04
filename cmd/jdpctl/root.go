@@ -6,13 +6,13 @@ import (
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "platformctl",
+		Use:   "jdpctl",
 		Short: "Internal Developer Platform CLI for self-hosted k3s",
-		Long: `platformctl renders a developer's deploy.yaml into desired state
+		Long: `jdpctl renders a developer's deploy.yaml into desired state
 (Flux HelmReleases + Helm values) for an environment.
 
 The default path is GitOps: render -> git commit -> Flux reconciles.
-platformctl never runs helm/kubectl against the cluster on the default path.`,
+jdpctl never runs helm/kubectl against the cluster on the default path.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

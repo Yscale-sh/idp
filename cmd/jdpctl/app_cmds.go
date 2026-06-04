@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/deploy"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/deploy"
 	"github.com/spf13/cobra"
 )
 

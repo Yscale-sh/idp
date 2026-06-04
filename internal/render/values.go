@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
-	"github.com/jakenesler/platformctl/internal/policy"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/policy"
 )
 
 // Values is the chart values document, matching charts/app/values.yaml keys

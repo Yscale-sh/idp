@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 	"sigs.k8s.io/yaml"
 )
 

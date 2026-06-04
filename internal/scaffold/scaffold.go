@@ -136,7 +136,7 @@ jobs:
           echo "IMG=$IMG" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
-          repository: jakenesler/platformctl
+          repository: jakenesler/jdp
           path: .platform
           token: ${{"{{"}} secrets.PLATFORM_REPO_TOKEN {{"}}"}}
       - name: Render desired state

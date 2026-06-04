@@ -15,8 +15,8 @@
 package secrets
 
 import (
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
 // SharedGroup is a Tier-C shared secret group stored once under /shared/<group>/*.

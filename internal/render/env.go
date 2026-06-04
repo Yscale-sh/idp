@@ -3,8 +3,8 @@ package render
 import (
 	"fmt"
 
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
 // EnvVar is one rendered environment variable. Value-style vars set Value;

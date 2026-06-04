@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
 func cfg() *clusterenv.Config {
@@ -12,7 +12,7 @@ func cfg() *clusterenv.Config {
 		Env: "dev",
 		Flux: clusterenv.FluxConfig{
 			Namespace:  "flux-system",
-			RepoURL:    "https://github.com/jakenesler/platformctl.git",
+			RepoURL:    "https://github.com/jakenesler/jdp.git",
 			Branch:     "main",
 			SourceName: "flux-system",
 		},

@@ -3,8 +3,8 @@ package render
 import (
 	"testing"
 
-	"github.com/jakenesler/platformctl/internal/appconfig"
-	"github.com/jakenesler/platformctl/internal/clusterenv"
+	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
 func TestResolveConnections_Modes(t *testing.T) {
