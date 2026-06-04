@@ -54,6 +54,19 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 			RemoteRef: map[string]string{"key": ref.RemoteKey},
 		})
 	}
+	// A non-local (prod) app with a public route runs the cloudflared sidecar, whose
+	// TUNNEL_TOKEN is a per-app, PLATFORM-provisioned secret at <appRoot>/TUNNEL_TOKEN
+	// (the developer never puts it in deploy.yaml; the platform provisions it in SSM
+	// when the public route is onboarded). Pin it EXPLICITLY — although dataFrom also
+	// pulls the whole app root, the explicit remoteRef makes the dependency + its SSM
+	// location visible in the rendered ExternalSecret and makes a missing token fail
+	// loudly at the ExternalSecret instead of as an opaque pod CreateContainerConfigError.
+	if !isLocalBackend(c) && hasPublicRoute(app) {
+		ev.RemoteRefs = append(ev.RemoteRefs, RemoteRefValues{
+			SecretKey: "TUNNEL_TOKEN",
+			RemoteRef: map[string]string{"key": spec.AppRoot + "/TUNNEL_TOKEN"},
+		})
+	}
 	return ev
 }
 

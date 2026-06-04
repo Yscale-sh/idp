@@ -59,7 +59,10 @@ spec:
           key: /apps/carshowdb/prod
       enabled: true
       refreshInterval: 1h
-      remoteRefs: []
+      remoteRefs:
+      - remoteRef:
+          key: /apps/carshowdb/prod/TUNNEL_TOKEN
+        secretKey: TUNNEL_TOKEN
       storeRef:
         kind: ClusterSecretStore
         name: platform-ssm

@@ -57,7 +57,8 @@ jobs:
         id: app
         run: |
           set -euo pipefail
-          NAME="$(grep -E '^app:[[:space:]]*' "${{ inputs.deploy-file }}" | head -1 | sed -E 's/^app:[[:space:]]*//; s/[[:space:]"#].*$//')"
+          # Robust to unquoted, "double"- and 'single'-quoted values + trailing comments.
+          NAME="$(awk '/^app:/{v=$0; sub(/^app:[[:space:]]*/,"",v); sub(/[[:space:]]*#.*$/,"",v); sub(/[[:space:]]+$/,"",v); gsub(/^["'"'"']|["'"'"']$/,"",v); print v; exit}' "${{ inputs.deploy-file }}")"
           [ -n "$NAME" ] || { echo "could not read 'app:' from ${{ inputs.deploy-file }}" >&2; exit 1; }
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/jakenesler/$NAME" >> "$GITHUB_OUTPUT"

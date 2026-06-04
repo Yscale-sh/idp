@@ -173,10 +173,15 @@ The chart sets these; apps stop hard-coding them. Rendered into
 
 **`IMAGE_NAME` is intentionally NOT injected** — Helm sets the image directly.
 
-### Tier B — Sidecar / infra env (platform-managed, NOT in per-app SSM)
+### Tier B — Sidecar / infra env (platform-managed)
 
-- **Cloudflare Tunnel**: `TUNNEL_TOKEN` — platform-owned (shared `cloudflared` or
-  per-app token).
+- **Cloudflare Tunnel**: `TUNNEL_TOKEN` — drives the per-app cloudflared sidecar the
+  app chart renders for `public: true` routes in a non-local (prod) env. It is
+  PLATFORM-managed, not a developer secret: the operator provisions it in SSM at
+  `/apps/<app>/<env>/TUNNEL_TOKEN` when a public route is onboarded (one tunnel +
+  token per app), and the renderer pins it as a remoteRef into the app's runtime
+  Secret (so a missing token fails loudly at the ExternalSecret). The developer
+  never lists it in deploy.yaml; `public: true` + prod is the only trigger.
 - **Tailscale egress**: `TAILSCALE_*` / `TS_*` — injected **only when
   `tailscaleEgress: true`** (e.g. reaching an out-of-cluster DB). Most apps drop
   these once in-cluster.

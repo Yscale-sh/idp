@@ -91,4 +91,6 @@ metrics:
 #
 # Tier-A (ENVIRONMENT, LOKI_URL, OTEL_EXPORTER_OTLP_ENDPOINT, CONSOLE_LOGGING,
 # DEPLOY_TIME, PORT) is injected by the chart automatically — not listed here.
-# Sidecars TUNNEL_TOKEN / TS_* are Tier-B (platform-managed), not per-app secrets.
+# Sidecars TUNNEL_TOKEN / TS_* are Tier-B (platform-managed): the prod cloudflared
+# tunnel reads TUNNEL_TOKEN, provisioned by the platform at
+# /apps/carshowdb/prod/TUNNEL_TOKEN in SSM when the public route is onboarded — not declared here.
