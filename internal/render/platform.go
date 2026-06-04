@@ -117,8 +117,8 @@ func newPlatformRelease(env string, c *clusterenv.Config) *PlatformRelease {
 			ReleaseName:      platformRelease,
 			TargetNamespace:  srcNS,
 			StorageNamespace: srcNS,
-			Install:          InstallSpec{CreateNamespace: true, Remediation: &RemediationSpec{Retries: remediationRetries}},
-			Upgrade:          UpgradeSpec{Remediation: &RemediationSpec{Retries: remediationRetries}},
+			Install:          InstallSpec{CreateNamespace: true, DisableWait: true, Remediation: &RemediationSpec{Retries: remediationRetries}},
+			Upgrade:          UpgradeSpec{DisableWait: true, Remediation: &RemediationSpec{Retries: remediationRetries}},
 			Chart: ChartTemplate{Spec: ChartSpec{
 				Chart:             clusterChartPath,
 				SourceRef:         SourceRef{Kind: sourceKindGitRepo, Name: srcName, Namespace: srcNS},

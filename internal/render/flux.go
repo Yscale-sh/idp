@@ -40,13 +40,19 @@ type HelmReleaseSpec struct {
 }
 
 // InstallSpec sets createNamespace=true (replaces ArgoCD CreateNamespace=true)
-// plus install remediation retries.
+// plus install remediation retries. DisableWait (set on the umbrella) makes the
+// Helm release NOT wait for its resources to become ready — for the umbrella those
+// resources are the per-app inner HelmReleases, so a single failing app no longer
+// stalls or rollback-loops the whole env; each inner HelmRelease reconciles and
+// reports health independently.
 type InstallSpec struct {
 	CreateNamespace bool             `json:"createNamespace"`
+	DisableWait     bool             `json:"disableWait,omitempty"`
 	Remediation     *RemediationSpec `json:"remediation,omitempty"`
 }
 
 type UpgradeSpec struct {
+	DisableWait bool             `json:"disableWait,omitempty"`
 	Remediation *RemediationSpec `json:"remediation,omitempty"`
 }
 
