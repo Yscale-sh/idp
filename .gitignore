@@ -32,3 +32,7 @@ node_modules/
 .dist/
 .DS_Store
 *.log
+/platformctl
+
+# cartogopher index
+bakes/
