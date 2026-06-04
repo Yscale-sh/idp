@@ -145,9 +145,18 @@ jobs:
       env: dev                      # prod apps set env: prod
       jdpctl-tag: v1
       remove: ${{ github.event.inputs.remove == 'true' }}
+      # manage-dns: true            # also upsert Cloudflare DNS for public routes
+                                    # (proxied CNAME -> the app's tunnel). Off by
+                                    # default; the Cloudflare Tunnel is the exposure
+                                    # either way. Set the domain by hand otherwise.
     secrets:
       # Prefer a GitHub App (org secrets => zero-config onboarding); PAT fallback.
       JDP_APP_ID: ${{ secrets.JDP_APP_ID }}
       JDP_APP_PRIVATE_KEY: ${{ secrets.JDP_APP_PRIVATE_KEY }}
       # PLATFORM_REPO_TOKEN: ${{ secrets.PLATFORM_REPO_TOKEN }}
+      # For manage-dns: pass the Cloudflare token directly, OR give AWS creds and the
+      # step reads CLOUDFLARE_API_TOKEN + TUNNEL_TOKEN from SSM (existing prod creds).
+      # CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
+      # AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 `

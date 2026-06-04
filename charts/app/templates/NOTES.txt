@@ -22,11 +22,15 @@ own ClusterIP Service:
   in SSM (PREREQUISITE: do this before the first prod ship, or the cloudflared
   container can't start). The renderer pins it as a remoteRef so a missing token
   surfaces on the ExternalSecret, not as an opaque pod error.
-  ONE-TIME per hostname (token tunnels don't auto-create DNS):
-    cloudflared tunnel route dns <tunnel-name> <hostname>
-  (or set the ingress + DNS in the Cloudflare dashboard / Terraform).
-  Teardown: set the route private (public:false) or `jdpctl remove` the app —
-  the sidecar + pod are pruned by Flux; then remove the tunnel/DNS in Cloudflare.
+  DNS per public hostname (token tunnels don't auto-create it). Either set it by
+  hand — a proxied CNAME <host> -> <tunnel-id>.cfargotunnel.com (or `cloudflared
+  tunnel route dns <tunnel-name> <hostname>`) — OR let the ship pipeline do it:
+  enable manage-dns and it runs `jdpctl dns sync` to upsert that CNAME for each
+  public route (tunnel id derived from TUNNEL_TOKEN). The tunnel is the exposure
+  either way; the CNAME just points the name at it.
+  Teardown: set the route private (public:false) or `jdpctl remove` the app — the
+  sidecar + pod are pruned by Flux; `jdpctl dns prune` (or manage-dns on a remove)
+  deletes the CNAMEs; then remove the tunnel/DNS in Cloudflare.
 {{- else }}
 
 Public exposure: none in-cluster. Declare a public route (routes[].public:true)
