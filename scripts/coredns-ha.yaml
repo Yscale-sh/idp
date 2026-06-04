@@ -6,6 +6,13 @@
 # is REVERTED on the next reconcile. There are two parts to making DNS HA
 # durable:
 #
+# CURRENT STATE (2026-06-03): applied LIVE via kubectl — coredns is scaled to 2
+# replicas, the topologySpreadConstraints below were patched onto the Deployment
+# (the 2 pods now sit on different nodes), and the PodDisruptionBudget is applied.
+# These have HELD so far (k3s isn't aggressively reconciling), but a k3s restart/
+# upgrade re-applies the bundled manifest and would reset replicas->1 + drop the
+# spread. PART A (the host-manifest edit) is what makes it survive that.
+#
 #   PART A (durable, needs host access): bump replicas + spread across nodes.
 #     The replica count + scheduling live on the coredns Deployment, which the
 #     addon manager owns — so this must go into the bundled manifest on a
