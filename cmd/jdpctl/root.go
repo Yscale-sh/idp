@@ -21,6 +21,7 @@ jdpctl never runs helm/kubectl against the cluster on the default path.`,
 		newValidateCmd(),
 		newPlanCmd(),
 		newRenderCmd(),
+		newRemoveCmd(),
 		newInfraCmd(),
 		newNewCmd(),
 	)

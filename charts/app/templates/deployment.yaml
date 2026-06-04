@@ -111,11 +111,15 @@ spec:
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-        {{- /*
-        Platform-injected sidecars (e.g. the cloudflared Cloudflare-Tunnel sidecar
-        for public routes). The Go renderer appends fully-formed container specs
-        here from rendered values; empty by default so this is a no-op.
-        */}}
+        {{- /* cloudflared Cloudflare-Tunnel sidecar for public routes — rendered
+        when the renderer set tunnel.enabled (a prod app with a public route).
+        Exposure with NO LoadBalancer. Tears down automatically when the route goes
+        private or the app is removed (Helm/Flux prune the whole pod spec). */}}
+        {{- if .Values.tunnel.enabled }}
+        {{- include "app.cloudflaredSidecar" . | nindent 8 }}
+        {{- end }}
+        {{- /* General extension point for any other platform-injected containers;
+        the Go renderer appends fully-formed specs here. Empty by default → no-op. */}}
         {{- with .Values.sidecars }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

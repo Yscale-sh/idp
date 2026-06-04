@@ -126,3 +126,8 @@ spec:
       path: /metrics
       port: http
       releaseLabel: prometheus
+    tunnel:
+      enabled: true
+      ingress:
+      - hostname: carshowdb.example.com
+        service: http://localhost:8080

@@ -22,6 +22,7 @@ type Values struct {
 	Service          ServiceValues           `json:"service"`
 	Probes           ProbesValues            `json:"probes"`
 	Routes           []RouteValues           `json:"routes"`
+	Tunnel           *TunnelValues           `json:"tunnel,omitempty"`
 	Env              EnvValues               `json:"env"`
 	ExternalSecret   ExternalSecretValues    `json:"externalSecret"`
 	Keda             KedaValues              `json:"keda"`
@@ -94,6 +95,26 @@ type RouteValues struct {
 	Host   string            `json:"host"`
 	Public bool              `json:"public"`
 	Access RouteAccessValues `json:"access"`
+}
+
+// TunnelValues renders the cloudflared (Cloudflare Tunnel) sidecar config. The
+// renderer sets it ONLY for a non-local backend (prod) app that declares a public
+// route; the chart gates the cloudflared sidecar + ingress ConfigMap on
+// tunnel.enabled. The Values field is a pointer with omitempty, so it is ABSENT
+// (render byte-identical to today) for every app that doesn't opt in — i.e. all
+// of dev and any prod app with no public route. The tunnel IS the ingress, so a
+// public route is served with NO LoadBalancer (the no-LB policy holds).
+type TunnelValues struct {
+	Enabled bool                  `json:"enabled"`
+	Image   string                `json:"image,omitempty"`
+	Ingress []TunnelIngressValues `json:"ingress"`
+}
+
+// TunnelIngressValues is one cloudflared ingress rule: a public hostname served
+// through the tunnel to the app's OWN Service on localhost:<port> inside the pod.
+type TunnelIngressValues struct {
+	Hostname string `json:"hostname"`
+	Service  string `json:"service"`
 }
 
 type EnvValues struct {
@@ -240,6 +261,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			Readiness: ProbeValues{Path: "/readyz", InitialDelaySeconds: 5, PeriodSeconds: 10},
 		},
 		Routes: buildRoutes(app),
+		Tunnel: buildTunnel(app, c),
 		Env: EnvValues{
 			TierA: TierAEnv(app, env, obs, deployTime),
 			Extra: map[string]string{},
@@ -282,6 +304,37 @@ func buildRoutes(app appconfig.App) []RouteValues {
 		})
 	}
 	return out
+}
+
+// hasPublicRoute reports whether the app declares any public route (public: true
+// with a host). Public exposure is what wires a Cloudflare Tunnel.
+func hasPublicRoute(app appconfig.App) bool {
+	for _, r := range app.Routes {
+		if r.Public && r.Host != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// buildTunnel returns the cloudflared (Cloudflare Tunnel) config for an app's
+// public routes, or nil when the tunnel does not apply (so the values field is
+// omitted and the render stays byte-identical). It applies ONLY for a non-local
+// backend (prod) app with a public route: dev keeps its in-cluster .local routes
+// and never tunnels. Each public host maps through the tunnel to the app's OWN
+// Service on localhost:<port> in the pod — exposure with NO LoadBalancer.
+func buildTunnel(app appconfig.App, c *clusterenv.Config) *TunnelValues {
+	if isLocalBackend(c) || !hasPublicRoute(app) {
+		return nil
+	}
+	svc := fmt.Sprintf("http://localhost:%d", app.Runtime.Port)
+	ingress := make([]TunnelIngressValues, 0)
+	for _, r := range app.Routes {
+		if r.Public && r.Host != "" {
+			ingress = append(ingress, TunnelIngressValues{Hostname: r.Host, Service: svc})
+		}
+	}
+	return &TunnelValues{Enabled: true, Ingress: ingress}
 }
 
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its

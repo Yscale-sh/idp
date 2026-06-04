@@ -5,6 +5,7 @@ import (
 
 	"github.com/jakenesler/jdp/internal/appconfig"
 	"github.com/jakenesler/jdp/internal/deploy"
+	"github.com/jakenesler/jdp/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -116,6 +117,43 @@ this is the default deploy path (a git commit, not kubectl).`,
 	}
 	addRenderFlags(cmd, &file, &env, &image, &deployTime, &root)
 	cmd.Flags().BoolVar(&stdout, "stdout", false, "print to stdout instead of writing the file")
+	return cmd
+}
+
+func newRemoveCmd() *cobra.Command {
+	var app, env, root string
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Remove an app from the env umbrella (teardown; Flux prunes it)",
+		Long: `remove deletes an app's entry from the environment's umbrella HelmRelease at
+clusters/<env>/platform.yaml under --root, so Flux re-reconciles the umbrella
+WITHOUT it and prunes the app's HelmRelease, its dedicated dev Postgres, and their
+namespaces (incl. any cloudflared tunnel sidecar). This is the teardown path — a
+git commit, not kubectl delete. Idempotent: removing an absent app is a no-op.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cluster, err := loadCluster(root, env)
+			if err != nil {
+				return err
+			}
+			path, removed, err := render.RemoveApp(root, env, app, cluster)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if !removed {
+				fmt.Fprintf(out, "app %q not present in %s — nothing to remove\n", app, path)
+				return nil
+			}
+			fmt.Fprintf(out, "removed app %q from: %s\n", app, path)
+			fmt.Fprintln(out, "next: commit the file; Flux prunes the app's HelmRelease + dedicated Postgres + namespaces.")
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&app, "app", "a", "", "app name to remove")
+	cmd.Flags().StringVarP(&env, "env", "e", appconfig.EnvDev, "target environment (dev|prod|local)")
+	cmd.Flags().StringVar(&root, "root", ".", "platform repo root (holds clusters/ and charts/)")
+	_ = cmd.MarkFlagRequired("app")
+	_ = cmd.MarkFlagRequired("env")
 	return cmd
 }
 

@@ -236,6 +236,32 @@ func (r *Result) UpsertApp(root string, c *clusterenv.Config) (string, error) {
 	return WritePlatform(root, r.Env, pr)
 }
 
+// RemoveApp deletes an app (by name) from clusters/<env>/platform.yaml and writes
+// the file back, so the umbrella re-renders WITHOUT it and Flux prunes the app's
+// HelmRelease, its dedicated dev Postgres, and their namespaces. It is the inverse
+// of UpsertApp — the teardown path (a git commit, not `kubectl delete`). Returns
+// the path written and whether the app was present (false => nothing to remove).
+func RemoveApp(root, env, appName string, c *clusterenv.Config) (path string, removed bool, err error) {
+	pr, err := ReadPlatform(root, env, c)
+	if err != nil {
+		return "", false, err
+	}
+	kept := make([]AppEntry, 0, len(pr.Spec.Values.Apps))
+	for _, a := range pr.Spec.Values.Apps {
+		if a.Name == appName {
+			removed = true
+			continue
+		}
+		kept = append(kept, a)
+	}
+	if !removed {
+		return PlatformPath(root, env), false, nil
+	}
+	pr.Spec.Values.Apps = kept
+	path, err = WritePlatform(root, env, pr)
+	return path, true, err
+}
+
 // SetModules replaces the modules list in clusters/<env>/platform.yaml and writes
 // the file back. Modules are fully re-derived from cluster.yaml on each
 // `infra render`, so this is a set (not an upsert).

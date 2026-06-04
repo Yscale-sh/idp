@@ -76,12 +76,37 @@ affinity: {}
 tolerations: []
 
 # ── platform-injected pod splice points (NOT in the deploy.yaml contract) ─────
-# The Go renderer appends fully-formed container/volume specs here from rendered
-# values — e.g. the cloudflared Cloudflare-Tunnel sidecar + its config volume for
-# public routes. Empty by default, so the splice templates in deployment.yaml are
-# a no-op for every app that doesn't opt in.
-sidecars: []   # extra containers appended to the pod (e.g. cloudflared)
-volumes: []    # extra pod volumes (e.g. the cloudflared tunnel-config ConfigMap)
+# General extension points: the Go renderer (or an operator) appends fully-formed
+# container/volume specs here. Empty by default → the splice templates in
+# deployment.yaml are a no-op. (The cloudflared sidecar uses the dedicated
+# `tunnel` block below, not these.)
+sidecars: []   # extra containers appended to the pod
+volumes: []    # extra pod volumes
+
+# ── tunnel: Cloudflare-Tunnel exposure for public routes (renderer-driven) ────
+# The renderer sets tunnel.enabled=true + tunnel.ingress for a PROD app that
+# declares a public route (derived from routes[].public; NOT a deploy.yaml field).
+# When enabled, deployment.yaml adds the cloudflared sidecar (token mode), serving
+# the public hostnames through the Cloudflare Tunnel to this app's OWN ClusterIP
+# Service — exposure with NO LoadBalancer/Ingress. TUNNEL_TOKEN comes from the
+# runtime Secret (prod: ExternalSecret from SSM). Default OFF so dev and any
+# non-public app render exactly as before; flipping it off (or removing the app)
+# tears the sidecar down.
+tunnel:
+  enabled: false
+  image: cloudflare/cloudflared:2024.10.0
+  ingress: []   # [{hostname: app.example.com, service: http://localhost:8080}] — metadata; CF owns live ingress for token tunnels
+
+# ── certManager: optional in-cluster TLS Certificate (chart-only, default OFF) ─
+# OFF by default — Cloudflare Tunnel terminates TLS at the edge. For in-cluster
+# mTLS / non-tunnel TLS, set enabled + issuer + dnsNames AND enable the
+# cert-manager module for the env. Not set by the renderer (like nodeSelector).
+certManager:
+  enabled: false
+  issuer: ""
+  issuerKind: ClusterIssuer
+  secretName: ""
+  dnsNames: []
 
 # Active resource envelope. The renderer selects this from sizing.profile.
 # resourceProfiles below documents the presets (informational; not consumed

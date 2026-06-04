@@ -22,6 +22,13 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	if isLocalBackend(c) && len(buildDevPlaceholders(app, c)) > 0 {
 		needsSecret = true
 	}
+	// A non-local (prod) app with a public route is exposed via the cloudflared
+	// sidecar, whose TUNNEL_TOKEN lives under the app's SSM root and is pulled into
+	// the runtime Secret by dataFrom — so it needs that Secret even with no
+	// db/cache/storage. (Dev never tunnels, so no dev placeholder is needed.)
+	if !isLocalBackend(c) && hasPublicRoute(app) {
+		needsSecret = true
+	}
 
 	ev := ExternalSecretValues{
 		Enabled:         needsSecret,
