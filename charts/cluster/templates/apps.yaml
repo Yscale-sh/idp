@@ -49,4 +49,32 @@ spec:
   values:
     {{- toYaml .values | nindent 4 }}
 {{- end }}
+{{- /* BACK-COMPAT: an app entry written by an OLDER jdpctl carries a single
+.postgres block instead of .stores[]. Render it too so a chart upgrade doesn't
+prune an existing app's Postgres before its entry is re-rendered into .stores. */}}
+{{- if and .postgres .postgres.enabled }}
+---
+# {{ $app }}'s dedicated dev Postgres (legacy .postgres entry) in {{ .postgres.namespace }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: {{ .postgres.releaseName }}
+  namespace: {{ $.Values.source.namespace }}
+  labels:
+    {{- include "cluster.appLabels" (dict "name" .postgres.releaseName "app" $app "env" $env "component" "postgres") | nindent 4 }}
+spec:
+  interval: 10m
+  releaseName: {{ .postgres.releaseName }}
+  targetNamespace: {{ .postgres.namespace }}
+  storageNamespace: {{ .postgres.namespace }}
+  {{- include "cluster.remediation" $ | nindent 2 }}
+  chart:
+    spec:
+      chart: ./charts/infra/dev-postgres
+      sourceRef:
+        {{- include "cluster.gitSourceRef" $ | nindent 8 }}
+      reconcileStrategy: Revision
+  values:
+    {{- toYaml .postgres.values | nindent 4 }}
+{{- end }}
 {{- end }}
