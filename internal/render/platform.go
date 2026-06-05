@@ -36,6 +36,18 @@ type StoreEntry struct {
 	Values      any    `json:"values,omitempty"`
 }
 
+// PostgresEntry is the LEGACY single-Postgres shape an older jdpctl wrote. New
+// renders use Stores[] instead; this type is retained ONLY so reading and
+// re-writing a platform.yaml that still has a .postgres entry preserves it
+// (without it, the unmarshal would silently drop the field and the next render
+// would prune that app's Postgres). The cluster chart renders it for back-compat.
+type PostgresEntry struct {
+	Enabled     bool   `json:"enabled"`
+	Namespace   string `json:"namespace"`
+	ReleaseName string `json:"releaseName"`
+	Values      any    `json:"values,omitempty"`
+}
+
 // AppEntry is one WORKLOAD in the umbrella values (a single app, or one component
 // of a multi-component app). ReleaseName is the unique workload handle
 // (<app>-<component> or <app>) — the umbrella key — so sibling components never
@@ -48,6 +60,10 @@ type AppEntry struct {
 	Component   string       `json:"component,omitempty"`
 	Values      any          `json:"values"`
 	Stores      []StoreEntry `json:"stores,omitempty"`
+	// Postgres is the LEGACY single-store field. New renders leave it nil and use
+	// Stores; it is kept so an old entry round-trips (read+write) without losing its
+	// Postgres. Migrate an entry by re-rendering its app (moves it into Stores).
+	Postgres *PostgresEntry `json:"postgres,omitempty"`
 }
 
 // ModuleEntry is one enabled infra module in the umbrella values. The umbrella
