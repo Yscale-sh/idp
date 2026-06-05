@@ -8,6 +8,11 @@ runtime:
   image: ghcr.io/jakenesler/dim
   port: 8000
 
+# Dim's API serves on :8000 but has no /healthz route, so a TCP port-open check
+# instead of the default HTTP probe (otherwise the liveness probe SIGKILLs it).
+probes:
+  type: tcp
+
 # Same backend image as the scanner; DIM_ROLE selects the web tier.
 env:
   DIM_ROLE: web

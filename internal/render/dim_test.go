@@ -103,10 +103,15 @@ func TestDim_MultiComponentIngest(t *testing.T) {
 		t.Error("api should NOT LAN-expose")
 	}
 
-	// 7. Cross-component DNS: ui's DIM_API_UPSTREAM -> the api Service on port 8000.
-	want := "http://dim-api.dim-dev-api.svc.cluster.local:8000"
+	// 7. Cross-component DNS: ui's DIM_API_UPSTREAM -> the api Service on port 8000,
+	// as a BARE host:port (scheme: none) for nginx's `upstream { server ...; }`.
+	want := "dim-api.dim-dev-api.svc.cluster.local:8000"
 	if got := uiRes.Values.Env.Extra["DIM_API_UPSTREAM"]; got != want {
 		t.Errorf("DIM_API_UPSTREAM = %q, want %q", got, want)
+	}
+	// dim-api uses a TCP probe (no HTTP health route).
+	if apiRes.Values.Probes.Type != "tcp" {
+		t.Errorf("dim-api probes.type = %q, want tcp", apiRes.Values.Probes.Type)
 	}
 
 	// 8. Arbitrary env passthrough.

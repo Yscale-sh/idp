@@ -99,20 +99,33 @@ spec:
                 name: {{ include "app.secretName" . }}
           {{- end }}
           {{- if not .Values.worker }}
-          # ── probes (derived from port unless paths overridden) ────────────
-          # A worker (port 0) has no HTTP endpoint, so no HTTP probes.
+          {{- $pt := .Values.probes.type | default "http" }}
+          {{- if ne $pt "none" }}
+          # ── probes ({{ $pt }}) — a worker (port 0) has none; tcp = a port-open
+          # check for a server with no HTTP health route; http = path probes. ──
           livenessProbe:
+            {{- if eq $pt "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.probes.liveness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
           readinessProbe:
+            {{- if eq $pt "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.probes.readiness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          {{- end }}
           {{- end }}
           resources:
             requests:

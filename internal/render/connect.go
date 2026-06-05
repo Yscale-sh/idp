@@ -57,6 +57,12 @@ func ResolveConnections(app appconfig.App, env string, c *clusterenv.Config) ([]
 		if port == 0 {
 			port = app.Runtime.Port
 		}
+		// scheme: "" / "http" -> a URL (http://host:port); "none" -> bare host:port
+		// (e.g. an nginx `upstream { server ...; }` directive — no scheme allowed).
+		scheme := "http://"
+		if conn.Scheme == "none" {
+			scheme = ""
+		}
 		switch mode {
 		case "clusterService":
 			// A sibling COMPONENT of the same app resolves to its real cross-namespace
@@ -66,9 +72,9 @@ func ResolveConnections(app appconfig.App, env string, c *clusterenv.Config) ([]
 			if conn.App == "" && conn.Component != "" {
 				svc := appconfig.SanitizeDNSLabel(app.App + "-" + conn.Component)
 				ns := appconfig.SanitizeDNSLabel(app.App + "-" + env + "-" + conn.Component)
-				rc.Value = fmt.Sprintf("http://%s.%s.%s:%d", svc, ns, domain, port)
+				rc.Value = fmt.Sprintf("%s%s.%s.%s:%d", scheme, svc, ns, domain, port)
 			} else {
-				rc.Value = fmt.Sprintf("http://%s.%s.%s:%d", target, target, domain, port)
+				rc.Value = fmt.Sprintf("%s%s.%s.%s:%d", scheme, target, target, domain, port)
 			}
 		case "publicRoute":
 			rc.Value = publicRouteURL(target, env)

@@ -44,6 +44,11 @@ type App struct {
 	// Runtime is the container + port. Required.
 	Runtime Runtime `json:"runtime" yaml:"runtime"`
 
+	// Probes overrides the default HTTP health probes (/healthz + /readyz). Apps
+	// that don't serve those paths need this — e.g. type: tcp (just check the port
+	// is open) for a server with no health route, or type: none to disable.
+	Probes *ProbeConfig `json:"probes,omitempty" yaml:"probes,omitempty"`
+
 	// Routes are the hostnames this app answers on. Apps are ClusterIP only;
 	// public exposure is via Cloudflare Tunnel (prod) or a local LAN expose
 	// (on-prem), never an unmanaged LoadBalancer.
@@ -88,6 +93,21 @@ type App struct {
 	// TailscaleEgress injects Tailscale egress sidecar env only when true (e.g.
 	// reaching an out-of-cluster DB). Most apps leave this false once in-cluster.
 	TailscaleEgress bool `json:"tailscaleEgress,omitempty" yaml:"tailscaleEgress,omitempty"`
+}
+
+// ProbeConfig overrides the app's liveness/readiness probes.
+//
+//	Type "http" (default) -> httpGet on Path (default /healthz live, /readyz ready).
+//	Type "tcp"            -> tcpSocket on the container port (any listening server
+//	                         passes; for apps with no HTTP health route).
+//	Type "none"           -> no probes.
+type ProbeConfig struct {
+	// Type is http | tcp | none.
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
+
+	// Path is the httpGet path (type http) used for BOTH liveness and readiness
+	// when set. Empty keeps the /healthz + /readyz defaults.
+	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 }
 
 // Runtime is the container image (without tag — CI supplies --image) and port.
@@ -295,6 +315,12 @@ type Connection struct {
 	// target lives in another file, so its port is not otherwise known here). When
 	// 0, the source app's port is used as a best-effort convention.
 	Port int `json:"port,omitempty" yaml:"port,omitempty"`
+
+	// Scheme controls the resolved-address format for clusterService:
+	//   "" / "http"  -> http://<host>:<port>  (default; a URL)
+	//   "none"       -> <host>:<port>          (bare host:port, e.g. an nginx
+	//                   `upstream { server ...; }` or a DB DSN host)
+	Scheme string `json:"scheme,omitempty" yaml:"scheme,omitempty"`
 
 	// Mode chooses how the address is resolved:
 	//   publicRoute    -> target's external route (browser-facing)

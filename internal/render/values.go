@@ -105,6 +105,8 @@ type ProbeValues struct {
 }
 
 type ProbesValues struct {
+	// Type is http (default, omitted) | tcp | none. The chart defaults empty -> http.
+	Type      string      `json:"type,omitempty"`
 	Liveness  ProbeValues `json:"liveness"`
 	Readiness ProbeValues `json:"readiness"`
 }
@@ -287,10 +289,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			ExtraLimits: app.Sizing.ExtraLimits,
 		},
 		Service: ServiceValues{Port: app.Runtime.Port},
-		Probes: ProbesValues{
-			Liveness:  ProbeValues{Path: "/healthz", InitialDelaySeconds: 10, PeriodSeconds: 10},
-			Readiness: ProbeValues{Path: "/readyz", InitialDelaySeconds: 5, PeriodSeconds: 10},
-		},
+		Probes:  buildProbes(app),
 		Routes:       buildRoutes(app),
 		Tunnel:       buildTunnel(app, c),
 		LanExpose:    buildLanExpose(app, c),
@@ -608,6 +607,25 @@ func utilizationTrigger(metric, value string) map[string]any {
 			"value": value,
 		},
 	}
+}
+
+// buildProbes returns the health-probe config: HTTP /healthz + /readyz by default,
+// overridden by deploy.yaml probes{} (type tcp/none, or a custom http path). Type
+// is left empty for the default so existing renders stay byte-identical (the chart
+// defaults empty -> http).
+func buildProbes(app appconfig.App) ProbesValues {
+	p := ProbesValues{
+		Liveness:  ProbeValues{Path: "/healthz", InitialDelaySeconds: 10, PeriodSeconds: 10},
+		Readiness: ProbeValues{Path: "/readyz", InitialDelaySeconds: 5, PeriodSeconds: 10},
+	}
+	if app.Probes != nil {
+		p.Type = app.Probes.Type
+		if app.Probes.Path != "" {
+			p.Liveness.Path = app.Probes.Path
+			p.Readiness.Path = app.Probes.Path
+		}
+	}
+	return p
 }
 
 func buildServiceMonitor(app appconfig.App) ServiceMonitorValues {

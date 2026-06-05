@@ -20,8 +20,10 @@ expose:
   ip: 10.0.0.206
 
 # nginx upstream -> the api component's in-cluster Service (cross-namespace DNS).
+# scheme: none => bare host:port (nginx `upstream { server ...; }` rejects a scheme).
 connectsTo:
   - component: api
     env: DIM_API_UPSTREAM
     mode: clusterService
     port: 8000
+    scheme: none

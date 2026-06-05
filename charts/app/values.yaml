@@ -160,6 +160,8 @@ service:
 
 # ── probes (generated from port unless overridden) ───────────────────────────
 probes:
+  type: http        # http (httpGet path) | tcp (port-open) | none. Renderer sets
+                    # this from deploy.yaml probes.type; empty => http.
   liveness:
     path: /healthz
     initialDelaySeconds: 10
