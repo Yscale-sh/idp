@@ -192,6 +192,13 @@ func CheckRenderedManifest(manifest []byte) Violations {
 		}
 		if spec, ok := obj["spec"].(map[string]any); ok {
 			if t, ok := spec["type"].(string); ok && strings.EqualFold(t, "LoadBalancer") {
+				// The ONE sanctioned LoadBalancer: the on-prem LAN expose (the app
+				// chart's lan-service.yaml, label platform/expose=lan), an explicit,
+				// renderer-gated opt-in for LANs with no Cloudflare Tunnel. Every
+				// other LoadBalancer is still rejected.
+				if isSanctionedLANExpose(obj) {
+					continue
+				}
 				name := metaName(obj)
 				vs = append(vs, &Violation{KindLoadBalancer,
 					fmt.Sprintf("Service %q renders type LoadBalancer; apps must be ClusterIP", name)})
@@ -199,6 +206,24 @@ func CheckRenderedManifest(manifest []byte) Violations {
 		}
 	}
 	return vs
+}
+
+// isSanctionedLANExpose reports whether a LoadBalancer Service is the platform's
+// explicit on-prem LAN expose — the app chart's lan-service.yaml, identified by
+// the label platform/expose=lan. That template is renderer-gated (only set for an
+// app that opts into expose.lan on a local backend), so this is the single
+// LoadBalancer the guardrail permits; any other type:LoadBalancer is rejected.
+func isSanctionedLANExpose(obj map[string]any) bool {
+	meta, ok := obj["metadata"].(map[string]any)
+	if !ok {
+		return false
+	}
+	labels, ok := meta["labels"].(map[string]any)
+	if !ok {
+		return false
+	}
+	v, _ := labels["platform/expose"].(string)
+	return v == "lan"
 }
 
 // CheckModuleValues scans an infra module's inline Helm values override for a

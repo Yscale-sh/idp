@@ -39,10 +39,12 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if not .Values.worker }}
           ports:
             - name: http
               containerPort: {{ .Values.port }}
               protocol: TCP
+          {{- end }}
           # ── env ──────────────────────────────────────────────────────────
           # Tier-A platform vars are injected inline. PORT mirrors the container
           # port. IMAGE_NAME is intentionally NOT injected (Helm sets the image).
@@ -96,7 +98,9 @@ spec:
             - secretRef:
                 name: {{ include "app.secretName" . }}
           {{- end }}
+          {{- if not .Values.worker }}
           # ── probes (derived from port unless paths overridden) ────────────
+          # A worker (port 0) has no HTTP endpoint, so no HTTP probes.
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
@@ -109,8 +113,22 @@ spec:
               port: http
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            requests:
+              {{- toYaml .Values.resources.requests | nindent 14 }}
+            limits:
+              {{- range $k, $v := .Values.resources.limits }}
+              {{ $k }}: {{ $v | quote }}
+              {{- end }}
+              {{- /* extended-resource limits beyond cpu/memory, e.g. gpu.intel.com/i915 */}}
+              {{- range $k, $v := .Values.resources.extraLimits }}
+              {{ $k }}: {{ $v | quote }}
+              {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         {{- /* cloudflared Cloudflare-Tunnel sidecar for public routes — rendered
         when the renderer set tunnel.enabled (a prod app with a public route).
         Exposure with NO LoadBalancer. Tears down automatically when the route goes

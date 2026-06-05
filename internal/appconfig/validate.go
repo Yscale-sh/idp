@@ -109,8 +109,48 @@ func (a *App) Validate() error {
 		// The repo carries no tag; CI injects it via --image.
 		add("runtime.image", "must be the repository only, without a tag (CI supplies --image)")
 	}
-	if a.Runtime.Port < 1 || a.Runtime.Port > 65535 {
-		add("runtime.port", "must be between 1 and 65535")
+	// Port 0 is a WORKER (no inbound service); otherwise a valid TCP port.
+	if a.Runtime.Port < 0 || a.Runtime.Port > 65535 {
+		add("runtime.port", "must be 0 (worker) or between 1 and 65535")
+	}
+	if a.IsWorker() && len(a.Routes) > 0 {
+		add("routes", "a worker (runtime.port: 0) has no Service and cannot declare routes")
+	}
+
+	// volumes (name + mountPath required; type in nfs|emptyDir|pvc; source per type).
+	seenVol := map[string]bool{}
+	for i, v := range a.Volumes {
+		field := fmt.Sprintf("volumes[%d]", i)
+		if v.Name == "" {
+			add(field+".name", "is required")
+		} else if seenVol[v.Name] {
+			add(field+".name", "duplicate volume name "+v.Name)
+		}
+		seenVol[v.Name] = true
+		if v.MountPath == "" {
+			add(field+".mountPath", "is required")
+		}
+		switch v.Type {
+		case "nfs":
+			if v.Server == "" || v.Path == "" {
+				add(field, "type nfs requires server and path")
+			}
+		case "pvc":
+			if v.Claim == "" {
+				add(field, "type pvc requires claim")
+			}
+		case "emptyDir":
+			// no source fields
+		case "":
+			add(field+".type", "is required (nfs|emptyDir|pvc)")
+		default:
+			add(field+".type", "must be one of nfs|emptyDir|pvc")
+		}
+	}
+
+	// expose (LAN MetalLB) — on-prem only; the renderer/policy enforce the backend.
+	if a.Expose != nil && a.Expose.LAN && a.IsWorker() {
+		add("expose", "a worker (runtime.port: 0) has no Service to expose")
 	}
 
 	// sizing.

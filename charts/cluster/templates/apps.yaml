@@ -23,29 +23,30 @@ spec:
       reconcileStrategy: Revision
   values:
     {{- toYaml .values | nindent 4 }}
-{{- if and .postgres .postgres.enabled }}
+{{- $app := .name -}}
+{{- range .stores }}
 ---
-# {{ .name }}'s dedicated dev Postgres -> its own HelmRelease in {{ .postgres.namespace }}
+# {{ $app }}'s dedicated dev {{ .tool }} -> its own HelmRelease ({{ .chart }}) in {{ .namespace }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: {{ .postgres.releaseName }}
+  name: {{ .releaseName }}
   namespace: {{ $.Values.source.namespace }}
   labels:
-    {{- include "cluster.appLabels" (dict "name" .postgres.releaseName "app" .name "env" $env "component" "postgres") | nindent 4 }}
+    {{- include "cluster.appLabels" (dict "name" .releaseName "app" $app "env" $env "component" .tool) | nindent 4 }}
 spec:
   interval: 10m
-  releaseName: {{ .postgres.releaseName }}
-  targetNamespace: {{ .postgres.namespace }}
-  storageNamespace: {{ .postgres.namespace }}
-  {{- include "cluster.remediation" . | nindent 2 }}
+  releaseName: {{ .releaseName }}
+  targetNamespace: {{ .namespace }}
+  storageNamespace: {{ .namespace }}
+  {{- include "cluster.remediation" $ | nindent 2 }}
   chart:
     spec:
-      chart: ./charts/infra/dev-postgres
+      chart: {{ .chart }}
       sourceRef:
         {{- include "cluster.gitSourceRef" $ | nindent 8 }}
       reconcileStrategy: Revision
   values:
-    {{- toYaml .postgres.values | nindent 4 }}
+    {{- toYaml .values | nindent 4 }}
 {{- end }}
 {{- end }}

@@ -17,12 +17,23 @@ type Values struct {
 	Image            ImageValues             `json:"image"`
 	ImagePullSecrets []ImagePullSecretValues `json:"imagePullSecrets"`
 	Port             int                     `json:"port"`
-	Replicas         int                     `json:"replicas"`
-	Resources        ResourceRequirements    `json:"resources"`
-	Service          ServiceValues           `json:"service"`
-	Probes           ProbesValues            `json:"probes"`
-	Routes           []RouteValues           `json:"routes"`
-	Tunnel           *TunnelValues           `json:"tunnel,omitempty"`
+	// Worker is a portless background workload (runtime.port == 0): the chart
+	// renders a Deployment only — no Service, no HTTP probes, no ServiceMonitor.
+	Worker    bool                 `json:"worker,omitempty"`
+	Replicas  int                  `json:"replicas"`
+	Resources ResourceRequirements `json:"resources"`
+	Service   ServiceValues        `json:"service"`
+	Probes    ProbesValues         `json:"probes"`
+	Routes    []RouteValues        `json:"routes"`
+	Tunnel    *TunnelValues        `json:"tunnel,omitempty"`
+	// LanExpose is the on-prem MetalLB LoadBalancer (the on-prem twin of the
+	// tunnel). Nil unless the app opts in via expose.lan on a local backend.
+	LanExpose *LanExposeValues `json:"lanExpose,omitempty"`
+	// Volumes / VolumeMounts are raw k8s pod-volume + container-mount specs the
+	// renderer derives from deploy.yaml volumes[] (NFS, emptyDir, PVC). Omitted
+	// when empty so apps without volumes render byte-identical to before.
+	Volumes      []map[string]any `json:"volumes,omitempty"`
+	VolumeMounts []map[string]any `json:"volumeMounts,omitempty"`
 	Env              EnvValues               `json:"env"`
 	ExternalSecret   ExternalSecretValues    `json:"externalSecret"`
 	Keda             KedaValues              `json:"keda"`
@@ -67,6 +78,18 @@ type ResourceSpec struct {
 type ResourceRequirements struct {
 	Requests ResourceSpec `json:"requests"`
 	Limits   ResourceSpec `json:"limits"`
+	// ExtraLimits are extended resource limits merged into limits beyond cpu/memory
+	// (e.g. {"gpu.intel.com/i915": "1"}). Empty for the common case.
+	ExtraLimits map[string]string `json:"extraLimits,omitempty"`
+}
+
+// LanExposeValues renders the on-prem MetalLB LoadBalancer in front of an app's
+// Service (the on-prem twin of the Cloudflare Tunnel). The chart gates a SEPARATE
+// LoadBalancer Service on lanExpose.enabled; the ClusterIP Service is unchanged.
+type LanExposeValues struct {
+	Enabled bool   `json:"enabled"`
+	IP      string `json:"ip,omitempty"`
+	Port    int    `json:"port"`
 }
 
 type ServiceValues struct {
@@ -205,7 +228,11 @@ type StoreConnection struct {
 }
 
 type PlatformValues struct {
-	App       string `json:"app"`
+	App string `json:"app"`
+	// Workload is the unique per-workload handle (<app>-<component> or <app>); the
+	// chart names the Deployment/Service/Secret from it so sibling components of one
+	// app never collide. Omitted (== app) for single-component apps.
+	Workload  string `json:"workload,omitempty"`
 	Env       string `json:"env"`
 	Product   string `json:"product,omitempty"`
 	Component string `json:"component,omitempty"`
@@ -242,6 +269,8 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		obs = c.Observability
 	}
 
+	vols, mounts := buildVolumes(app)
+
 	v := Values{
 		Image: ImageValues{
 			Repository: repo,
@@ -250,21 +279,26 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		},
 		ImagePullSecrets: defaultImagePullSecrets(),
 		Port:             app.Runtime.Port,
+		Worker:           app.IsWorker(),
 		Replicas:         app.Sizing.Replicas,
 		Resources: ResourceRequirements{
-			Requests: ResourceSpec{CPU: envelope.Requests.CPU, Memory: envelope.Requests.Memory},
-			Limits:   ResourceSpec{CPU: envelope.Limits.CPU, Memory: envelope.Limits.Memory},
+			Requests:    ResourceSpec{CPU: envelope.Requests.CPU, Memory: envelope.Requests.Memory},
+			Limits:      ResourceSpec{CPU: envelope.Limits.CPU, Memory: envelope.Limits.Memory},
+			ExtraLimits: app.Sizing.ExtraLimits,
 		},
 		Service: ServiceValues{Port: app.Runtime.Port},
 		Probes: ProbesValues{
 			Liveness:  ProbeValues{Path: "/healthz", InitialDelaySeconds: 10, PeriodSeconds: 10},
 			Readiness: ProbeValues{Path: "/readyz", InitialDelaySeconds: 5, PeriodSeconds: 10},
 		},
-		Routes: buildRoutes(app),
-		Tunnel: buildTunnel(app, c),
+		Routes:       buildRoutes(app),
+		Tunnel:       buildTunnel(app, c),
+		LanExpose:    buildLanExpose(app, c),
+		Volumes:      vols,
+		VolumeMounts: mounts,
 		Env: EnvValues{
 			TierA: TierAEnv(app, env, obs, deployTime),
-			Extra: map[string]string{},
+			Extra: buildAppEnv(app),
 		},
 		ExternalSecret:        BuildExternalSecret(app, env, c),
 		Keda:                  buildKeda(app),
@@ -275,6 +309,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		DevSecretPlaceholders: buildDevPlaceholders(app, c),
 		Platform: PlatformValues{
 			App:       app.App,
+			Workload:  app.Workload(),
 			Env:       env,
 			Product:   app.Product,
 			Component: app.Component,
@@ -337,6 +372,77 @@ func buildTunnel(app appconfig.App, c *clusterenv.Config) *TunnelValues {
 	return &TunnelValues{Enabled: true, Ingress: ingress}
 }
 
+// reservedEnvKeys are platform-owned (Tier-A / data-store) names an app's env{}
+// must not override; they are silently dropped from the passthrough so a typo
+// can't shadow the platform-injected value.
+var reservedEnvKeys = map[string]bool{
+	"PORT": true, "ENVIRONMENT": true, "LOKI_URL": true, "DEPLOY_TIME": true,
+	"OTEL_EXPORTER_OTLP_ENDPOINT": true, "CONSOLE_LOGGING": true,
+	"DATABASE_URL": true, "REDIS_URL": true,
+}
+
+// buildAppEnv is the app's arbitrary NON-SECRET env (deploy.yaml env{}), minus any
+// platform-reserved key. connectsTo addresses are merged on top by BuildValues.
+func buildAppEnv(app appconfig.App) map[string]string {
+	out := map[string]string{}
+	for k, v := range app.Env {
+		if reservedEnvKeys[k] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// buildVolumes translates deploy.yaml volumes[] into raw k8s pod-volume specs plus
+// the matching container volumeMounts. Returns (nil, nil) when there are none so
+// apps without volumes render byte-identical.
+func buildVolumes(app appconfig.App) (vols, mounts []map[string]any) {
+	for _, v := range app.Volumes {
+		vol := map[string]any{"name": v.Name}
+		switch v.Type {
+		case "nfs":
+			nfs := map[string]any{"server": v.Server, "path": v.Path}
+			if v.ReadOnly {
+				nfs["readOnly"] = true
+			}
+			vol["nfs"] = nfs
+		case "emptyDir":
+			vol["emptyDir"] = map[string]any{}
+		case "pvc":
+			vol["persistentVolumeClaim"] = map[string]any{"claimName": v.Claim}
+		}
+		vols = append(vols, vol)
+
+		mount := map[string]any{"name": v.Name, "mountPath": v.MountPath}
+		if v.ReadOnly {
+			mount["readOnly"] = true
+		}
+		if v.SubPath != "" {
+			mount["subPath"] = v.SubPath
+		}
+		mounts = append(mounts, mount)
+	}
+	return vols, mounts
+}
+
+// buildLanExpose returns the on-prem MetalLB LoadBalancer config when the app opts
+// in (expose.lan) on a LOCAL backend and is not a worker. Nil otherwise — so prod
+// apps (Cloudflare Tunnel is their exposure) and the common case render unchanged.
+func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
+	if app.Expose == nil || !app.Expose.LAN || app.IsWorker() {
+		return nil
+	}
+	if !isLocalBackend(c) {
+		return nil // prod exposes via the tunnel, never a LAN LoadBalancer
+	}
+	port := app.Expose.Port
+	if port == 0 {
+		port = app.Runtime.Port
+	}
+	return &LanExposeValues{Enabled: true, IP: app.Expose.IP, Port: port}
+}
+
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its
 // ghcr.io image through. Kubernetes wants the {name: <secret>} object shape.
 const DefaultImagePullSecret = "ghcr-pull"
@@ -360,13 +466,19 @@ func buildStores(app appconfig.App, stores []appconfig.DataStore, suffix, env st
 			Default: i == 0,
 			UrlKeys: storeKeys([]appconfig.DataStore{s}, suffix, i == 0),
 		}
-		// Only Postgres wires a dev connection URL today (Redis dev wiring lands
-		// when a dev-redis chart exists). For the local backend, resolve the
-		// CROSS-NAMESPACE URL pointing at the app's DEDICATED per-app dev Postgres
-		// (rendered as a sibling Application into <app>-<env>-postgres) so the app
-		// boots against its own in-cluster store.
-		if local := isLocalBackend(c); local && s.Type == appconfig.DefaultDBType {
-			if url := clusterenv.DevDatabaseURL(c, app.App, s.Name); url != "" {
+		// For the local backend, resolve the CROSS-NAMESPACE URL pointing at the
+		// app's DEDICATED per-app dev store (rendered as a sibling HelmRelease into
+		// <app>-<env>-<tool>) so the app boots against its own in-cluster store. The
+		// URL is keyed by app.App (not the workload), so sibling components SHARE it.
+		if local := isLocalBackend(c); local {
+			var url string
+			switch s.Type {
+			case appconfig.DefaultDBType: // postgres
+				url = clusterenv.DevDatabaseURL(c, app.App, s.Name)
+			case appconfig.DefaultCacheType: // redis
+				url = clusterenv.DevRedisURL(c, app.App, s.Name)
+			}
+			if url != "" {
 				sv.Connection = &StoreConnection{URL: url}
 			}
 		}
@@ -500,7 +612,8 @@ func utilizationTrigger(metric, value string) map[string]any {
 
 func buildServiceMonitor(app appconfig.App) ServiceMonitorValues {
 	return ServiceMonitorValues{
-		Enabled:      app.MetricsEnabled(),
+		// A worker has no Service/port to scrape, so never a ServiceMonitor.
+		Enabled:      app.MetricsEnabled() && !app.IsWorker(),
 		Path:         app.Metrics.Path,
 		Port:         "http",
 		Interval:     "30s",

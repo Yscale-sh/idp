@@ -12,7 +12,7 @@ metadata:
     platform/env: dev
     platform/managed-by: platformctl
     platform/product: dummy
-  name: dummy-ui
+  name: dummy-ui-ui
   namespace: flux-system
 spec:
   chart:
@@ -28,7 +28,7 @@ spec:
     remediation:
       retries: 3
   interval: 10m
-  releaseName: dummy-ui
+  releaseName: dummy-ui-ui
   storageNamespace: dummy-ui-dev-ui
   targetNamespace: dummy-ui-dev-ui
   upgrade:
@@ -101,6 +101,7 @@ spec:
       env: dev
       managedBy: platformctl
       product: dummy
+      workload: dummy-ui-ui
     port: 3000
     probes:
       liveness:

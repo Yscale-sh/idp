@@ -329,6 +329,41 @@ func DevPostgresDatabase(app string) string {
 	return appDNSLabel(app)
 }
 
+// ── dev Redis (mirrors dev Postgres) ─────────────────────────────────────────
+const (
+	// DevRedisTool is the store tool/purpose segment of the per-app Redis namespace
+	// and the suffix of its Flux/Helm release name.
+	DevRedisTool        = "redis"
+	DevRedisDefaultPort = "6379"
+)
+
+// DevRedisReleaseName is the Helm release name for an app's dedicated dev Redis:
+// <app>-redis.
+func DevRedisReleaseName(app string) string { return app + "-" + DevRedisTool }
+
+// DevRedisService is the in-cluster Service name for an app's dev Redis. Like the
+// Postgres helper, the dev-redis chart fullname collapses to <release>-<chartname>
+// (<app>-redis does NOT contain "dev-redis"): <app>-redis-dev-redis.
+func DevRedisService(app string) string { return DevRedisReleaseName(app) + "-dev-redis" }
+
+// DevRedisNamespace is the dedicated namespace for an app's dev Redis:
+// <app>-<env>-redis.
+func DevRedisNamespace(app, env string) string {
+	return appDNSLabel(app + "-" + env + "-" + DevRedisTool)
+}
+
+// DevRedisURL returns a working in-cluster Redis URL for the dev (local) backend,
+// pointing at the app's dedicated per-app dev Redis. name is the requested cache's
+// handle (informational). Returns "" when there is no env config. No auth/db (the
+// dev Redis is an in-cluster, no-persistence pub/sub bus).
+func DevRedisURL(c *Config, app, name string) string {
+	if c == nil {
+		return ""
+	}
+	host := fmt.Sprintf("%s.%s.%s", DevRedisService(app), DevRedisNamespace(app, c.Env), c.Domain)
+	return fmt.Sprintf("redis://%s:%s", host, DevRedisDefaultPort)
+}
+
 // DevDatabaseURL returns a working in-cluster Postgres connection URL for the dev
 // (local) backend, pointing at the app's DEDICATED per-app dev Postgres. app is
 // the owning app name; dbName is the requested db's logical handle (informational

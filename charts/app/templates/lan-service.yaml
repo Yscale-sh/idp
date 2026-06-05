@@ -1,0 +1,35 @@
+{{/*
+LAN expose — the ON-PREM twin of the Cloudflare Tunnel.
+
+On the on-prem backend there is no tunnel, so an app that must be reachable from
+the LAN (e.g. a media UI) gets a MetalLB LoadBalancer. This is a SEPARATE Service
+from the ClusterIP one above and is rendered ONLY when the renderer set
+lanExpose.enabled (app opted in via expose.lan on a local backend). It is the only
+sanctioned LoadBalancer — the no-LB serviceTypeGuard still protects the app
+Service, and the platform policy only permits THIS template's LB.
+
+NOT rendered for prod (Cloudflare Tunnel is the exposure there) or for workers.
+*/}}
+{{- if and .Values.lanExpose .Values.lanExpose.enabled (not .Values.worker) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.fullname" . }}-lan
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    platform/expose: lan
+  {{- with .Values.lanExpose.ip }}
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: {{ . | quote }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: http
+      port: {{ .Values.lanExpose.port | default .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "app.selectorLabels" . | nindent 4 }}
+{{- end }}

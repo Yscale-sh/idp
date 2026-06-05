@@ -121,35 +121,43 @@ this is the default deploy path (a git commit, not kubectl).`,
 }
 
 func newRemoveCmd() *cobra.Command {
-	var app, env, root string
+	var app, component, env, root string
 	cmd := &cobra.Command{
 		Use:   "remove",
-		Short: "Remove an app from the env umbrella (teardown; Flux prunes it)",
-		Long: `remove deletes an app's entry from the environment's umbrella HelmRelease at
+		Short: "Remove a workload from the env umbrella (teardown; Flux prunes it)",
+		Long: `remove deletes a workload's entry from the environment's umbrella HelmRelease at
 clusters/<env>/platform.yaml under --root, so Flux re-reconciles the umbrella
-WITHOUT it and prunes the app's HelmRelease, its dedicated dev Postgres, and their
-namespaces (incl. any cloudflared tunnel sidecar). This is the teardown path — a
-git commit, not kubectl delete. Idempotent: removing an absent app is a no-op.`,
+WITHOUT it and prunes the workload's HelmRelease, its dedicated data stores, and
+their namespaces (incl. any cloudflared tunnel sidecar). This is the teardown path
+— a git commit, not kubectl delete. Idempotent: removing an absent app is a no-op.
+
+With --component, only that component (handle <app>-<component>) is removed; without
+it, EVERY component of the app is removed (tear down the whole multi-component app).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cluster, err := loadCluster(root, env)
 			if err != nil {
 				return err
 			}
-			path, removed, err := render.RemoveApp(root, env, app, cluster)
+			path, removed, err := render.RemoveApp(root, env, app, component, cluster)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			target := app
+			if component != "" {
+				target = app + "/" + component
+			}
 			if !removed {
-				fmt.Fprintf(out, "app %q not present in %s — nothing to remove\n", app, path)
+				fmt.Fprintf(out, "%q not present in %s — nothing to remove\n", target, path)
 				return nil
 			}
-			fmt.Fprintf(out, "removed app %q from: %s\n", app, path)
-			fmt.Fprintln(out, "next: commit the file; Flux prunes the app's HelmRelease + dedicated Postgres + namespaces.")
+			fmt.Fprintf(out, "removed %q from: %s\n", target, path)
+			fmt.Fprintln(out, "next: commit the file; Flux prunes the workload's HelmRelease + dedicated stores + namespaces.")
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&app, "app", "a", "", "app name to remove")
+	cmd.Flags().StringVar(&component, "component", "", "remove only this component (default: all components of the app)")
 	cmd.Flags().StringVarP(&env, "env", "e", appconfig.EnvDev, "target environment (dev|prod|local)")
 	cmd.Flags().StringVar(&root, "root", ".", "platform repo root (holds clusters/ and charts/)")
 	_ = cmd.MarkFlagRequired("app")

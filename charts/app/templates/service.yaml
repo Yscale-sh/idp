@@ -8,6 +8,7 @@ render if anyone smuggles a non-ClusterIP service.type into the values, so a
 mistake is a loud policy error rather than a silently-exposed NodeBalancer.
 */}}
 {{- include "app.serviceTypeGuard" . -}}
+{{- if not .Values.worker }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -23,3 +24,4 @@ spec:
       protocol: TCP
   selector:
     {{- include "app.selectorLabels" . | nindent 4 }}
+{{- end }}

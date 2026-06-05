@@ -8,9 +8,12 @@ so the chart still renders sanely under `helm template <name> charts/app` with a
 bare values file.
 */}}
 
-{{/* The app handle: platform.app, else the release name. */}}
+{{/* The workload handle: platform.workload (<app>-<component> for a multi-component
+app), else platform.app, else the release name. This names the Deployment/Service/
+Secret so sibling components of one app never collide. */}}
 {{- define "app.name" -}}
-{{- default .Release.Name .Values.platform.app | trunc 63 | trimSuffix "-" }}
+{{- $h := .Values.platform.workload | default .Values.platform.app -}}
+{{- default .Release.Name $h | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/* Fullname == name. We intentionally do NOT prefix the release name; the

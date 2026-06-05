@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/jakenesler/jdp/internal/appconfig"
 	"github.com/jakenesler/jdp/internal/clusterenv"
 	"sigs.k8s.io/yaml"
 )
@@ -25,25 +26,28 @@ type PlatformSource struct {
 	Namespace string `json:"namespace"`
 }
 
-// PostgresEntry is an app's dedicated dev Postgres store; the umbrella chart
-// renders a dev-postgres HelmRelease into its own namespace from it.
-type PostgresEntry struct {
-	Enabled     bool   `json:"enabled"`
+// StoreEntry is one of an app's dedicated dev data stores (Postgres, Redis, ...);
+// the umbrella chart renders a HelmRelease (from .chart) into .namespace from it.
+type StoreEntry struct {
+	Tool        string `json:"tool"`
 	Namespace   string `json:"namespace"`
 	ReleaseName string `json:"releaseName"`
+	Chart       string `json:"chart"`
 	Values      any    `json:"values,omitempty"`
 }
 
-// AppEntry is one app in the umbrella values. The umbrella chart templates an app
-// HelmRelease (chart ./charts/app, targetNamespace = Namespace) and, when present,
-// its Postgres HelmRelease, from this entry.
+// AppEntry is one WORKLOAD in the umbrella values (a single app, or one component
+// of a multi-component app). ReleaseName is the unique workload handle
+// (<app>-<component> or <app>) — the umbrella key — so sibling components never
+// collide. The umbrella chart templates an app HelmRelease (chart ./charts/app,
+// targetNamespace = Namespace) plus a HelmRelease per dedicated data store.
 type AppEntry struct {
-	Name        string         `json:"name"`
-	Namespace   string         `json:"namespace"`
-	ReleaseName string         `json:"releaseName"`
-	Component   string         `json:"component,omitempty"`
-	Values      any            `json:"values"`
-	Postgres    *PostgresEntry `json:"postgres,omitempty"`
+	Name        string       `json:"name"`
+	Namespace   string       `json:"namespace"`
+	ReleaseName string       `json:"releaseName"`
+	Component   string       `json:"component,omitempty"`
+	Values      any          `json:"values"`
+	Stores      []StoreEntry `json:"stores,omitempty"`
 }
 
 // ModuleEntry is one enabled infra module in the umbrella values. The umbrella
@@ -197,15 +201,13 @@ func (r *Result) ToAppEntry() AppEntry {
 		Values:      r.Values,
 	}
 	for _, s := range r.StoreReleases {
-		if s.Tool == clusterenv.DevPostgresTool {
-			e.Postgres = &PostgresEntry{
-				Enabled:     true,
-				Namespace:   s.Namespace,
-				ReleaseName: s.HelmRelease.Spec.ReleaseName,
-				Values:      s.HelmRelease.Spec.Values,
-			}
-			break
-		}
+		e.Stores = append(e.Stores, StoreEntry{
+			Tool:        s.Tool,
+			Namespace:   s.Namespace,
+			ReleaseName: s.HelmRelease.Spec.ReleaseName,
+			Chart:       s.HelmRelease.Spec.Chart.Spec.Chart,
+			Values:      s.HelmRelease.Spec.Values,
+		})
 	}
 	return e
 }
@@ -221,8 +223,10 @@ func (r *Result) UpsertApp(root string, c *clusterenv.Config) (string, error) {
 	entry := r.ToAppEntry()
 	apps := append([]AppEntry(nil), pr.Spec.Values.Apps...)
 	replaced := false
+	// Key by the unique workload handle (ReleaseName) so two components of one app
+	// (e.g. dim-api / dim-scanner) coexist instead of overwriting each other.
 	for i := range apps {
-		if apps[i].Name == entry.Name {
+		if apps[i].ReleaseName == entry.ReleaseName {
 			apps[i] = entry
 			replaced = true
 			break
@@ -231,24 +235,35 @@ func (r *Result) UpsertApp(root string, c *clusterenv.Config) (string, error) {
 	if !replaced {
 		apps = append(apps, entry)
 	}
-	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
+	sort.Slice(apps, func(i, j int) bool { return apps[i].ReleaseName < apps[j].ReleaseName })
 	pr.Spec.Values.Apps = apps
 	return WritePlatform(root, r.Env, pr)
 }
 
-// RemoveApp deletes an app (by name) from clusters/<env>/platform.yaml and writes
-// the file back, so the umbrella re-renders WITHOUT it and Flux prunes the app's
-// HelmRelease, its dedicated dev Postgres, and their namespaces. It is the inverse
-// of UpsertApp — the teardown path (a git commit, not `kubectl delete`). Returns
-// the path written and whether the app was present (false => nothing to remove).
-func RemoveApp(root, env, appName string, c *clusterenv.Config) (path string, removed bool, err error) {
+// RemoveApp deletes a workload from clusters/<env>/platform.yaml and writes the
+// file back, so the umbrella re-renders WITHOUT it and Flux prunes the workload's
+// HelmRelease, its dedicated data stores, and their namespaces. It is the inverse
+// of UpsertApp — the teardown path (a git commit, not `kubectl delete`).
+//
+// When component is set, ONLY that component (handle <app>-<component>) is removed;
+// when empty, EVERY component of the app is removed (tear down the whole app).
+// Returns the path written and whether anything was present (false => no-op).
+func RemoveApp(root, env, appName, component string, c *clusterenv.Config) (path string, removed bool, err error) {
 	pr, err := ReadPlatform(root, env, c)
 	if err != nil {
 		return "", false, err
 	}
+	handle := appName
+	if component != "" {
+		handle = appconfig.SanitizeDNSLabel(appName + "-" + component)
+	}
 	kept := make([]AppEntry, 0, len(pr.Spec.Values.Apps))
 	for _, a := range pr.Spec.Values.Apps {
-		if a.Name == appName {
+		match := a.Name == appName // whole-app teardown
+		if component != "" {
+			match = a.ReleaseName == handle // single component
+		}
+		if match {
 			removed = true
 			continue
 		}

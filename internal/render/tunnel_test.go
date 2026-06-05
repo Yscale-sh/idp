@@ -89,7 +89,7 @@ func TestRemoveApp_RoundTrip(t *testing.T) {
 		t.Fatalf("after upsert want 1 app, got %d", len(pr.Spec.Values.Apps))
 	}
 
-	_, removed, err := RemoveApp(root, "dev", "carshowdb", c)
+	_, removed, err := RemoveApp(root, "dev", "carshowdb", "", c)
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestRemoveApp_RoundTrip(t *testing.T) {
 	}
 
 	// Idempotent: removing an absent app is a no-op.
-	if _, removed2, err := RemoveApp(root, "dev", "carshowdb", c); err != nil {
+	if _, removed2, err := RemoveApp(root, "dev", "carshowdb", "", c); err != nil {
 		t.Fatalf("remove (idempotent): %v", err)
 	} else if removed2 {
 		t.Fatal("removing an absent app should report removed=false")

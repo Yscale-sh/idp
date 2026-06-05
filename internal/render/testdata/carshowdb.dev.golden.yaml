@@ -11,7 +11,7 @@ metadata:
     platform/component: api
     platform/env: dev
     platform/managed-by: platformctl
-  name: carshowdb
+  name: carshowdb-api
   namespace: flux-system
 spec:
   chart:
@@ -27,7 +27,7 @@ spec:
     remediation:
       retries: 3
   interval: 10m
-  releaseName: carshowdb
+  releaseName: carshowdb-api
   storageNamespace: carshowdb-dev-api
   targetNamespace: carshowdb-dev-api
   upgrade:
@@ -110,6 +110,7 @@ spec:
       component: api
       env: dev
       managedBy: platformctl
+      workload: carshowdb-api
     port: 8080
     probes:
       liveness:

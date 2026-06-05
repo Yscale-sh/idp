@@ -45,8 +45,23 @@ type App struct {
 	Runtime Runtime `json:"runtime" yaml:"runtime"`
 
 	// Routes are the hostnames this app answers on. Apps are ClusterIP only;
-	// public exposure is via Cloudflare Tunnel, never a LoadBalancer.
+	// public exposure is via Cloudflare Tunnel (prod) or a local LAN expose
+	// (on-prem), never an unmanaged LoadBalancer.
 	Routes []Route `json:"routes,omitempty" yaml:"routes,omitempty"`
+
+	// Env is arbitrary NON-SECRET plain env injected into the container (e.g.
+	// DIM_ROLE=scanner, RUST_LOG=info). Secret values never go here — use the
+	// secrets backend. Reserved Tier-A keys (PORT, ENVIRONMENT, ...) are ignored.
+	Env map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+
+	// Volumes are extra pod volumes + their mounts (NFS, emptyDir, PVC) — e.g. a
+	// read-only NFS media share, a shared-RW metadata dir, an ephemeral cache.
+	Volumes []Volume `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+
+	// Expose opts an app into LOCAL LAN exposure (a MetalLB LoadBalancer) for the
+	// on-prem backend where there is no Cloudflare Tunnel. Off unless set; the
+	// no-LB guardrail still blocks any other LoadBalancer.
+	Expose *Expose `json:"expose,omitempty" yaml:"expose,omitempty"`
 
 	// Sizing controls replicas, resource profile, and autoscaling.
 	Sizing Sizing `json:"sizing,omitempty" yaml:"sizing,omitempty"`
@@ -120,6 +135,11 @@ type Sizing struct {
 
 	// Autoscale configures KEDA/HPA scaling.
 	Autoscale Autoscale `json:"autoscale,omitempty" yaml:"autoscale,omitempty"`
+
+	// ExtraLimits are extended resource limits beyond the profile's cpu/memory —
+	// e.g. {"gpu.intel.com/i915": "1"} for hardware (VAAPI/QSV) transcode. Merged
+	// into the container's resources.limits.
+	ExtraLimits map[string]string `json:"extraLimits,omitempty" yaml:"extraLimits,omitempty"`
 }
 
 // Autoscale configures KEDA-driven scaling. Kind+Triggers let an app pick either
@@ -170,7 +190,17 @@ type DataStore struct {
 
 	// Size selects the data-store resource preset (minimal|small|medium|large).
 	Size string `json:"size,omitempty" yaml:"size,omitempty"`
+
+	// Provision controls whether the platform STANDS UP this store. Default true.
+	// Set false to SHARE a sibling component's store: the *_URL env is still wired
+	// to the same app-level store, but no new store is provisioned. This is how two
+	// components of one app (e.g. dim api + scanner) share one Postgres/Redis.
+	Provision *bool `json:"provision,omitempty" yaml:"provision,omitempty"`
 }
+
+// Provisioned reports whether this store should be stood up by the platform
+// (default true; false shares a sibling component's app-level store).
+func (d DataStore) Provisioned() bool { return d.Provision == nil || *d.Provision }
 
 // Storage is one object-storage bucket (R2 / S3-compatible).
 type Storage struct {
@@ -186,6 +216,50 @@ type Storage struct {
 
 	// Public marks the bucket as publicly readable (drives URL/base config).
 	Public bool `json:"public,omitempty" yaml:"public,omitempty"`
+}
+
+// Volume is one extra pod volume plus where it mounts. Type selects the source:
+//
+//	nfs      an NFS export (server + path) — shared media / metadata across pods.
+//	emptyDir an ephemeral per-pod scratch dir (e.g. a transcode cache).
+//	pvc      an existing PersistentVolumeClaim (claim name).
+type Volume struct {
+	// Name is the volume handle (DNS-1123); referenced by the mount.
+	Name string `json:"name" yaml:"name"`
+
+	// Type is the source kind: nfs | emptyDir | pvc.
+	Type string `json:"type" yaml:"type"`
+
+	// MountPath is where the volume mounts in the container.
+	MountPath string `json:"mountPath" yaml:"mountPath"`
+
+	// ReadOnly mounts the volume read-only (e.g. a media library).
+	ReadOnly bool `json:"readOnly,omitempty" yaml:"readOnly,omitempty"`
+
+	// SubPath mounts a sub-directory of the source instead of its root.
+	SubPath string `json:"subPath,omitempty" yaml:"subPath,omitempty"`
+
+	// Server/Path are the NFS export (type: nfs).
+	Server string `json:"server,omitempty" yaml:"server,omitempty"`
+	Path   string `json:"path,omitempty" yaml:"path,omitempty"`
+
+	// Claim is the PVC name (type: pvc).
+	Claim string `json:"claim,omitempty" yaml:"claim,omitempty"`
+}
+
+// Expose opts an app into LOCAL LAN exposure on the on-prem backend: a MetalLB
+// LoadBalancer in front of the app's Service, since the LAN has no Cloudflare
+// Tunnel. This is the ONLY sanctioned LoadBalancer — the no-LB guardrail still
+// blocks any other. IP pins a MetalLB address (else MetalLB auto-assigns).
+type Expose struct {
+	// LAN turns on the MetalLB LoadBalancer for this app (on-prem only).
+	LAN bool `json:"lan,omitempty" yaml:"lan,omitempty"`
+
+	// IP pins the MetalLB LoadBalancer IP (optional; else auto-assigned).
+	IP string `json:"ip,omitempty" yaml:"ip,omitempty"`
+
+	// Port is the LoadBalancer port (defaults to runtime.port).
+	Port int `json:"port,omitempty" yaml:"port,omitempty"`
 }
 
 // Logging toggles platform logging wiring (Loki endpoint + app labels).
@@ -216,6 +290,11 @@ type Connection struct {
 	// Env is the env-var name to inject the resolved address into, e.g.
 	// API_BASE_URL.
 	Env string `json:"env" yaml:"env"`
+
+	// Port is the TARGET's listening port for a clusterService connection (the
+	// target lives in another file, so its port is not otherwise known here). When
+	// 0, the source app's port is used as a best-effort convention.
+	Port int `json:"port,omitempty" yaml:"port,omitempty"`
 
 	// Mode chooses how the address is resolved:
 	//   publicRoute    -> target's external route (browser-facing)
@@ -401,18 +480,35 @@ func SanitizeDNSLabel(s string) string {
 	return out
 }
 
-// ReleaseName is the Helm release name: <app>.
-func (a *App) ReleaseName() string { return a.App }
+// Workload is the unique per-workload handle: <app>-<component> when a component
+// is set, else <app>. It names the HelmRelease, ClusterIP Service, runtime Secret,
+// and the umbrella key — so multiple components of ONE app (e.g. dim's api /
+// scanner / ui) never collide. The SSM root stays app-level (see SSMRoot) so
+// sibling components SHARE secrets. For a single-component app it is just <app>.
+func (a *App) Workload() string {
+	if a.Component != "" {
+		return SanitizeDNSLabel(a.App + "-" + a.Component)
+	}
+	return a.App
+}
 
-// ServiceName is the ClusterIP Service name: <app>.
-func (a *App) ServiceName() string { return a.App }
+// IsWorker reports whether this is a portless worker (runtime.port == 0): the
+// platform renders a Deployment only — no Service, no route, no HTTP probes, no
+// ServiceMonitor. For background processors like a media scanner.
+func (a *App) IsWorker() bool { return a.Runtime.Port == 0 }
+
+// ReleaseName is the Helm release name: the workload handle.
+func (a *App) ReleaseName() string { return a.Workload() }
+
+// ServiceName is the ClusterIP Service name: the workload handle.
+func (a *App) ServiceName() string { return a.Workload() }
 
 // SecretName is the runtime Secret name materialized by ExternalSecret:
-// <app>-runtime.
-func (a *App) SecretName() string { return a.App + "-runtime" }
+// <workload>-runtime.
+func (a *App) SecretName() string { return a.Workload() + "-runtime" }
 
-// ReleaseHandle is the Flux HelmRelease name (and Helm release name): <app>.
-func (a *App) ReleaseHandle() string { return a.App }
+// ReleaseHandle is the Flux HelmRelease name (and Helm release name): the handle.
+func (a *App) ReleaseHandle() string { return a.Workload() }
 
 // SSMRoot returns the per-env SSM app root: /apps/<app>/<env>.
 func (a *App) SSMRoot(env string) string {

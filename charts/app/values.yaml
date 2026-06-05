@@ -64,6 +64,10 @@ imagePullSecrets:
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 port: 8080
+# worker: a portless background workload (renderer sets it when runtime.port == 0).
+# The chart then renders a Deployment ONLY — no Service, no HTTP probes, no
+# ServiceMonitor, no LAN expose. For media scanners / queue workers.
+worker: false
 replicas: 1
 
 # ── pod scheduling / security passthrough (optional; chart-level, not in the
@@ -80,8 +84,21 @@ tolerations: []
 # container/volume specs here. Empty by default → the splice templates in
 # deployment.yaml are a no-op. (The cloudflared sidecar uses the dedicated
 # `tunnel` block below, not these.)
-sidecars: []   # extra containers appended to the pod
-volumes: []    # extra pod volumes
+sidecars: []        # extra containers appended to the pod
+volumes: []         # extra pod volumes (raw k8s volume specs)
+volumeMounts: []    # matching container volumeMounts (raw k8s volumeMount specs;
+                    # the renderer fills volumes + volumeMounts together from
+                    # deploy.yaml volumes[] — NFS / emptyDir / PVC)
+
+# ── lanExpose: on-prem MetalLB LoadBalancer (renderer-driven, on-prem only) ────
+# The on-prem twin of the tunnel: when an app opts in via expose.lan on a LOCAL
+# backend, the renderer sets lanExpose.enabled and lan-service.yaml adds a MetalLB
+# LoadBalancer (the ONLY sanctioned LB) in front of the app. ip pins a MetalLB
+# address (else auto). Off by default → no LB; prod exposes via the tunnel instead.
+lanExpose:
+  enabled: false
+  ip: ""
+  port: 0   # 0 => service.port
 
 # ── tunnel: Cloudflare-Tunnel exposure for public routes (renderer-driven) ────
 # The renderer sets tunnel.enabled=true + tunnel.ingress for a PROD app that
@@ -118,6 +135,10 @@ resources:
   limits:
     cpu: 250m
     memory: 256Mi
+  # extraLimits: extended resource limits merged into limits beyond cpu/memory,
+  # e.g. {gpu.intel.com/i915: "1"} for hardware transcode (renderer sets from
+  # sizing.extraLimits). Empty for the common case.
+  extraLimits: {}
 
 resourceProfiles:
   minimal:
@@ -259,7 +280,9 @@ devSecretPlaceholders: []
 
 # ── platform labels (stamped on every generated object) ──────────────────────
 platform:
-  app: ""           # platform/app + app.kubernetes.io/{name,instance}
+  app: ""           # platform/app label (the app, shared across components)
+  workload: ""      # the per-workload handle (<app>-<component> or <app>); names
+                    # the Deployment/Service/Secret. Empty => app.
   env: ""           # platform/env
   product: ""       # platform/product (optional)
   component: ""     # platform/component (optional)

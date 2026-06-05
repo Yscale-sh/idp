@@ -5,9 +5,12 @@ import (
 	"github.com/jakenesler/jdp/internal/clusterenv"
 )
 
-// devPostgresChartPath is the in-repo path to the per-app dev Postgres chart,
-// referenced by the GitRepository source.
-const devPostgresChartPath = "./charts/infra/dev-postgres"
+// devPostgresChartPath / devRedisChartPath are the in-repo paths to the per-app
+// dev data-store charts, referenced by the GitRepository source.
+const (
+	devPostgresChartPath = "./charts/infra/dev-postgres"
+	devRedisChartPath    = "./charts/infra/dev-redis"
+)
 
 // StoreRelease is one rendered per-app data-store Flux HelmRelease (its own
 // namespace, its own chart). It pairs the HelmRelease with the canonical output
@@ -42,17 +45,80 @@ func BuildStoreReleases(app appconfig.App, env string, c *clusterenv.Config) []S
 
 	// Per-app dev Postgres for each declared postgres db. The first/default db
 	// owns the bare <app>-postgres name/namespace; a second postgres store
-	// disambiguates with its store name (<app>-postgres-<name>).
+	// disambiguates with its store name (<app>-postgres-<name>). A store with
+	// provision: false is SHARED from a sibling component — its URL is still wired,
+	// but it is not stood up here (so api+scanner share one Postgres).
 	pgSeen := 0
 	for _, s := range app.DB {
-		if s.Type != appconfig.DefaultDBType { // only postgres provisions a dev chart today
+		if s.Type != appconfig.DefaultDBType || !s.Provisioned() {
 			continue
 		}
 		secondary := pgSeen > 0
 		pgSeen++
 		out = append(out, buildDevPostgresRelease(app, env, c, s.Name, secondary))
 	}
+
+	// Per-app dev Redis for each declared redis cache (same sharing semantics).
+	redisSeen := 0
+	for _, s := range app.Cache {
+		if s.Type != appconfig.DefaultCacheType || !s.Provisioned() {
+			continue
+		}
+		secondary := redisSeen > 0
+		redisSeen++
+		out = append(out, buildDevRedisRelease(app, env, c, s.Name, secondary))
+	}
 	return out
+}
+
+// buildDevRedisRelease renders one dedicated dev-redis Flux HelmRelease for the
+// app's declared redis cache (chart ./charts/infra/dev-redis), targetNamespace
+// <app>-<env>-redis. Mirrors buildDevPostgresRelease; the dev Redis is an
+// in-cluster, no-persistence pub/sub bus (no auth), matching clusterenv.DevRedisURL.
+func buildDevRedisRelease(app appconfig.App, env string, c *clusterenv.Config, storeName string, secondary bool) StoreRelease {
+	sourceName, sourceNS := fluxSource(c)
+
+	release := clusterenv.DevRedisReleaseName(app.App)
+	ns := app.StoreNamespace(env, clusterenv.DevRedisTool, storeName, secondary)
+	fileStem := release
+	if secondary && storeName != "" {
+		release = release + "-" + appconfig.SanitizeDNSLabel(storeName)
+		fileStem = release
+	}
+
+	values := map[string]any{
+		"service":     map[string]any{"port": 6379},
+		"persistence": map[string]any{"enabled": false},
+	}
+	if clusterenv.DevPostgresNode != "" {
+		values["nodeSelector"] = map[string]any{"kubernetes.io/hostname": clusterenv.DevPostgresNode}
+	}
+
+	hr := HelmRelease{
+		APIVersion: helmReleaseAPIVersion,
+		Kind:       helmReleaseKind,
+		Metadata: FluxMetadata{
+			Name:      release,
+			Namespace: sourceNS,
+			Labels:    storeLabels(app.App, env, clusterenv.DevRedisTool),
+		},
+		Spec: HelmReleaseSpec{
+			Interval:         fluxInterval,
+			ReleaseName:      release,
+			TargetNamespace:  ns,
+			StorageNamespace: ns,
+			Install:          InstallSpec{CreateNamespace: true, Remediation: &RemediationSpec{Retries: remediationRetries}},
+			Upgrade:          UpgradeSpec{Remediation: &RemediationSpec{Retries: remediationRetries}},
+			Chart: ChartTemplate{Spec: ChartSpec{
+				Chart:             devRedisChartPath,
+				SourceRef:         SourceRef{Kind: sourceKindGitRepo, Name: sourceName, Namespace: sourceNS},
+				ReconcileStrategy: reconcileRevision,
+			}},
+			Values: values,
+		},
+	}
+
+	return StoreRelease{FileStem: fileStem, Tool: clusterenv.DevRedisTool, Namespace: ns, HelmRelease: hr}
 }
 
 // buildDevPostgresRelease renders one dedicated dev-postgres Flux HelmRelease for
