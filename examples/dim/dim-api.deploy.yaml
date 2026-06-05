@@ -17,6 +17,8 @@ probes:
 env:
   DIM_ROLE: web
   RUST_LOG: info
+  DIM_METADATA_DIR: /metadata   # serve the scanner's posters from shared NFS (/images)
+  DIM_CACHE_DIR: /transcode     # ephemeral per-pod DASH segment cache
 
 sizing:
   profile: small

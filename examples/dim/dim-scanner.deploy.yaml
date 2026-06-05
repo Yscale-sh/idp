@@ -11,6 +11,7 @@ runtime:
 env:
   DIM_ROLE: scanner
   RUST_LOG: info
+  DIM_METADATA_DIR: /metadata   # write posters/backdrops to the shared NFS mount
 
 sizing:
   replicas: 1
