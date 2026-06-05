@@ -160,6 +160,13 @@ type Sizing struct {
 	// e.g. {"gpu.intel.com/i915": "1"} for hardware (VAAPI/QSV) transcode. Merged
 	// into the container's resources.limits.
 	ExtraLimits map[string]string `json:"extraLimits,omitempty" yaml:"extraLimits,omitempty"`
+
+	// Autosize, when true, renders a VerticalPodAutoscaler that right-sizes the
+	// pod within the profile envelope (the profile's requests/limits become the
+	// VPA min/max). Uses updateMode Initial so it never evicts a running pod
+	// mid-work — the pod is right-sized at (re)creation. Requires the `vpa` module
+	// enabled in the cluster.
+	Autosize bool `json:"autosize,omitempty" yaml:"autosize,omitempty"`
 }
 
 // Autoscale configures KEDA-driven scaling. Kind+Triggers let an app pick either
@@ -349,7 +356,7 @@ const (
 )
 
 // ValidProfiles is the closed set of resource presets the renderer understands.
-var ValidProfiles = []string{"minimal", "small", "medium", "large"}
+var ValidProfiles = []string{"minimal", "small", "medium", "large", "xlarge"}
 
 // Defaults returns a fresh App pre-populated with the conventional defaults.
 // Useful for scaffolding (`platformctl new app`).

@@ -37,6 +37,13 @@ var profileResources = map[string]ResourceEnvelope{
 		Requests: ResourceSpec{CPU: "500m", Memory: "512Mi"},
 		Limits:   ResourceSpec{CPU: "2", Memory: "2Gi"},
 	},
+	// Heavy, bursty workloads (e.g. in-process media transcode): a generous
+	// ceiling so a 4K job doesn't OOM mid-stream. Pair with sizing.autosize (VPA)
+	// so the actual pod is right-sized within this envelope.
+	"xlarge": {
+		Requests: ResourceSpec{CPU: "1", Memory: "1Gi"},
+		Limits:   ResourceSpec{CPU: "4", Memory: "4Gi"},
+	},
 }
 
 // ProfileResources returns the resource envelope for a profile.

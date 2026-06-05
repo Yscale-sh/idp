@@ -29,6 +29,9 @@ type Values struct {
 	// LanExpose is the on-prem MetalLB LoadBalancer (the on-prem twin of the
 	// tunnel). Nil unless the app opts in via expose.lan on a local backend.
 	LanExpose *LanExposeValues `json:"lanExpose,omitempty"`
+	// Autosize renders a VerticalPodAutoscaler that right-sizes the pod within the
+	// profile envelope. Nil unless the app opts in via sizing.autosize.
+	Autosize *AutosizeValues `json:"autosize,omitempty"`
 	// Volumes / VolumeMounts are raw k8s pod-volume + container-mount specs the
 	// renderer derives from deploy.yaml volumes[] (NFS, emptyDir, PVC). Omitted
 	// when empty so apps without volumes render byte-identical to before.
@@ -81,6 +84,17 @@ type ResourceRequirements struct {
 	// ExtraLimits are extended resource limits merged into limits beyond cpu/memory
 	// (e.g. {"gpu.intel.com/i915": "1"}). Empty for the common case.
 	ExtraLimits map[string]string `json:"extraLimits,omitempty"`
+}
+
+// AutosizeValues renders a VerticalPodAutoscaler targeting the app's Deployment.
+// The chart gates on Enabled; MinAllowed/MaxAllowed bound the recommender to the
+// chosen profile's envelope so it right-sizes within the tier. UpdateMode is
+// "Initial" (size at pod creation, never evict a running pod).
+type AutosizeValues struct {
+	Enabled    bool         `json:"enabled"`
+	UpdateMode string       `json:"updateMode"`
+	MinAllowed ResourceSpec `json:"minAllowed"`
+	MaxAllowed ResourceSpec `json:"maxAllowed"`
 }
 
 // LanExposeValues renders the on-prem MetalLB LoadBalancer in front of an app's
@@ -314,6 +328,17 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			Component: app.Component,
 			ManagedBy: "platformctl",
 		},
+	}
+
+	// sizing.autosize -> a VerticalPodAutoscaler bounded by the profile envelope
+	// (the chart renders it; the `vpa` module supplies the controller).
+	if app.Sizing.Autosize {
+		v.Autosize = &AutosizeValues{
+			Enabled:    true,
+			UpdateMode: "Initial",
+			MinAllowed: ResourceSpec{CPU: envelope.Requests.CPU, Memory: envelope.Requests.Memory},
+			MaxAllowed: ResourceSpec{CPU: envelope.Limits.CPU, Memory: envelope.Limits.Memory},
+		}
 	}
 
 	// connectsTo resolves into env.extra (non-secret addresses).
