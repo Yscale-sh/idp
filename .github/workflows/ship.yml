@@ -19,6 +19,18 @@ on:
       deploy-file:
         type: string
         default: deploy.yaml
+      build-context:
+        description: "Docker build context dir (e.g. '.' for a root Dockerfile, 'ui' for a UI subdir)"
+        type: string
+        default: "."
+      dockerfile:
+        description: "Dockerfile name relative to build-context"
+        type: string
+        default: Dockerfile
+      submodules:
+        description: "git submodules for the build checkout (false | true | recursive). Private submodules need PLATFORM_REPO_TOKEN to also have read on them."
+        type: string
+        default: "false"
       idpctl-tag:
         description: "ghcr.io/jakenesler/idpctl image tag to run (pin a major, e.g. v1)"
         type: string
@@ -82,6 +94,12 @@ jobs:
     steps:
       - name: Checkout app repo
         uses: actions/checkout@v4
+        with:
+          submodules: ${{ inputs.submodules }}
+          # PLATFORM_REPO_TOKEN (repo-scoped) lets the checkout pull PRIVATE
+          # cross-repo submodules the per-job github.token can't reach; falls back to
+          # github.token when no submodules are needed.
+          token: ${{ secrets.PLATFORM_REPO_TOKEN || github.token }}
 
       - name: Read app name from deploy.yaml
         id: app
@@ -128,7 +146,8 @@ jobs:
         if: ${{ !inputs.remove }}
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ inputs.build-context }}
+          file: ${{ inputs.build-context }}/${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.app.outputs.image }}:${{ github.sha }}
 
