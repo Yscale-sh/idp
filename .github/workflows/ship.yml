@@ -109,7 +109,12 @@ jobs:
           NAME="$(awk '/^app:/{v=$0; sub(/^app:[[:space:]]*/,"",v); sub(/[[:space:]]*#.*$/,"",v); sub(/[[:space:]]+$/,"",v); gsub(/^["'"'"']|["'"'"']$/,"",v); print v; exit}' "${{ inputs.deploy-file }}")"
           [ -n "$NAME" ] || { echo "could not read 'app:' from ${{ inputs.deploy-file }}" >&2; exit 1; }
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/jakenesler/$NAME" >> "$GITHUB_OUTPUT"
+          # Image repo comes from runtime.image in the deploy file (multi-component
+          # apps use different images, e.g. <app>-api vs <app>-ui), falling back to
+          # ghcr.io/jakenesler/<app>. CI appends :<sha> as the tag.
+          IMG="$(awk '/^runtime:/{r=1} r&&/^[[:space:]]+image:/{sub(/^[[:space:]]*image:[[:space:]]*/,"");sub(/[[:space:]]*#.*/,"");print;exit}' "${{ inputs.deploy-file }}")"
+          [ -n "$IMG" ] || IMG="ghcr.io/jakenesler/$NAME"
+          echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       # Prefer a GitHub App (short-lived, repo-scoped) to write the platform repo;
       # fall back to a fine-grained PAT. One of the two must be provided by the caller.
