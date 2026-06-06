@@ -153,7 +153,7 @@ const (
 	// refs/heads/<branch>) when cluster.yaml omits flux.branch.
 	DefaultBranch = "main"
 	// DefaultRepoURL is the placeholder repo URL; set per-env in cluster.yaml.
-	DefaultRepoURL = "https://github.com/jakenesler/jdp.git"
+	DefaultRepoURL = "https://github.com/jakenesler/idp.git"
 	DefaultRefresh = "1h"
 )
 

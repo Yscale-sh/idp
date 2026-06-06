@@ -4,7 +4,7 @@
 // sidecar) — this package never creates a LoadBalancer or an Ingress; it only
 // upserts a proxied CNAME <host> -> <tunnelID>.cfargotunnel.com so a browser can
 // find the tunnel. Setting that record by hand (Cloudflare dashboard) is the
-// default; `jdpctl dns sync` automates it when an operator opts in.
+// default; `idpctl dns sync` automates it when an operator opts in.
 //
 // It talks to the Cloudflare API only (Bearer token), never the cluster, and is
 // dependency-free (standard library). The tunnel id is derived from the

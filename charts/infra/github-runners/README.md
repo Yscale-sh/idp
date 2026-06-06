@@ -8,12 +8,12 @@ scaling **0 → N** on queued workflow runs (idle footprint is zero).
 This chart deploys **only the pools**. It assumes the ARC **controller + CRDs**
 (`actions.summerwind.dev`) are already installed in the target namespace (`github`).
 
-## How it's wired (the idp/jdp way)
+## How it's wired (the idp way)
 
 - Cataloged in `modules/registry.yaml` (`github-runners`, `source: localChart`).
 - Enabled + given its per-org pools in `environments/dev/cluster.yaml`
   (`modules.github-runners.values.runners`).
-- `make infra-render ENV=dev` (→ `jdpctl infra render`) writes the module's
+- `make infra-render ENV=dev` (→ `idpctl infra render`) writes the module's
   HelmRelease into `clusters/dev/platform.yaml`; Flux reconciles it.
 
 ## Per-org auth (out-of-band, never templated)

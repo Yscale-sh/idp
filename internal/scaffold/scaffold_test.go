@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/appconfig"
 	"sigs.k8s.io/yaml"
 )
 
@@ -39,10 +39,10 @@ func TestGenerate_ShipWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	ship := string(files[".github/workflows/ship.yml"])
-	// Thin caller stub: it delegates build -> render -> commit to the reusable JDP
+	// Thin caller stub: it delegates build -> render -> commit to the reusable IDP
 	// workflow rather than doing it inline.
-	if !strings.Contains(ship, "uses: jakenesler/jdp/.github/workflows/ship.yml@") {
-		t.Errorf("ship.yml should call the reusable JDP workflow:\n%s", ship)
+	if !strings.Contains(ship, "uses: jakenesler/idp/.github/workflows/ship.yml@") {
+		t.Errorf("ship.yml should call the reusable IDP workflow:\n%s", ship)
 	}
 	// Teardown path is exposed (we must be able to tear it down too).
 	if !strings.Contains(ship, "remove:") {

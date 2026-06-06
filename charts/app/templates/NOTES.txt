@@ -1,4 +1,4 @@
-{{ include "app.name" . }} deployed via the JDP shared app chart (charts/app).
+{{ include "app.name" . }} deployed via the IDP shared app chart (charts/app).
 
   Environment : {{ .Values.platform.env | default "(unset)" }}
   Namespace   : {{ .Release.Namespace }}
@@ -25,11 +25,11 @@ own ClusterIP Service:
   DNS per public hostname (token tunnels don't auto-create it). Either set it by
   hand — a proxied CNAME <host> -> <tunnel-id>.cfargotunnel.com (or `cloudflared
   tunnel route dns <tunnel-name> <hostname>`) — OR let the ship pipeline do it:
-  enable manage-dns and it runs `jdpctl dns sync` to upsert that CNAME for each
+  enable manage-dns and it runs `idpctl dns sync` to upsert that CNAME for each
   public route (tunnel id derived from TUNNEL_TOKEN). The tunnel is the exposure
   either way; the CNAME just points the name at it.
-  Teardown: set the route private (public:false) or `jdpctl remove` the app — the
-  sidecar + pod are pruned by Flux; `jdpctl dns prune` (or manage-dns on a remove)
+  Teardown: set the route private (public:false) or `idpctl remove` the app — the
+  sidecar + pod are pruned by Flux; `idpctl dns prune` (or manage-dns on a remove)
   deletes the CNAMEs; then remove the tunnel/DNS in Cloudflare.
 {{- else }}
 
@@ -56,5 +56,5 @@ Metrics: ServiceMonitor enabled (release={{ .Values.serviceMonitor.releaseLabel 
 {{- end }}
 
 Reminder: Flux is the only writer. Reconcile by committing the rendered umbrella
-clusters/{{ .Values.platform.env | default "<env>" }}/platform.yaml (jdpctl render
-to deploy, jdpctl remove to tear down) — never `helm install`/`kubectl` by hand.
+clusters/{{ .Values.platform.env | default "<env>" }}/platform.yaml (idpctl render
+to deploy, idpctl remove to tear down) — never `helm install`/`kubectl` by hand.

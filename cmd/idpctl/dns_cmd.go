@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clouddns"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clouddns"
 	"github.com/spf13/cobra"
 )
 
@@ -116,7 +116,7 @@ func runDNS(cmd *cobra.Command, file, env, tunnelID, zoneID string, dryRun, del 
 	if dryRun {
 		prefix = "[dry-run] "
 	}
-	comment := fmt.Sprintf("jdp: %s/%s (managed by jdpctl dns)", app.App, env)
+	comment := fmt.Sprintf("idp: %s/%s (managed by idpctl dns)", app.App, env)
 
 	results, err := clouddns.New(apiToken).SyncHosts(hosts, zoneID, target, true /* proxied */, comment, del, dryRun)
 	if err != nil {

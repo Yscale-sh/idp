@@ -18,9 +18,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jakenesler/jdp/internal/clusterenv"
-	"github.com/jakenesler/jdp/internal/helmrunner"
-	"github.com/jakenesler/jdp/internal/policy"
+	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/helmrunner"
+	"github.com/jakenesler/idp/internal/policy"
 	"sigs.k8s.io/yaml"
 )
 

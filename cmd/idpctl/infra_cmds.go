@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/jakenesler/jdp/internal/clusterenv"
-	"github.com/jakenesler/jdp/internal/kube"
-	"github.com/jakenesler/jdp/internal/modules"
-	"github.com/jakenesler/jdp/internal/render"
+	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/kube"
+	"github.com/jakenesler/idp/internal/modules"
+	"github.com/jakenesler/idp/internal/render"
 	"github.com/spf13/cobra"
 )
 

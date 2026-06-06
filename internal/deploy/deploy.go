@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clusterenv"
-	"github.com/jakenesler/jdp/internal/helmrunner"
-	"github.com/jakenesler/jdp/internal/policy"
-	"github.com/jakenesler/jdp/internal/render"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/helmrunner"
+	"github.com/jakenesler/idp/internal/policy"
+	"github.com/jakenesler/idp/internal/render"
 )
 
 // Request is the input to a plan/render.

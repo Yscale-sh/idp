@@ -1,10 +1,10 @@
-# Reusable JDP ship workflow. An app repo calls this (uses: jakenesler/jdp/.github/
+# Reusable IDP ship workflow. An app repo calls this (uses: jakenesler/idp/.github/
 # workflows/ship.yml@v1) and the platform does the rest: build + push the app image,
 # render its deploy.yaml into the env umbrella (clusters/<env>/platform.yaml) in the
-# jdp repo, and commit it — Flux then reconciles. Teardown (inputs.remove=true)
+# idp repo, and commit it — Flux then reconciles. Teardown (inputs.remove=true)
 # removes the app from the umbrella instead, so Flux prunes it.
 #
-# The render/remove runs jdpctl via `docker run` (the jdpctl image bundles helm so
+# The render/remove runs idpctl via `docker run` (the idpctl image bundles helm so
 # the no-LB guardrail stays at full strength) rather than a job container, so the
 # app-image `docker build` works on the host runner without Docker-in-Docker.
 name: ship
@@ -19,8 +19,8 @@ on:
       deploy-file:
         type: string
         default: deploy.yaml
-      jdpctl-tag:
-        description: "ghcr.io/jakenesler/jdpctl image tag to run (pin a major, e.g. v1)"
+      idpctl-tag:
+        description: "ghcr.io/jakenesler/idpctl image tag to run (pin a major, e.g. v1)"
         type: string
         default: v1
       remove:
@@ -78,7 +78,7 @@ jobs:
   ship:
     runs-on: ubuntu-latest
     env:
-      JDPCTL_IMAGE: ghcr.io/jakenesler/jdpctl:${{ inputs.jdpctl-tag }}
+      JDPCTL_IMAGE: ghcr.io/jakenesler/idpctl:${{ inputs.idpctl-tag }}
     steps:
       - name: Checkout app repo
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
           app-id: ${{ secrets.JDP_APP_ID }}
           private-key: ${{ secrets.JDP_APP_PRIVATE_KEY }}
           owner: jakenesler
-          repositories: jdp
+          repositories: idp
 
       - name: Resolve platform token
         id: tok
@@ -132,15 +132,15 @@ jobs:
           push: true
           tags: ${{ steps.app.outputs.image }}:${{ github.sha }}
 
-      - name: Checkout platform repo (jdp) into .platform
+      - name: Checkout platform repo (idp) into .platform
         uses: actions/checkout@v4
         with:
-          repository: jakenesler/jdp
+          repository: jakenesler/idp
           path: .platform
           token: ${{ steps.tok.outputs.token }}
           ref: ${{ inputs.env == 'prod' && 'prod' || 'main' }}
 
-      - name: Render (deploy) or remove (teardown) via jdpctl
+      - name: Render (deploy) or remove (teardown) via idpctl
         run: |
           set -euo pipefail
           docker pull "$JDPCTL_IMAGE"
@@ -160,8 +160,8 @@ jobs:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
         run: |
           set -euo pipefail
-          git config user.name "jdp-ship-bot"
-          git config user.email "jdp-ship-bot@users.noreply.github.com"
+          git config user.name "idp-ship-bot"
+          git config user.email "idp-ship-bot@users.noreply.github.com"
           if git diff --quiet; then echo "no platform change — nothing to commit"; exit 0; fi
           ACT="deploy"; [ "${{ inputs.remove }}" = "true" ] && ACT="remove"
           MSG="ship(${{ inputs.env }}): $ACT ${{ steps.app.outputs.name }} @ ${GITHUB_SHA::12}"
@@ -225,7 +225,7 @@ jobs:
           echo "::add-mask::$TUN"
           # Zone id (optional): lets a single-zone-scoped DNS:Edit token skip listing
           # zones. Direct secret wins; else SSM if a path was given; else empty (the
-          # token must then have zone:read so jdpctl can look the zone up).
+          # token must then have zone:read so idpctl can look the zone up).
           ZID="${GH_CF_ZONE_ID:-}"
           if [ -z "$ZID" ] && [ -n "${CF_ZONE_SSM_PATH:-}" ]; then
             ZID="$(aws ssm get-parameter --with-decryption --name "$CF_ZONE_SSM_PATH" --query 'Parameter.Value' --output text || true)"

@@ -1,4 +1,4 @@
-module github.com/jakenesler/jdp
+module github.com/jakenesler/idp
 
 go 1.25.0
 

@@ -1,4 +1,4 @@
-# jdp — Jake's Developer Platform
+# idp — Jake's Developer Platform
 
 > A tiny, opinionated **Internal Developer Platform** for self-hosted Kubernetes (k3s).
 > A developer writes one small `deploy.yaml`; the platform renders desired state; **Flux**
@@ -7,16 +7,16 @@
 
 **Status:** early / work-in-progress. Built and validated against a homelab k3s cluster (`dev`)
 before it targets cloud k3s (`prod`). Repo is being kept private until it's ready to open-source.
-The CLI is **`jdpctl`** (Go module `github.com/jakenesler/jdp`).
+The CLI is **`idpctl`** (Go module `github.com/jakenesler/idp`).
 
 ---
 
 ## What it is
 
-`jdpctl` turns a small app contract into reconciled Kubernetes state:
+`idpctl` turns a small app contract into reconciled Kubernetes state:
 
 ```
- deploy.yaml  ──►  jdpctl render  ──►  clusters/<env>/platform.yaml   ──►  Flux  ──►  cluster
+ deploy.yaml  ──►  idpctl render  ──►  clusters/<env>/platform.yaml   ──►  Flux  ──►  cluster
  (the dev's         (CLI: validate /     (ONE umbrella HelmRelease whose          (the only
   shopping list)     plan / render)        values list every app; charts/cluster    writer)
                                            templates an isolated HelmRelease each)
@@ -48,10 +48,10 @@ resource limits, autoscaling and observability wiring from that. The developer n
   module — the Helm-native replacement for the old Argo CD app-of-apps. `disableWait` isolates a
   failing app so it can't wedge its siblings.
 - **Developer, every day:** push your app repo → CI builds & pushes the image → runs
-  `jdpctl render --env <env> --file deploy.yaml --image <tag>` → which **upserts the app** into
+  `idpctl render --env <env> --file deploy.yaml --image <tag>` → which **upserts the app** into
   `clusters/<env>/platform.yaml` → commit it → Flux reconciles. A new app is just **one new entry** in
-  the umbrella's `spec.values.apps` (each app stays its own isolated Helm release). CI runs `jdpctl`
-  from its own published image; `ship.yml` is a reusable workflow and `jdpctl new app` scaffolds a repo.
+  the umbrella's `spec.values.apps` (each app stays its own isolated Helm release). CI runs `idpctl`
+  from its own published image; `ship.yml` is a reusable workflow and `idpctl new app` scaffolds a repo.
 
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
@@ -71,7 +71,7 @@ multi-tier products:
 | `probes.type` | `http` (default), `tcp` (port-open, for services with no health route), or `none`. |
 | `sizing.extraLimits` | Arbitrary resource limits, e.g. `gpu.intel.com/i915: "1"` for hardware transcode. |
 | `connectsTo[]` | Wire app→app / component→component dependencies. The platform resolves the address per env and injects it into an env var — `clusterService` (in-cluster DNS), `publicRoute` (external), or `serviceToken` (Cloudflare Access); `scheme: none` yields a bare `host:port` for nginx upstreams / DSNs. |
-| `routes[]` | Public hostnames. In prod these are served over a **Cloudflare Tunnel** with DNS managed by `jdpctl dns` / `jdpctl tunnel`; dev stays LAN-only. |
+| `routes[]` | Public hostnames. In prod these are served over a **Cloudflare Tunnel** with DNS managed by `idpctl dns` / `idpctl tunnel`; dev stays LAN-only. |
 
 See `examples/carshowdb` (a single-service app) and `examples/dim` (a three-component media server
 sharing one Postgres + Redis, an iGPU, an NFS media library, and a LAN-exposed UI).
@@ -92,27 +92,27 @@ modules:
   unifi-controller: { enabled: false } # homelab service — modules aren't just "platform" tech
 ```
 
-`jdpctl infra render --env <env>` sets the **enabled** modules in the umbrella; `charts/cluster`
+`idpctl infra render --env <env>` sets the **enabled** modules in the umbrella; `charts/cluster`
 then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `chartRepo` module).
 
 ## CLI
 
 ```bash
-jdpctl validate --file deploy.yaml                 # schema + policy checks (fail before mutation)
-jdpctl plan     --env dev --file deploy.yaml       # show what would change
-jdpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
-jdpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
-jdpctl infra render --env dev                      # set the enabled modules in the umbrella
-jdpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
-jdpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
-jdpctl new app <name>                              # scaffold an app repo (deploy.yaml + ship.yml)
+idpctl validate --file deploy.yaml                 # schema + policy checks (fail before mutation)
+idpctl plan     --env dev --file deploy.yaml       # show what would change
+idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
+idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
+idpctl infra render --env dev                      # set the enabled modules in the umbrella
+idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
+idpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
+idpctl new app <name>                              # scaffold an app repo (deploy.yaml + ship.yml)
 ```
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `cmd/jdpctl`, `internal/*` | the Go CLI (`appconfig`, `render`, `policy`, `modules`, `clouddns`, `clusterenv`, `helmrunner`, `kube`, `secrets`, `scaffold`, `deploy`) |
+| `cmd/idpctl`, `internal/*` | the Go CLI (`appconfig`, `render`, `policy`, `modules`, `clouddns`, `clusterenv`, `helmrunner`, `kube`, `secrets`, `scaffold`, `deploy`) |
 | `charts/app` | the shared app chart (Deployment + ClusterIP Service + optional KEDA / ServiceMonitor / ExternalSecret / PDB / LAN LoadBalancer / volumes) |
 | `charts/infra`, `modules/` | infra module charts (`dev-postgres`, `dev-redis`) + the module registry |
 | `charts/cluster` | the **umbrella** chart — templates a HelmRelease per app / store / module from the env values |
@@ -124,10 +124,10 @@ jdpctl new app <name>                              # scaffold an app repo (deplo
 ## Quickstart (dev)
 
 ```bash
-make build && make test                            # compiles ./jdpctl, runs unit/golden tests
-./jdpctl validate --file examples/carshowdb/deploy.yaml
-./jdpctl render   --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:dev-<sha>
-./jdpctl infra render --env dev
+make build && make test                            # compiles ./idpctl, runs unit/golden tests
+./idpctl validate --file examples/carshowdb/deploy.yaml
+./idpctl render   --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:dev-<sha>
+./idpctl infra render --env dev
 make e2e          # spins an ephemeral k3d cluster, applies, asserts rollout, tears down (SKIPs if k3d absent)
 ```
 

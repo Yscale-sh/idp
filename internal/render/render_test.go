@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clusterenv"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite golden testdata files")
@@ -42,7 +42,7 @@ func devCluster() *clusterenv.Config {
 		Domain: "svc.cluster.local",
 		Flux: clusterenv.FluxConfig{
 			Namespace:  "flux-system",
-			RepoURL:    "https://github.com/jakenesler/jdp.git",
+			RepoURL:    "https://github.com/jakenesler/idp.git",
 			Branch:     "main",
 			SourceName: "flux-system",
 		},

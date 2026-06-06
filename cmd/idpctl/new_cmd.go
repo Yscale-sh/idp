@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/jakenesler/jdp/internal/scaffold"
+	"github.com/jakenesler/idp/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,7 @@ func newNewAppCmd() *cobra.Command {
 			for _, p := range written {
 				fmt.Fprintf(out, "wrote: %s\n", p)
 			}
-			fmt.Fprintf(out, "next: jdpctl validate --file %s/deploy.yaml\n", dir)
+			fmt.Fprintf(out, "next: idpctl validate --file %s/deploy.yaml\n", dir)
 			return nil
 		},
 	}

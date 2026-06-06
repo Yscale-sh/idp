@@ -49,7 +49,7 @@ spec:
   values:
     {{- toYaml .values | nindent 4 }}
 {{- end }}
-{{- /* BACK-COMPAT: an app entry written by an OLDER jdpctl carries a single
+{{- /* BACK-COMPAT: an app entry written by an OLDER idpctl carries a single
 .postgres block instead of .stores[]. Render it too so a chart upgrade doesn't
 prune an existing app's Postgres before its entry is re-rendered into .stores. */}}
 {{- if and .postgres .postgres.enabled }}

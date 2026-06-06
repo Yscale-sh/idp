@@ -67,7 +67,7 @@ by construction" lives: a **namespaced `SecretStore` per app** (not one shared
 
 ## Derive the grant from the shopping list
 
-The elegant part: `jdpctl render` should also **emit the per-app least-privilege
+The elegant part: `idpctl render` should also **emit the per-app least-privilege
 IAM policy**, derived from the same `deploy.yaml` it already reads:
 
 - `secrets` (always) → `ssm:GetParameter*` on `/apps/<app>/<env>/*` (read-only)
@@ -120,12 +120,12 @@ Two conventions, two trust scopes — keep them distinct:
 - ⏳ External-Secrets Operator is **not yet installed** on the homelab cluster
   (the `external-secrets` module is in the registry, disabled).
 - ⏳ Per-app provisioner + reader identities, per-app `SecretStore`, and the
-  `jdpctl render` IAM-policy derivation are **unimplemented** — do them when prod /
+  `idpctl render` IAM-policy derivation are **unimplemented** — do them when prod /
   multi-tenant is live.
 
 ### Lock in before wiring prod
 1. Per-app `SecretStore` (namespaced), **not** one shared `ClusterSecretStore`.
-2. `jdpctl render` emits a per-app least-privilege IAM policy (applied via
+2. `idpctl render` emits a per-app least-privilege IAM policy (applied via
    Terraform/IAM, or an OIDC trust) alongside the app's desired state.
 3. The provisioner identity is the only privileged one; per-app readers are
    read-only on their own path. No identity is ever cluster-wide admin.

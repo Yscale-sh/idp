@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clusterenv"
 )
 
 func baseApp() appconfig.App {

@@ -12,7 +12,7 @@ import (
 	"text/template"
 )
 
-// Options drives `jdpctl new app`.
+// Options drives `idpctl new app`.
 type Options struct {
 	Name    string // app name (DNS-1123); also the image repo suffix.
 	Host    string // primary route host (optional).
@@ -78,7 +78,7 @@ func render(tmpl string, o Options) ([]byte, error) {
 }
 
 const deployTmpl = `# {{.Name}} — deploy.yaml (developer shopping list).
-# Render:  jdpctl render --env dev --file deploy.yaml --image ghcr.io/jakenesler/{{.Name}}:<tag>
+# Render:  idpctl render --env dev --file deploy.yaml --image ghcr.io/jakenesler/{{.Name}}:<tag>
 
 app: {{.Name}}
 {{- if .Product}}
@@ -116,13 +116,13 @@ metrics:
 `
 
 // shipTmpl is the app-repo .github/workflows/ship.yml — a THIN caller stub for the
-// reusable JDP workflow. On push it builds + pushes this repo's image, renders its
+// reusable IDP workflow. On push it builds + pushes this repo's image, renders its
 // deploy.yaml into the platform umbrella, and commits it (Flux reconciles). It is
 // STATIC (literal Actions ${{ }} syntax, no Go-template vars) so it is emitted as
 // raw bytes, not rendered. Teardown: run it manually with remove=true (or
-// `jdpctl remove`) to delete the app from the platform.
-const shipTmpl = `# Ship — onboards/updates (or tears down) this app on JDP via the reusable
-# workflow in jakenesler/jdp. The platform owns build -> render -> commit; Flux
+// `idpctl remove`) to delete the app from the platform.
+const shipTmpl = `# Ship — onboards/updates (or tears down) this app on IDP via the reusable
+# workflow in jakenesler/idp. The platform owns build -> render -> commit; Flux
 # reconciles. No deploy.yaml -> render details here; just the call.
 name: Ship
 on:
@@ -137,13 +137,13 @@ on:
 
 jobs:
   ship:
-    uses: jakenesler/jdp/.github/workflows/ship.yml@v1   # pin a released major
+    uses: jakenesler/idp/.github/workflows/ship.yml@v1   # pin a released major
     permissions:
       contents: read
       packages: write
     with:
       env: dev                      # prod apps set env: prod
-      jdpctl-tag: v1
+      idpctl-tag: v1
       remove: ${{ github.event.inputs.remove == 'true' }}
       # manage-dns: true            # also upsert Cloudflare DNS for public routes
                                     # (proxied CNAME -> the app's tunnel). Off by

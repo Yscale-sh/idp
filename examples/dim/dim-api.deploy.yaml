@@ -1,6 +1,6 @@
 # Dim API — REST + WebSocket + in-process stream/transcode (the web tier).
 # On-prem / LAN only: no public route, no Cloudflare. The UI proxies to it in-cluster.
-#   jdpctl render --env dev --file dim-api.deploy.yaml --image ghcr.io/jakenesler/dim:<tag>
+#   idpctl render --env dev --file dim-api.deploy.yaml --image ghcr.io/jakenesler/dim:<tag>
 app: dim
 component: api
 

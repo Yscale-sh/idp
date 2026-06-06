@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clouddns"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clouddns"
 	"github.com/spf13/cobra"
 )
 
@@ -168,7 +168,7 @@ func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {
 	}
 
 	// 4. Upsert the proxied CNAME per host -> <tunnelID>.cfargotunnel.com.
-	comment := fmt.Sprintf("jdp: %s/%s (managed by jdpctl tunnel)", app.App, o.env)
+	comment := fmt.Sprintf("idp: %s/%s (managed by idpctl tunnel)", app.App, o.env)
 	results, err := cl.SyncHosts(hosts, zoneID, target, true /* proxied */, comment, false, o.dryRun)
 	if err != nil {
 		return err

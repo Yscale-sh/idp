@@ -1,9 +1,9 @@
 package render
 
 import (
-	"github.com/jakenesler/jdp/internal/appconfig"
-	"github.com/jakenesler/jdp/internal/clusterenv"
-	"github.com/jakenesler/jdp/internal/secrets"
+	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/jakenesler/idp/internal/secrets"
 )
 
 // BuildExternalSecret renders the values.externalSecret block from the env's

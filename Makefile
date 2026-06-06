@@ -1,12 +1,12 @@
-# jdpctl — developer Makefile.
+# idpctl — developer Makefile.
 #
 # The everyday loop: `make build` (compile the CLI), `make test` (unit/golden),
 # `make lint` (go vet + helm lint), `make validate`/`make render`/`make infra-render`
 # (drive the binary on the carshowdb example), `make e2e` (ephemeral k3d cluster).
 #
 # Conventions honored here:
-#   - binary is `./jdpctl` at the repo root, built from ./cmd/jdpctl
-#     (matches .gitignore's /jdpctl entry; Flux/CI reference ./jdpctl).
+#   - binary is `./idpctl` at the repo root, built from ./cmd/idpctl
+#     (matches .gitignore's /idpctl entry; Flux/CI reference ./idpctl).
 #   - charts live at charts/app and charts/infra/<x> (helm lint targets below).
 #   - the example app is examples/carshowdb/deploy.yaml.
 #
@@ -15,9 +15,9 @@
 # hard-fail when their inputs are missing. `make build` / `make test` always run.
 
 # ── config ───────────────────────────────────────────────────────────────────
-BINARY      := jdpctl
-CMD_PKG     := ./cmd/jdpctl
-IMAGE_REPO  ?= ghcr.io/jakenesler/jdpctl
+BINARY      := idpctl
+CMD_PKG     := ./cmd/idpctl
+IMAGE_REPO  ?= ghcr.io/jakenesler/idpctl
 TAG         ?= dev
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
@@ -35,14 +35,14 @@ HELM        ?= helm
 # ── help ─────────────────────────────────────────────────────────────────────
 .PHONY: help
 help: ## Show this help.
-	@echo "jdpctl — make targets:"
+	@echo "idpctl — make targets:"
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | sort \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # ── build / test ───────────────────────────────────────────────────────────────
 .PHONY: build
-build: ## Compile the platformctl binary to ./jdpctl.
+build: ## Compile the platformctl binary to ./idpctl.
 	$(GO) build -o $(BINARY) $(CMD_PKG)
 
 .PHONY: test
@@ -96,13 +96,13 @@ render: build ## Render carshowdb into environments/$(ENV)/apps (IMAGE=... ENV=.
 infra-render: build ## Render enabled infra modules into environments/$(ENV)/infra.
 	./$(BINARY) infra render --env $(ENV)
 
-# ── image (the jdpctl container the reusable ship workflow runs) ─────────────────
+# ── image (the idpctl container the reusable ship workflow runs) ─────────────────
 .PHONY: docker-build
-docker-build: ## Build the jdpctl image (jdpctl+helm+git+gh). Override TAG=...
+docker-build: ## Build the idpctl image (idpctl+helm+git+gh). Override TAG=...
 	docker build -t $(IMAGE_REPO):$(TAG) .
 
 .PHONY: docker-push
-docker-push: docker-build ## Build + push the jdpctl image to ghcr.
+docker-push: docker-build ## Build + push the idpctl image to ghcr.
 	docker push $(IMAGE_REPO):$(TAG)
 
 # ── e2e ─────────────────────────────────────────────────────────────────────────

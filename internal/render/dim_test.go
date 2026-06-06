@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jakenesler/jdp/internal/appconfig"
+	"github.com/jakenesler/idp/internal/appconfig"
 )
 
 // loadDimComponent loads one of the examples/dim/*.deploy.yaml component specs.

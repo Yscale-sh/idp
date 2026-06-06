@@ -1,7 +1,7 @@
-# Build + publish the jdpctl container image (ghcr.io/jakenesler/jdpctl) used by the
+# Build + publish the idpctl container image (ghcr.io/jakenesler/idpctl) used by the
 # reusable ship workflow. Triggered on version tags (v*) and published releases, so
-# app callers can pin `jdpctl-tag: v1` and get a stable, centrally-bumped image.
-name: release-jdpctl
+# app callers can pin `idpctl-tag: v1` and get a stable, centrally-bumped image.
+name: release-idpctl
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-jdpctl-${{ github.ref }}
+  group: release-idpctl-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,9 +32,9 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/jakenesler/jdpctl
+          images: ghcr.io/jakenesler/idpctl
           # v1.2.3 -> tags 1.2.3, 1.2, 1, plus the raw tag + sha. Callers pin `v1`
-          # (the major) so a jdpctl change can't silently alter every app's render.
+          # (the major) so a idpctl change can't silently alter every app's render.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
