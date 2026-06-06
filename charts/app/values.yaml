@@ -140,6 +140,23 @@ resources:
   # sizing.extraLimits). Empty for the common case.
   extraLimits: {}
 
+# Vertical Pod Autoscaler opt-in (sizing.autosize). Off by default → no VPA is
+# rendered and the app uses the static `resources` above. Flip enabled:true to let
+# the cluster `vpa` module right-size requests from real usage instead of
+# hand-tuning. mode: Off (recommend only) | Initial (apply at pod creation) |
+# Auto (evict + recreate to resize). minAllowed/maxAllowed bound the VPA so it
+# stays within the env's resourceBounds.
+autosize:
+  enabled: false
+  mode: Auto
+  controlledResources: ["cpu", "memory"]
+  minAllowed:
+    cpu: 50m
+    memory: 128Mi
+  maxAllowed:
+    cpu: "4"
+    memory: 4Gi
+
 resourceProfiles:
   minimal:
     requests: { cpu: 50m, memory: 64Mi }

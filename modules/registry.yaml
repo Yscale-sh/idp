@@ -63,6 +63,35 @@ modules:
       (keda-add-ons-http-interceptor-proxy), which parks the first request, wakes
       the app from 0, then forwards it. Requires the keda module (CRDs) too.
 
+  # ── VPA — Vertical Pod Autoscaler (right-sizing) ─────────────────────────────
+  # Backs the app chart's autosize.* (a per-app VerticalPodAutoscaler). Recommends
+  # and (in Auto mode) applies CPU/memory requests from real usage so pods stop
+  # being hand-tuned. Needs metrics-server (k3s ships one). The chart bundles the
+  # recommender + updater + admission-controller and self-generates the webhook
+  # TLS cert via a pre-install hook, so no cert-manager dependency.
+  vpa:
+    source: chartRepo
+    repoURL: https://charts.fairwinds.com/stable
+    chart: vpa
+    version: 4.11.0
+    defaultNamespace: vpa
+    defaultValues:
+      # k3s already runs metrics-server in kube-system; don't install a second.
+      metrics-server:
+        enabled: false
+      recommender:
+        enabled: true
+      updater:
+        enabled: true
+      admissionController:
+        enabled: true
+        generateCertificate: true
+    description: >-
+      Vertical Pod Autoscaler (Fairwinds chart, VPA 1.6). A workload opts in via
+      the app chart's autosize.enabled; the VPA then sizes requests from observed
+      usage (mode Off=recommend, Initial=at-creation, Auto=evict+resize). CRDs
+      install with the chart (Flux install.crds=Create).
+
   # ── dev-postgres — PER-APP in-cluster Postgres for dev / on-prem ─────────────
   # The local chart authored in this repo. ClusterIP, generated password, PVC.
   #
