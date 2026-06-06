@@ -29,6 +29,20 @@ Same principle as the rest of the platform: the developer writes a shopping list
 the platform derives the implementation — here, the *credential* is part of the
 implementation.
 
+**How this maps to what exists today.** The *write* side is largely already real:
+**CI/CD populates SSM** (`/apps/<app>/<env>/*`) on deploy. The missing half on the
+homelab is the *read* side — **ESO pulls those SSM params into local k3s Secrets**.
+So "the platform mints the secret" is, concretely:
+
+```
+CI/CD ──writes──▶ SSM (/apps/<app>/<env>/*) ──ESO reads──▶ local k3s Secret ──▶ app
+```
+
+The "provisioner" tier below is therefore *mostly your existing CI/CD*, not a new
+component to build now. Having the platform provision the *resource itself*
+(a DB/bucket, not just its credential) is a separate, later step — see Crossplane
+below.
+
 ## Why the single shared store is a non-starter for multi-tenant
 
 Today's shape is **one `platform-ssm` ClusterSecretStore** backed by **one AWS
@@ -73,16 +87,20 @@ needs change — least-privilege by construction, not by hand.
 - **Fallback:** static per-app access keys (written by the provisioner, rotated on
   a schedule). Acceptable as a bridge; not the destination.
 
-## The missing piece today: the provisioning step
+## Two "missing pieces" — don't conflate them
 
-jdp currently has no "create real resource → capture creds → write SSM" loop —
-`dev-postgres` is just an in-cluster HelmRelease with a *placeholder* password
-(dev backend). Real provisioning (managed Postgres, S3 buckets, IAM) needs a step
-between `render` and "secret exists". **Crossplane is the natural home**:
-[`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md) already flags *"Crossplane compatibility,
-not day-one Crossplane."* A `storage: s3` claim → provision bucket + scoped IAM +
-write the connection secret is exactly a Crossplane composite. That's the box the
-design left open; this is what fills it.
+1. **Secret population — mostly solved.** Getting credential *values* into SSM is
+   already done by **CI/CD** for most secrets (CI writes `/apps/<app>/<env>/*`). The
+   only gap is the *read* half on the homelab: install **ESO** + the SecretStore so
+   those SSM params materialize into local k3s Secrets. This is the near-term,
+   buildable work — nothing to "provision," just wire the read path.
+2. **Resource provisioning — later.** Having the platform *create the backing
+   resource itself* (a managed Postgres, an S3 bucket + its IAM) and then write that
+   resource's creds to SSM is a further step. Today `dev-postgres` is just an
+   in-cluster HelmRelease with a *placeholder* password; real provisioning is where
+   **Crossplane** lands ([`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md): *"Crossplane
+   compatibility, not day-one"*) — a `storage: s3` claim → provision bucket + scoped
+   IAM + write the connection secret. Distinct from #1, and on top of it.
 
 ## Coexistence with platform-infra secrets
 
