@@ -219,3 +219,21 @@ modules:
       UniFi Network controller — a homelab EXAMPLE module (stock community chart)
       demonstrating the registry shape for adopting a stateful third-party service.
       Disabled by default; enable on the homelab if you want platformctl to own it.
+
+  # ── github-runners — scale-to-zero self-hosted CI runners per GitHub org ─────
+  # A localChart (charts/infra/github-runners) that deploys, on the SHARED in-cluster
+  # ARC controller (ns github), one RunnerDeployment + HorizontalRunnerAutoscaler per
+  # org — each 0 -> N on queued workflow runs. Deploys the POOLS only; the ARC
+  # controller + CRDs must already be installed. Each pool authenticates with a
+  # per-org fine-grained PAT Secret (github-token-<org>), created out-of-band. The
+  # enabled orgs + their repos/maxReplicas live in environments/<env>/cluster.yaml.
+  github-runners:
+    source: localChart
+    chart: charts/infra/github-runners
+    defaultNamespace: github
+    description: >-
+      Scale-to-zero GitHub Actions runner pools (summerwind ARC) per org, on the
+      shared in-cluster ARC controller (ns github). One RunnerDeployment + HRA per
+      org (0 -> N on queued runs). Pools authenticate with a per-org fine-grained PAT
+      Secret (github-token-<org>, out-of-band). Enabled orgs + per-org pools
+      (orgs/repos/maxReplicas) set in environments/<env>/cluster.yaml.

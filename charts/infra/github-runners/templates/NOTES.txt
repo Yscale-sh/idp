@@ -1,0 +1,12 @@
+github-runners installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Scale-to-zero GitHub Actions runner pools on the shared summerwind ARC controller:
+{{ range $key, $r := .Values.runners }}  - {{ $key }}-runners  ->  org {{ $r.organization }}  (0 -> {{ $r.maxReplicas | default 1 }})  secret: {{ $r.credentialsSecret }}
+{{ end }}
+Each pool needs its per-org credentials Secret (key github_token = a fine-grained
+PAT) present in this namespace — created OUT-OF-BAND:
+
+  ./setup-org-runner-secret.sh <Org-Slug> <secret-name>
+
+Watch them:
+  kubectl -n {{ .Release.Namespace }} get runnerdeployments,horizontalrunnerautoscalers,runners,pods

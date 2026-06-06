@@ -1,0 +1,64 @@
+# github-runners — values contract.
+#
+# Shared, scale-to-zero GitHub Actions runner pools on the EXISTING summerwind ARC
+# controller (namespace github). One RunnerDeployment + HorizontalRunnerAutoscaler
+# per entry in `runners`. This chart does NOT install the ARC controller — it
+# assumes the controller + CRDs (actions.summerwind.dev) are already running.
+#
+# Each pool depends on, in the target namespace:
+#   - a per-org credentials Secret (key github_token = a fine-grained PAT scoped to
+#     that org) referenced by `credentialsSecret`, created OUT-OF-BAND (the chart
+#     never templates the PAT) — see setup-org-runner-secret.sh.
+#   - the shared Docker Hub pull secret `stackmaster-dockerhub` (imagePullSecrets).
+#
+# `runners` is intentionally empty here; the actual org pools are supplied per
+# environment in environments/<env>/cluster.yaml (modules.github-runners.values).
+
+nameOverride: ""
+
+image:
+  repository: summerwind/actions-runner
+  tag: latest
+  pullPolicy: Always
+
+# Pull secret(s) for the runner + docker:dind images (dodges anonymous Docker Hub
+# rate limits on cold pulls). Must exist in the target namespace.
+imagePullSecrets:
+  - name: stackmaster-dockerhub
+
+# Base GitHub runner labels every pool advertises (each pool adds its own via
+# `extraLabels`). These are `runs-on:` selectors, NOT Kubernetes labels.
+labels:
+  - self-hosted
+  - linux
+  - x64
+  - k8s
+
+# One job per runner, then exit — clean scale-to-zero.
+ephemeral: true
+
+# How long a scaled-up pool waits after scaling out before scaling back toward 0.
+scaleDownDelaySeconds: 300
+
+# Default work-volume cap (overridable per pool via runners.<name>.workDirSizeLimit).
+workDirSizeLimit: 16Gi
+
+# Default pod resources (overridable per pool via runners.<name>.resources).
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 6Gi
+
+# Per-org runner pools. Key = short name; resources are named "<key>-runners".
+# Each entry:
+#   organization:      GitHub org slug (org-level runners serve every repo in it)
+#   credentialsSecret: Secret holding github_token (fine-grained PAT for that org)
+#   extraLabels:       extra runs-on labels unique to this pool (e.g. [yscale])
+#   maxReplicas:       HRA ceiling; minReplicas is always 0 (scale to zero)
+#   repositories:      repos the HRA polls for queued/in-progress runs
+#   resources:         (optional) override the default pod resources for this pool
+#   workDirSizeLimit:  (optional) override the default work-volume cap
+runners: {}
