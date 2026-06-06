@@ -102,6 +102,30 @@ needs change — least-privilege by construction, not by hand.
    compatibility, not day-one"*) — a `storage: s3` claim → provision bucket + scoped
    IAM + write the connection secret. Distinct from #1, and on top of it.
 
+## Unified credential lifecycle — dev == prod (DECIDED 2026-06-06)
+
+The **provisioner generates the credential up-front**, writes it to SSM, and creates
+the resource *with* it — for **both** in-cluster (dev) and managed (prod) stores. Dev
+and prod then run the *identical* path:
+
+```
+provisioner mints cred ─▶ SSM (/apps/<app>/<env>/…) ─▶ ESO ─▶ k8s Secret ─▶ app
+```
+
+Chosen over the dev shortcut (the chart generating its own password) because:
+
+- **Reproducible** — the cred lives in SSM, not trapped in a live cluster; survives a
+  full rebuild (goal #1).
+- **One rotation mechanism** — "rolling" a credential is the same operation in every
+  environment (rewrite SSM → ESO re-syncs → restart), never a dev special case.
+- **Dev is practically identical to prod for creds** — the whole point: the secret
+  wiring / rotation / ESO materialization you exercise in dev is exactly what runs in
+  prod.
+
+Migration: move `dev-postgres` off its chart-generated password (helm `randAlphaNum`
++ lookup) to a provisioner-supplied password written to SSM, so the dev Postgres
+flows through ESO like everything else.
+
 ## Coexistence with platform-infra secrets
 
 Two conventions, two trust scopes — keep them distinct:
