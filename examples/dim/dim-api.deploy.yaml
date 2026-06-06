@@ -5,7 +5,7 @@ app: dim
 component: api
 
 runtime:
-  image: ghcr.io/jakenesler/dim
+  image: ghcr.io/jakenesler/yscale-media-api
   port: 8000
 
 # Dim's API serves on :8000 but has no /healthz route, so a TCP port-open check

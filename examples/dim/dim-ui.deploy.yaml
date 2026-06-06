@@ -5,7 +5,7 @@ app: dim
 component: ui
 
 runtime:
-  image: ghcr.io/jakenesler/dim-ui
+  image: ghcr.io/jakenesler/yscale-media-ui
   port: 80
 
 sizing:
