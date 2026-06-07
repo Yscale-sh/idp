@@ -107,14 +107,11 @@ func (b *Builder) Build(ctx context.Context, s Spec) error {
 		return fmt.Errorf("create build job %s: %w", name, err)
 	}
 
-	// Stream logs best-effort. `logs -f job/<name>` waits for the pod itself, so
-	// no separate `wait --for=condition=ready` (which never fires for a fast pod
-	// that already Completed, wasting up to 120s on every cache-warm build).
-	if b.Out != nil {
-		_ = b.Kube.Stream(ctx, b.Out, "-n", ns, "logs", "-f", "job/"+name,
-			"--all-containers", "--pod-running-timeout=10m")
-	}
-
+	// Do NOT stream `kubectl logs -f job/<name>`: it does not reliably terminate
+	// when the Job's pod completes (it hangs following the finished pod), which
+	// wedged the whole shipper. The Job status is the authoritative result; the
+	// full build log stays available via `kubectl logs job/<name>` (TTL 1h). On
+	// failure waitJob captures a log tail for the error.
 	return b.waitJob(ctx, ns, name)
 }
 
@@ -136,7 +133,8 @@ func (b *Builder) waitJob(ctx context.Context, ns, name string) error {
 				return nil
 			}
 			if strings.Contains(conds, "Failed=True") {
-				return fmt.Errorf("build job %s failed", name)
+				tail, _ := b.Kube.Run(ctx, "-n", ns, "logs", "job/"+name, "--tail=40")
+				return fmt.Errorf("build job %s failed:\n%s", name, string(tail))
 			}
 		}
 		if time.Now().After(deadline) {
