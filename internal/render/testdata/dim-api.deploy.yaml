@@ -1,0 +1,59 @@
+# Dim API — REST + WebSocket + in-process stream/transcode (the web tier).
+# On-prem / LAN only: no public route, no Cloudflare. The UI proxies to it in-cluster.
+#   idpctl render --env dev --file dim-api.deploy.yaml --image ghcr.io/jakenesler/dim:<tag>
+app: dim
+component: api
+
+runtime:
+  image: ghcr.io/jakenesler/yscale-media-api
+  port: 8000
+
+# Dim's API serves on :8000 but has no /healthz route, so a TCP port-open check
+# instead of the default HTTP probe (otherwise the liveness probe SIGKILLs it).
+probes:
+  type: tcp
+
+# Same backend image as the scanner; DIM_ROLE selects the web tier.
+env:
+  DIM_ROLE: web
+  RUST_LOG: info
+  DIM_METADATA_DIR: /metadata   # serve the scanner's posters from shared NFS (/images)
+  DIM_CACHE_DIR: /transcode     # ephemeral per-pod DASH segment cache
+
+sizing:
+  profile: small
+  # MUST stay 1 until the transcode-worker split: the api transcodes in-process
+  # (needs the iGPU + a sticky DASH-segment cache), so it can't scale yet.
+  replicas: 1
+  # Intel iGPU for VAAPI/QSV hardware transcode (i915 device-plugin shared mode).
+  extraLimits:
+    gpu.intel.com/i915: "1"
+
+# Postgres + Redis are PROVISIONED here (the scanner shares them via provision:false).
+db:
+  - name: primary
+    type: postgres
+cache:
+  - name: events          # pub/sub event bus
+    type: redis
+
+volumes:
+  # Media library (read-only) — the same UNAS NFS export Plex uses.
+  - name: media
+    type: nfs
+    server: 10.0.0.236
+    path: /volume/f24160d1-3f63-4889-ac56-c892dc01f76c/.srv/.unifi-drive/nfs/.data
+    mountPath: /mnt/personal-drive
+    readOnly: true
+  # Metadata (shared RW): posters/backdrops the scanner writes and the api serves
+  # at /images. NFS subpath gives ReadWriteMany across api + scanner.
+  - name: metadata
+    type: nfs
+    server: 10.0.0.236
+    path: /volume/f24160d1-3f63-4889-ac56-c892dc01f76c/.srv/.unifi-drive/nfs/.data
+    subPath: .dim-metadata
+    mountPath: /metadata
+  # Transcode cache (ephemeral, per-pod).
+  - name: transcode
+    type: emptyDir
+    mountPath: /transcode

@@ -7,10 +7,13 @@ import (
 	"github.com/jakenesler/idp/internal/appconfig"
 )
 
-// loadDimComponent loads one of the examples/dim/*.deploy.yaml component specs.
+// loadDimComponent loads one of the testdata/*.deploy.yaml component specs. These
+// are the retired Dim multi-component deploy files, kept as fixtures (dim is gone
+// from examples/) because they exercise the multi-component ingest the shipper
+// relies on: shared stores, a portless worker, GPU limits, LAN expose, x-component DNS.
 func loadDimComponent(t *testing.T, file string) appconfig.App {
 	t.Helper()
-	app, err := appconfig.LoadDefaulted(filepath.Join("..", "..", "examples", "dim", file))
+	app, err := appconfig.LoadDefaulted(filepath.Join("testdata", file))
 	if err != nil {
 		t.Fatalf("load %s: %v", file, err)
 	}
