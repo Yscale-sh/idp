@@ -291,8 +291,18 @@ type Volume struct {
 	Server string `json:"server,omitempty" yaml:"server,omitempty"`
 	Path   string `json:"path,omitempty" yaml:"path,omitempty"`
 
-	// Claim is the PVC name (type: pvc).
+	// Claim is the PVC name to REFERENCE (type: pvc with an existing claim).
 	Claim string `json:"claim,omitempty" yaml:"claim,omitempty"`
+
+	// Size, on a type: pvc volume WITHOUT a claim, makes the platform PROVISION a
+	// PersistentVolumeClaim of this size (e.g. "20Gi") and mount it. The data
+	// survives app redeploys/teardown (the PVC carries helm.sh/resource-policy:
+	// keep). Set Claim OR Size, never both.
+	Size string `json:"size,omitempty" yaml:"size,omitempty"`
+
+	// StorageClass overrides the default storage class for a PROVISIONED pvc
+	// (homelab default: the cluster default / local-path). Ignored when referencing.
+	StorageClass string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
 }
 
 // Expose opts an app into LOCAL LAN exposure on the on-prem backend: a MetalLB

@@ -1,0 +1,27 @@
+{{- /*
+Platform-provisioned PersistentVolumeClaims. The renderer puts one entry in
+.Values.provisionedClaims for every `type: pvc` volume in the shopping list that
+requested a `size:` (rather than referencing an existing `claim:`). Each PVC
+carries helm.sh/resource-policy: keep so app upgrades/teardown never delete the
+data — the dev's persistent storage outlives the workload.
+*/ -}}
+{{- range .Values.provisionedClaims }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size | quote }}
+{{- end }}

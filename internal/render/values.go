@@ -37,13 +37,17 @@ type Values struct {
 	// when empty so apps without volumes render byte-identical to before.
 	Volumes      []map[string]any `json:"volumes,omitempty"`
 	VolumeMounts []map[string]any `json:"volumeMounts,omitempty"`
-	Env              EnvValues               `json:"env"`
-	ExternalSecret   ExternalSecretValues    `json:"externalSecret"`
-	Keda             KedaValues              `json:"keda"`
-	ServiceMonitor   ServiceMonitorValues    `json:"serviceMonitor"`
-	Pdb              PdbValues               `json:"pdb"`
-	DB               []StoreValues           `json:"db"`
-	Cache            []StoreValues           `json:"cache"`
+	// ProvisionedClaims are PVCs the platform CREATES for type: pvc volumes that
+	// requested a size (vs. referencing an existing claim). The chart's pvc.yaml
+	// renders one PersistentVolumeClaim per entry. Omitted when none.
+	ProvisionedClaims []map[string]any     `json:"provisionedClaims,omitempty"`
+	Env               EnvValues            `json:"env"`
+	ExternalSecret    ExternalSecretValues `json:"externalSecret"`
+	Keda              KedaValues           `json:"keda"`
+	ServiceMonitor    ServiceMonitorValues `json:"serviceMonitor"`
+	Pdb               PdbValues            `json:"pdb"`
+	DB                []StoreValues        `json:"db"`
+	Cache             []StoreValues        `json:"cache"`
 	// DevSecretPlaceholders are clearly-marked dev placeholder values for
 	// app-level secret keys (JWT_SECRET, GEMINI_*, S3_*, SENDGRID_*, STRIPE_*).
 	// They are emitted ONLY for the local (dev) backend so an app boots with no
@@ -285,7 +289,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		obs = c.Observability
 	}
 
-	vols, mounts := buildVolumes(app)
+	vols, mounts, claims := buildVolumes(app)
 
 	v := Values{
 		Image: ImageValues{
@@ -302,13 +306,14 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			Limits:      ResourceSpec{CPU: envelope.Limits.CPU, Memory: envelope.Limits.Memory},
 			ExtraLimits: app.Sizing.ExtraLimits,
 		},
-		Service: ServiceValues{Port: app.Runtime.Port},
-		Probes:  buildProbes(app),
-		Routes:       buildRoutes(app),
-		Tunnel:       buildTunnel(app, c),
-		LanExpose:    buildLanExpose(app, c),
-		Volumes:      vols,
-		VolumeMounts: mounts,
+		Service:           ServiceValues{Port: app.Runtime.Port},
+		Probes:            buildProbes(app),
+		Routes:            buildRoutes(app),
+		Tunnel:            buildTunnel(app, c),
+		LanExpose:         buildLanExpose(app, c),
+		Volumes:           vols,
+		VolumeMounts:      mounts,
+		ProvisionedClaims: claims,
 		Env: EnvValues{
 			TierA: TierAEnv(app, env, obs, deployTime),
 			Extra: buildAppEnv(app),
@@ -421,7 +426,7 @@ func buildAppEnv(app appconfig.App) map[string]string {
 // buildVolumes translates deploy.yaml volumes[] into raw k8s pod-volume specs plus
 // the matching container volumeMounts. Returns (nil, nil) when there are none so
 // apps without volumes render byte-identical.
-func buildVolumes(app appconfig.App) (vols, mounts []map[string]any) {
+func buildVolumes(app appconfig.App) (vols, mounts, claims []map[string]any) {
 	for _, v := range app.Volumes {
 		vol := map[string]any{"name": v.Name}
 		switch v.Type {
@@ -434,7 +439,19 @@ func buildVolumes(app appconfig.App) (vols, mounts []map[string]any) {
 		case "emptyDir":
 			vol["emptyDir"] = map[string]any{}
 		case "pvc":
-			vol["persistentVolumeClaim"] = map[string]any{"claimName": v.Claim}
+			claimName := v.Claim
+			if claimName == "" {
+				// Provision: the platform creates a PVC of v.Size; the chart's
+				// pvc.yaml renders it from .Values.provisionedClaims. Name it per
+				// workload+volume so it's stable and namespace-scoped.
+				claimName = app.Workload() + "-" + v.Name
+				claim := map[string]any{"name": claimName, "size": v.Size}
+				if v.StorageClass != "" {
+					claim["storageClass"] = v.StorageClass
+				}
+				claims = append(claims, claim)
+			}
+			vol["persistentVolumeClaim"] = map[string]any{"claimName": claimName}
 		}
 		vols = append(vols, vol)
 
@@ -447,7 +464,7 @@ func buildVolumes(app appconfig.App) (vols, mounts []map[string]any) {
 		}
 		mounts = append(mounts, mount)
 	}
-	return vols, mounts
+	return vols, mounts, claims
 }
 
 // buildLanExpose returns the on-prem MetalLB LoadBalancer config when the app opts

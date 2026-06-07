@@ -136,8 +136,11 @@ func (a *App) Validate() error {
 				add(field, "type nfs requires server and path")
 			}
 		case "pvc":
-			if v.Claim == "" {
-				add(field, "type pvc requires claim")
+			if v.Claim == "" && v.Size == "" {
+				add(field, "type pvc requires either claim (reference an existing PVC) or size (provision a new one)")
+			}
+			if v.Claim != "" && v.Size != "" {
+				add(field, "type pvc: set claim OR size, not both")
 			}
 		case "emptyDir":
 			// no source fields
