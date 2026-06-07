@@ -130,22 +130,20 @@ func (a *App) Validate() error {
 		if v.MountPath == "" {
 			add(field+".mountPath", "is required")
 		}
-		switch v.Type {
+		switch v.ResolvedType() {
 		case "nfs":
 			if v.Server == "" || v.Path == "" {
-				add(field, "type nfs requires server and path")
+				add(field, "nfs volume requires server and path")
 			}
 		case "pvc":
 			if v.Claim == "" && v.Size == "" {
-				add(field, "type pvc requires either claim (reference an existing PVC) or size (provision a new one)")
+				add(field, "pvc volume requires either claim (reference an existing PVC) or size (provision a new one)")
 			}
 			if v.Claim != "" && v.Size != "" {
-				add(field, "type pvc: set claim OR size, not both")
+				add(field, "pvc volume: set claim OR size, not both")
 			}
 		case "emptyDir":
 			// no source fields
-		case "":
-			add(field+".type", "is required (nfs|emptyDir|pvc)")
 		default:
 			add(field+".type", "must be one of nfs|emptyDir|pvc")
 		}

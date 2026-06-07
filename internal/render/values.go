@@ -429,7 +429,7 @@ func buildAppEnv(app appconfig.App) map[string]string {
 func buildVolumes(app appconfig.App) (vols, mounts, claims []map[string]any) {
 	for _, v := range app.Volumes {
 		vol := map[string]any{"name": v.Name}
-		switch v.Type {
+		switch v.ResolvedType() {
 		case "nfs":
 			nfs := map[string]any{"server": v.Server, "path": v.Path}
 			if v.ReadOnly {

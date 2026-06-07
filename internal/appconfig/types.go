@@ -275,8 +275,11 @@ type Volume struct {
 	// Name is the volume handle (DNS-1123); referenced by the mount.
 	Name string `json:"name" yaml:"name"`
 
-	// Type is the source kind: nfs | emptyDir | pvc.
-	Type string `json:"type" yaml:"type"`
+	// Type is the source kind: nfs | emptyDir | pvc. OPTIONAL — usually inferred
+	// (see ResolvedType): a volume with size: is a provisioned pvc, with server/path
+	// is nfs, with claim: references an existing pvc, otherwise emptyDir. So a
+	// persistent disk is just {name, size, mountPath} — no type needed.
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
 
 	// MountPath is where the volume mounts in the container.
 	MountPath string `json:"mountPath" yaml:"mountPath"`
@@ -303,6 +306,24 @@ type Volume struct {
 	// StorageClass overrides the default storage class for a PROVISIONED pvc
 	// (homelab default: the cluster default / local-path). Ignored when referencing.
 	StorageClass string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
+}
+
+// ResolvedType returns the volume source kind, inferring it from the other fields
+// when Type is omitted so a dev rarely writes it: size -> a provisioned pvc,
+// claim -> a referenced pvc, server/path -> nfs, otherwise emptyDir. An explicit
+// Type always wins.
+func (v Volume) ResolvedType() string {
+	if v.Type != "" {
+		return v.Type
+	}
+	switch {
+	case v.Size != "" || v.Claim != "":
+		return "pvc"
+	case v.Server != "" || v.Path != "":
+		return "nfs"
+	default:
+		return "emptyDir"
+	}
 }
 
 // Expose opts an app into LOCAL LAN exposure on the on-prem backend: a MetalLB

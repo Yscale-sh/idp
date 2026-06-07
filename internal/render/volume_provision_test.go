@@ -15,8 +15,8 @@ func TestProvisionedVsReferencedPVC(t *testing.T) {
 		App:     "datawork",
 		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/datawork", Port: 8080},
 		Volumes: []appconfig.Volume{
-			{Name: "data", Type: "pvc", Size: "20Gi", MountPath: "/data"},
-			{Name: "shared", Type: "pvc", Claim: "team-shared", MountPath: "/shared"},
+			{Name: "data", Size: "20Gi", MountPath: "/data"},             // inferred: provisioned pvc
+			{Name: "shared", Claim: "team-shared", MountPath: "/shared"}, // inferred: referenced pvc
 		},
 	}
 	app.ApplyDefaults()
@@ -64,10 +64,11 @@ func TestPVCValidation(t *testing.T) {
 		vol     appconfig.Volume
 		wantErr bool
 	}{
-		{"provision", appconfig.Volume{Name: "d", Type: "pvc", Size: "5Gi", MountPath: "/d"}, false},
-		{"reference", appconfig.Volume{Name: "d", Type: "pvc", Claim: "c", MountPath: "/d"}, false},
-		{"neither", appconfig.Volume{Name: "d", Type: "pvc", MountPath: "/d"}, true},
-		{"both", appconfig.Volume{Name: "d", Type: "pvc", Size: "5Gi", Claim: "c", MountPath: "/d"}, true},
+		{"inferred-provision", appconfig.Volume{Name: "d", Size: "5Gi", MountPath: "/d"}, false},
+		{"inferred-reference", appconfig.Volume{Name: "d", Claim: "c", MountPath: "/d"}, false},
+		{"inferred-emptydir", appconfig.Volume{Name: "d", MountPath: "/d"}, false},
+		{"explicit-pvc-neither", appconfig.Volume{Name: "d", Type: "pvc", MountPath: "/d"}, true},
+		{"explicit-pvc-both", appconfig.Volume{Name: "d", Type: "pvc", Size: "5Gi", Claim: "c", MountPath: "/d"}, true},
 	}
 	for _, tc := range cases {
 		a := base(tc.vol)
