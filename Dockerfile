@@ -10,12 +10,19 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idpctl ./cmd/idpctl
+# idp-shipper: the in-cluster orchestrator (poll app repos -> build -> render ->
+# commit). Same image; the shipper Deployment overrides command to idp-shipper.
+RUN CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idp-shipper ./cmd/idp-shipper
 
 FROM alpine:3.20
 RUN apk add --no-cache git github-cli ca-certificates bash
 # helm from the official pinned image (keeps the render-time LoadBalancer guardrail).
 COPY --from=alpine/helm:3.16.4 /usr/bin/helm /usr/local/bin/helm
+# kubectl for idp-shipper: internal/kube + internal/builder drive build Jobs by
+# shelling kubectl (idp deliberately pulls in no client-go). Pinned to the cluster.
+COPY --from=bitnami/kubectl:1.31 /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/idpctl /usr/local/bin/idpctl
+COPY --from=build /out/idp-shipper /usr/local/bin/idp-shipper
 # platformctl alias: the rename (platformctl -> idpctl) is recent; keep both names
 # working for any lingering call site / doc during the transition (decision D8).
 RUN ln -sf /usr/local/bin/idpctl /usr/local/bin/platformctl

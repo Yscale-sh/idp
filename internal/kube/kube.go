@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
+	"strings"
 )
 
 // Client is a thin kubectl wrapper. Context selects the kubeconfig context;
@@ -72,4 +74,30 @@ func (c *Client) Diff(ctx context.Context, manifest []byte) ([]byte, error) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), err
+}
+
+// Run executes an arbitrary kubectl invocation (the configured context is
+// prepended) and returns combined stdout. This is the NON-default cluster-side
+// path used by the shipper to create/poll build Jobs; the normal idpctl flow
+// still commits desired state for Flux and never calls this.
+func (c *Client) Run(ctx context.Context, args ...string) ([]byte, error) {
+	full := append(c.baseArgs(), args...)
+	cmd := exec.CommandContext(ctx, c.bin(), full...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), fmt.Errorf("kubectl %s: %w: %s", strings.Join(args, " "), err, stderr.String())
+	}
+	return stdout.Bytes(), nil
+}
+
+// Stream executes a kubectl invocation and copies its stdout/stderr to w as it
+// runs (used to surface build logs live). It returns when the command exits.
+func (c *Client) Stream(ctx context.Context, w io.Writer, args ...string) error {
+	full := append(c.baseArgs(), args...)
+	cmd := exec.CommandContext(ctx, c.bin(), full...)
+	cmd.Stdout = w
+	cmd.Stderr = w
+	return cmd.Run()
 }
