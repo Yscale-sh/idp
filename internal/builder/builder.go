@@ -23,13 +23,20 @@ import (
 	"github.com/jakenesler/idp/internal/kube"
 )
 
+// jobDeadline must be >= the Job's activeDeadlineSeconds (3600s) so the Job's own
+// deadline is authoritative — otherwise a legitimately slow build (cold Rust
+// cache) is reported as a timeout and the next poll starts a SECOND build on the
+// same per-image BuildKit root.
+const jobDeadline = 65 * time.Minute
+
 // Spec describes a single image build.
 type Spec struct {
 	Repo       string   // GitHub "org/name" to clone, e.g. Yscale-sh/yscale-media
 	Ref        string   // git ref to build (a branch or, preferably, a commit SHA)
 	Image      string   // fully-qualified target image repo:tag to push
 	Context    string   // build context subdir relative to repo root ("." for root)
-	Submodules []string // private submodules to init before building (registry-driven)
+	Dockerfile string   // Dockerfile name within the context (default "Dockerfile")
+	Submodules []string // private submodules to init before building (shopping-list-driven)
 	Namespace  string   // image-builder namespace (defaults to "image-builder")
 }
 
@@ -63,19 +70,31 @@ func (b *Builder) Build(ctx context.Context, s Spec) error {
 	if ns == "" {
 		ns = "image-builder"
 	}
-	context := s.Context
-	if context == "" {
-		context = "."
+	buildCtx := s.Context
+	if buildCtx == "" {
+		buildCtx = "."
 	}
-	leaf := path.Base(strings.SplitN(s.Image, ":", 2)[0]) // yscale-media-api
-	name := fmt.Sprintf("build-%s-%s-%d", slug(leaf, 24), slug(s.Ref, 12), time.Now().Unix()%100000)
+	dockerfile := s.Dockerfile
+	if dockerfile == "" {
+		dockerfile = "Dockerfile"
+	}
+	leaf := slug(path.Base(strings.SplitN(s.Image, ":", 2)[0]), 30) // yscale-media-api
+	name := fmt.Sprintf("build-%s-%s-%d", leaf, slug(s.Ref, 12), time.Now().Unix()%100000)
+
+	// Two builds of the SAME image must never run concurrently — they share one
+	// per-image BuildKit worker root (RWO) and would corrupt it. Delete any prior
+	// build Job for this image leaf before starting (covers a slow predecessor a
+	// restart/re-ship would otherwise race).
+	_, _ = b.Kube.Run(ctx, "-n", ns, "delete", "job", "-l", "build.idp/leaf="+leaf, "--ignore-not-found")
 
 	manifest, err := renderJob(jobParams{
 		JobName:       name,
 		Namespace:     ns,
+		Leaf:          leaf,
 		Repo:          s.Repo,
 		Ref:           s.Ref,
-		Context:       context,
+		Context:       buildCtx,
+		Dockerfile:    dockerfile,
 		Image:         s.Image,
 		WorkerSubpath: "buildkit-worker-" + leaf,
 		Submodules:    s.Submodules,
@@ -88,38 +107,40 @@ func (b *Builder) Build(ctx context.Context, s Spec) error {
 		return fmt.Errorf("create build job %s: %w", name, err)
 	}
 
-	// Best-effort: wait for the pod, then stream logs. The build proceeds even
-	// if log streaming races/fails; the authoritative result is the Job status.
+	// Stream logs best-effort. `logs -f job/<name>` waits for the pod itself, so
+	// no separate `wait --for=condition=ready` (which never fires for a fast pod
+	// that already Completed, wasting up to 120s on every cache-warm build).
 	if b.Out != nil {
-		_, _ = b.Kube.Run(ctx, "-n", ns, "wait", "--for=condition=ready", "pod",
-			"-l", "job-name="+name, "--timeout=120s")
 		_ = b.Kube.Stream(ctx, b.Out, "-n", ns, "logs", "-f", "job/"+name,
-			"--all-containers", "--pod-running-timeout=5m")
+			"--all-containers", "--pod-running-timeout=10m")
 	}
 
 	return b.waitJob(ctx, ns, name)
 }
 
-// waitJob polls the Job until it reports a succeeded or failed pod.
+// waitJob polls the Job until its terminal condition. It waits on the Complete /
+// Failed *conditions* (set by the Job controller only after backoffLimit is
+// exhausted) rather than the raw succeeded/failed pod counters, so a transient
+// first-attempt failure that backoffLimit:1 is meant to absorb is not reported
+// as a hard failure.
 func (b *Builder) waitJob(ctx context.Context, ns, name string) error {
-	const jsonpath = `jsonpath={.status.succeeded}/{.status.failed}`
-	t := time.NewTicker(3 * time.Second)
+	const jsonpath = `jsonpath={range .status.conditions[*]}{.type}={.status};{end}`
+	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
-	deadline := time.Now().Add(30 * time.Minute)
+	deadline := time.Now().Add(jobDeadline)
 	for {
 		out, err := b.Kube.Run(ctx, "-n", ns, "get", "job", name, "-o", jsonpath)
 		if err == nil {
-			s := strings.TrimSpace(string(out)) // "succeeded/failed", e.g. "1/" or "/1"
-			succ, fail, _ := strings.Cut(s, "/")
-			if strings.TrimSpace(succ) != "" && succ != "0" {
+			conds := string(out) // e.g. "Complete=True;" or "Failed=True;"
+			if strings.Contains(conds, "Complete=True") {
 				return nil
 			}
-			if strings.TrimSpace(fail) != "" && fail != "0" {
+			if strings.Contains(conds, "Failed=True") {
 				return fmt.Errorf("build job %s failed", name)
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("build job %s timed out", name)
+			return fmt.Errorf("build job %s timed out after %s", name, jobDeadline)
 		}
 		select {
 		case <-ctx.Done():
@@ -130,8 +151,8 @@ func (b *Builder) waitJob(ctx context.Context, ns, name string) error {
 }
 
 type jobParams struct {
-	JobName, Namespace, Repo, Ref, Context, Image, WorkerSubpath string
-	Submodules                                                   []string
+	JobName, Namespace, Leaf, Repo, Ref, Context, Dockerfile, Image, WorkerSubpath string
+	Submodules                                                                     []string
 }
 
 func renderJob(p jobParams) ([]byte, error) {
@@ -147,8 +168,10 @@ func renderJob(p jobParams) ([]byte, error) {
 }
 
 // jobTemplate mirrors onprem/image-builder/build-job.yaml (clone initContainer +
-// rootless BuildKit), parameterized in Go. Submodules are initialized from the
-// registry-supplied list rather than a hardcoded path.
+// rootless BuildKit), parameterized in Go. The clone fetches the exact ref by SHA
+// (git fetch --depth 1 <sha>; `clone --branch <sha>` is invalid for a commit and
+// would force a full-history clone every build). Submodules come from the
+// registry-supplied list.
 const jobTemplate = `apiVersion: batch/v1
 kind: Job
 metadata:
@@ -156,6 +179,7 @@ metadata:
   namespace: {{.Namespace}}
   labels:
     app.kubernetes.io/part-of: image-builder
+    build.idp/leaf: {{.Leaf}}
 spec:
   backoffLimit: 1
   ttlSecondsAfterFinished: 3600
@@ -164,6 +188,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/part-of: image-builder
+        build.idp/leaf: {{.Leaf}}
       annotations:
         container.apparmor.security.beta.kubernetes.io/buildkit: unconfined
     spec:
@@ -185,13 +210,17 @@ spec:
           args:
             - |
               set -eu
-              echo "cloning {{.Repo}}@{{.Ref}} ..."
+              echo "fetching {{.Repo}}@{{.Ref}} ..."
+              # Auth every github.com fetch (incl. PRIVATE submodules) with the token
+              # via insteadOf, so no credential is baked into a remote URL.
               git config --global url."https://x-access-token:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-              git clone --depth 1 --branch "{{.Ref}}" \
-                "https://x-access-token:${GIT_TOKEN}@github.com/{{.Repo}}.git" /workspace/src || \
-                git clone "https://x-access-token:${GIT_TOKEN}@github.com/{{.Repo}}.git" /workspace/src
-              git -C /workspace/src checkout "{{.Ref}}"
+              git init -q /workspace/src
+              git -C /workspace/src remote add origin "https://github.com/{{.Repo}}.git"
+              git -C /workspace/src fetch --depth 1 origin "{{.Ref}}"
+              git -C /workspace/src checkout -q FETCH_HEAD
 {{- range .Submodules}}
+              # NOT --depth 1: the gitlink pins a specific commit that may not be the
+              # submodule's branch tip, which a shallow fetch wouldn't contain.
               git -C /workspace/src submodule update --init {{.}} || echo "  (submodule {{.}} not present on this ref; skipping)"
 {{- end}}
               echo "context: /workspace/src/{{.Context}}"
@@ -217,7 +246,7 @@ spec:
             - --frontend=dockerfile.v0
             - --local=context=/workspace/src/{{.Context}}
             - --local=dockerfile=/workspace/src/{{.Context}}
-            - --opt=filename=Dockerfile
+            - --opt=filename={{.Dockerfile}}
             - --output=type=image,name={{.Image}},push=true
           resources:
             requests: { cpu: "1", memory: 2Gi }

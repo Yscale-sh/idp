@@ -5,7 +5,13 @@
 # so dropping it would silently downgrade the no-LB guardrail to the typed check only.
 FROM golang:1.25-alpine AS build
 WORKDIR /src
-RUN apk add --no-cache git
+RUN apk add --no-cache git curl
+# kubectl for idp-shipper: internal/kube + internal/builder drive build Jobs by
+# shelling kubectl (idp deliberately pulls in no client-go). Fetched from the
+# official k8s release (no third-party registry dep); pinned to the cluster (k3s 1.31).
+RUN mkdir -p /out \
+  && curl -fsSLo /out/kubectl https://dl.k8s.io/release/v1.31.5/bin/linux/amd64/kubectl \
+  && chmod +x /out/kubectl
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
@@ -18,9 +24,7 @@ FROM alpine:3.20
 RUN apk add --no-cache git github-cli ca-certificates bash
 # helm from the official pinned image (keeps the render-time LoadBalancer guardrail).
 COPY --from=alpine/helm:3.16.4 /usr/bin/helm /usr/local/bin/helm
-# kubectl for idp-shipper: internal/kube + internal/builder drive build Jobs by
-# shelling kubectl (idp deliberately pulls in no client-go). Pinned to the cluster.
-COPY --from=bitnami/kubectl:1.31 /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/kubectl
+COPY --from=build /out/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/idpctl /usr/local/bin/idpctl
 COPY --from=build /out/idp-shipper /usr/local/bin/idp-shipper
 # platformctl alias: the rename (platformctl -> idpctl) is recent; keep both names

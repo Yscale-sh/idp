@@ -44,6 +44,13 @@ type App struct {
 	// Runtime is the container + port. Required.
 	Runtime Runtime `json:"runtime" yaml:"runtime"`
 
+	// Build describes HOW the platform builds this component's image — the build
+	// context subdir, the Dockerfile name, and any private submodules to init
+	// (e.g. a vendored transcoder). Optional; defaults to context ".", Dockerfile
+	// "Dockerfile", no submodules. It lives in the shopping list so a developer
+	// self-serves bundling (and new components) with NO platform/registry change.
+	Build BuildConfig `json:"build,omitempty" yaml:"build,omitempty"`
+
 	// Probes overrides the default HTTP health probes (/healthz + /readyz). Apps
 	// that don't serve those paths need this — e.g. type: tcp (just check the port
 	// is open) for a server with no health route, or type: none to disable.
@@ -118,6 +125,20 @@ type Runtime struct {
 
 	// Port is the container port the app listens on. Drives PORT env + probes.
 	Port int `json:"port" yaml:"port"`
+}
+
+// BuildConfig is the developer-declared "how to build me" for a component. All
+// fields are optional with sane defaults, so most shopping lists omit it.
+type BuildConfig struct {
+	// Context is the build context subdir relative to the repo root. Default ".".
+	Context string `json:"context,omitempty" yaml:"context,omitempty"`
+
+	// Dockerfile is the Dockerfile path within the context. Default "Dockerfile".
+	Dockerfile string `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
+
+	// Submodules are private git submodules to initialize before building (e.g.
+	// vendor/yscale-transcode). Empty means none.
+	Submodules []string `json:"submodules,omitempty" yaml:"submodules,omitempty"`
 }
 
 // Route is one hostname plus its access policy.
