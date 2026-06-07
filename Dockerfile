@@ -12,13 +12,20 @@ RUN apk add --no-cache git curl
 RUN mkdir -p /out \
   && curl -fsSLo /out/kubectl https://dl.k8s.io/release/v1.31.5/bin/linux/amd64/kubectl \
   && chmod +x /out/kubectl
+# BuildKit cache mounts: the go module cache (/go/pkg/mod) and build cache
+# (/root/.cache/go-build) persist on the image-builder's per-image worker PVC root
+# across builds, so a source change recompiles only what changed instead of every
+# dependency from scratch (cold builds were minutes; warm are seconds).
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idpctl ./cmd/idpctl
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idpctl ./cmd/idpctl
 # idp-shipper: the in-cluster orchestrator (poll app repos -> build -> render ->
 # commit). Same image; the shipper Deployment overrides command to idp-shipper.
-RUN CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idp-shipper ./cmd/idp-shipper
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idp-shipper ./cmd/idp-shipper
 
 FROM alpine:3.20
 RUN apk add --no-cache git github-cli ca-certificates bash
