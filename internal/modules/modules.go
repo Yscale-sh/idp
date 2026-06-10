@@ -66,10 +66,12 @@ type ModuleReleaseSpec struct {
 
 type ModuleInstall struct {
 	CreateNamespace bool               `json:"createNamespace"`
+	DisableWait     bool               `json:"disableWait,omitempty"`
 	Remediation     *ModuleRemediation `json:"remediation,omitempty"`
 }
 
 type ModuleUpgrade struct {
+	DisableWait bool               `json:"disableWait,omitempty"`
 	Remediation *ModuleRemediation `json:"remediation,omitempty"`
 }
 
@@ -219,9 +221,11 @@ func buildModule(c *clusterenv.Config, name string, m clusterenv.Module) (Planne
 			StorageNamespace: ns,
 			Install: ModuleInstall{
 				CreateNamespace: true,
+				DisableWait:     m.DisableWait,
 				Remediation:     &ModuleRemediation{Retries: remediationRetries},
 			},
 			Upgrade: ModuleUpgrade{
+				DisableWait: m.DisableWait,
 				Remediation: &ModuleRemediation{Retries: remediationRetries},
 			},
 			Chart:  ModuleChart{Spec: chartSpec},

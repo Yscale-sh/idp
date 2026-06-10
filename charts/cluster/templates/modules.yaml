@@ -32,7 +32,21 @@ spec:
   releaseName: {{ .name }}
   targetNamespace: {{ .namespace }}
   storageNamespace: {{ .namespace }}
+  {{- if .disableWait }}
+  {{- /* No readiness wait: the module ships a resource that is only ready
+         once consumed (e.g. a WaitForFirstConsumer PVC). */}}
+  install:
+    createNamespace: true
+    disableWait: true
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+    remediation:
+      retries: 3
+  {{- else }}
   {{- include "cluster.remediation" . | nindent 2 }}
+  {{- end }}
   chart:
     spec:
       {{- if eq .source "chartRepo" }}

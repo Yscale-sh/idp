@@ -137,6 +137,13 @@ type Module struct {
 	Version   string         `json:"version,omitempty"` // required for chartRepo
 	Namespace string         `json:"namespace,omitempty"`
 	Values    map[string]any `json:"values,omitempty"`
+
+	// DisableWait makes the module's Helm install/upgrade NOT wait for its
+	// resources to become ready. Needed when a module ships a resource that
+	// cannot be ready until it is consumed — e.g. a PVC on a
+	// WaitForFirstConsumer StorageClass (image-builder's BuildKit cache binds
+	// on the first build Job, so a readiness wait deadlocks the install).
+	DisableWait bool `json:"disableWait,omitempty"`
 }
 
 // Defaults that apply when cluster.yaml omits a field.

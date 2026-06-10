@@ -76,6 +76,11 @@ type ModuleEntry struct {
 	RepoURL   string         `json:"repoURL,omitempty"`
 	Version   string         `json:"version,omitempty"`
 	Values    map[string]any `json:"values,omitempty"`
+
+	// DisableWait turns off the Helm readiness wait on the module's
+	// install/upgrade (see clusterenv.Module.DisableWait — e.g. a PVC on a
+	// WaitForFirstConsumer StorageClass that only binds on first use).
+	DisableWait bool `json:"disableWait,omitempty"`
 }
 
 // ClusterValues is the charts/cluster umbrella chart's values: the whole env.
