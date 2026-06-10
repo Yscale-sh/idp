@@ -114,7 +114,7 @@ type FluxConfig struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// RepoURL is the git repo the FluxInstance syncs from (this platform repo).
-	// A placeholder https URL by default; set per-env in cluster.yaml.
+	// REQUIRED — instance identity, never defaulted (see idp.yaml / Validate).
 	RepoURL string `json:"repoURL,omitempty"`
 
 	// Branch is the git branch the FluxInstance tracks; the GitRepository ref is
@@ -152,8 +152,6 @@ const (
 	// DefaultBranch is the git branch the FluxInstance tracks (ref
 	// refs/heads/<branch>) when cluster.yaml omits flux.branch.
 	DefaultBranch = "main"
-	// DefaultRepoURL is the placeholder repo URL; set per-env in cluster.yaml.
-	DefaultRepoURL = "https://github.com/jakenesler/idp.git"
 	DefaultRefresh = "1h"
 )
 
@@ -216,9 +214,9 @@ func (c *Config) ApplyDefaults() {
 	if c.Flux.Branch == "" {
 		c.Flux.Branch = DefaultBranch
 	}
-	if c.Flux.RepoURL == "" {
-		c.Flux.RepoURL = DefaultRepoURL
-	}
+	// Flux.RepoURL is deliberately NOT defaulted: it is instance identity (which
+	// platform repo this cluster syncs from). Validate rejects an empty value so
+	// a fork can never silently sync from someone else's repo.
 	if c.Secrets.RefreshInterval == "" {
 		c.Secrets.RefreshInterval = DefaultRefresh
 	}
@@ -237,6 +235,9 @@ func (c *Config) ApplyDefaults() {
 
 // Validate checks the env config is internally consistent.
 func (c *Config) Validate() error {
+	if c.Flux.RepoURL == "" {
+		return fmt.Errorf("flux.repoURL is required: the git URL of YOUR platform repo (this is instance identity — no default is provided so a fork cannot silently sync from someone else's repo)")
+	}
 	if c.Secrets.Backend != BackendLocal && c.Secrets.Backend != BackendSSM {
 		return fmt.Errorf("secrets.backend %q must be %q or %q", c.Secrets.Backend, BackendLocal, BackendSSM)
 	}

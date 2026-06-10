@@ -11,7 +11,7 @@
 #   - In prod, image.tag must be immutable (never "latest").
 #
 # KEY-BY-KEY:
-#   image.repository      ghcr.io/jakenesler/<app> (primary registry).
+#   image.repository      <registry>/<app> (registry from idp.yaml).
 #   image.tag             concrete immutable tag injected by CI (--image).
 #   image.pullPolicy      IfNotPresent.
 #   port                  container port; drives PORT env + probes.
@@ -52,7 +52,7 @@
 
 # ── image ────────────────────────────────────────────────────────────────────
 image:
-  repository: ghcr.io/jakenesler/REPLACE_ME   # ghcr.io/jakenesler/<app>
+  repository: REPLACE_ME                        # <registry>/<app>; renderer always sets it
   tag: ""                                       # REQUIRED, immutable; CI --image
   pullPolicy: IfNotPresent
 

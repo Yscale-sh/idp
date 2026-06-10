@@ -12,6 +12,7 @@ func validConfig() *Config {
 			Backend:  BackendLocal,
 			StoreRef: StoreRef{Name: "platform-local", Kind: KindClusterSecretStore},
 		},
+		Flux: FluxConfig{RepoURL: "https://github.com/example-org/idp.git"},
 	}
 	c.ApplyDefaults()
 	return c
@@ -44,8 +45,14 @@ func TestApplyDefaults_Fills(t *testing.T) {
 	if c.Flux.Branch != DefaultBranch {
 		t.Errorf("flux branch = %q", c.Flux.Branch)
 	}
-	if c.Flux.RepoURL != DefaultRepoURL {
-		t.Errorf("flux repoURL = %q", c.Flux.RepoURL)
+}
+
+func TestValidate_RepoURLRequired(t *testing.T) {
+	// Instance identity must fail closed: no jakenesler (or any) default.
+	c := validConfig()
+	c.Flux.RepoURL = ""
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "flux.repoURL") {
+		t.Errorf("empty flux.repoURL must be rejected, got %v", err)
 	}
 }
 

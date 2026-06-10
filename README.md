@@ -51,7 +51,8 @@ resource limits, autoscaling and observability wiring from that. The developer n
   `idpctl render --env <env> --file deploy.yaml --image <tag>` → which **upserts the app** into
   `clusters/<env>/platform.yaml` → commit it → Flux reconciles. A new app is just **one new entry** in
   the umbrella's `spec.values.apps` (each app stays its own isolated Helm release). CI runs `idpctl`
-  from its own published image; `ship.yml` is a reusable workflow and `idpctl new app` scaffolds a repo.
+  from its own published image; the in-cluster **idp-shipper** automates build → render → commit on push,
+  and `idpctl new app` scaffolds a repo.
 
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
@@ -105,7 +106,7 @@ idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/compo
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
 idpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
-idpctl new app <name>                              # scaffold an app repo (deploy.yaml + ship.yml)
+idpctl new app <name>                              # scaffold an app repo (deploy.yaml; registry from idp.yaml)
 ```
 
 ## Layout

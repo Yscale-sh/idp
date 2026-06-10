@@ -9,7 +9,7 @@ import (
 )
 
 func TestGenerate_DeployValidatesRoundTrip(t *testing.T) {
-	files, err := Generate(Options{Name: "dummy-api", Host: "api.example.com", Port: 8080, WithDB: true})
+	files, err := Generate(Options{Name: "dummy-api", Registry: "ghcr.io/example-org", Host: "api.example.com", Port: 8080, WithDB: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,38 +28,39 @@ func TestGenerate_DeployValidatesRoundTrip(t *testing.T) {
 	if app.App != "dummy-api" || app.Runtime.Port != 8080 {
 		t.Errorf("unexpected app: %+v", app)
 	}
+	if app.Runtime.Image != "ghcr.io/example-org/dummy-api" {
+		t.Errorf("image should derive from the tenant registry, got %q", app.Runtime.Image)
+	}
 	if len(app.DB) != 1 {
 		t.Errorf("with-db should add one db, got %+v", app.DB)
 	}
 }
 
-func TestGenerate_ShipWorkflow(t *testing.T) {
-	files, err := Generate(Options{Name: "dummy-api"})
+func TestGenerate_NoIdentityLeaks(t *testing.T) {
+	// The scaffold must contain ONLY the caller-supplied identity: no baked-in
+	// registry/org, and no ship.yml stub (the reusable workflow it referenced
+	// does not exist — the shipper is the CD path).
+	files, err := Generate(Options{Name: "dummy-api", Registry: "ghcr.io/example-org"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ship := string(files[".github/workflows/ship.yml"])
-	// Thin caller stub: it delegates build -> render -> commit to the reusable IDP
-	// workflow rather than doing it inline.
-	if !strings.Contains(ship, "uses: jakenesler/idp/.github/workflows/ship.yml@") {
-		t.Errorf("ship.yml should call the reusable IDP workflow:\n%s", ship)
+	if _, ok := files[".github/workflows/ship.yml"]; ok {
+		t.Error("scaffold must not emit the phantom ship.yml workflow stub")
 	}
-	// Teardown path is exposed (we must be able to tear it down too).
-	if !strings.Contains(ship, "remove:") {
-		t.Error("ship.yml should expose the teardown 'remove' input")
-	}
-	// GitHub ${{ }} expressions must survive verbatim (static emit, no templating).
-	if !strings.Contains(ship, "${{ secrets.JDP_APP_ID }}") {
-		t.Errorf("ship.yml lost the GitHub secret expression:\n%s", ship)
-	}
-	// The old never-built binary path must be gone (confirmed bug fix).
-	if strings.Contains(ship, ".platform/bin/") {
-		t.Error("ship.yml still references the never-built .platform/bin path")
+	if strings.Contains(string(files["deploy.yaml"]), "jakenesler") {
+		t.Error("scaffold output leaked a hardcoded identity")
 	}
 }
 
 func TestGenerate_RequiresName(t *testing.T) {
-	if _, err := Generate(Options{}); err == nil {
+	if _, err := Generate(Options{Registry: "ghcr.io/example-org"}); err == nil {
 		t.Error("expected error for empty name")
+	}
+}
+
+func TestGenerate_RequiresRegistry(t *testing.T) {
+	_, err := Generate(Options{Name: "dummy-api"})
+	if err == nil || !strings.Contains(err.Error(), "registry is required") {
+		t.Errorf("missing registry must fail closed, got %v", err)
 	}
 }

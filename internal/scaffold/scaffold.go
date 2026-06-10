@@ -1,7 +1,10 @@
 // Package scaffold generates starter files for onboarding a new app: a minimal
-// deploy.yaml (the developer shopping list) and a thin .github/workflows/ship.yml
-// that builds the image and renders desired state. Output is deterministic and
+// deploy.yaml (the developer shopping list). Output is deterministic and
 // OSS-clean (no secrets).
+//
+// The image registry prefix is REQUIRED input (from idp.yaml or --registry):
+// scaffold never assumes whose registry an app pushes to, so a fork cannot
+// silently scaffold apps pointed at someone else's namespace.
 package scaffold
 
 import (
@@ -14,11 +17,12 @@ import (
 
 // Options drives `idpctl new app`.
 type Options struct {
-	Name    string // app name (DNS-1123); also the image repo suffix.
-	Host    string // primary route host (optional).
-	Port    int    // container port.
-	Product string // optional product group.
-	WithDB  bool   // include a primary postgres db.
+	Name     string // app name (DNS-1123); also the image repo suffix.
+	Registry string // image registry prefix (e.g. ghcr.io/your-org). Required.
+	Host     string // primary route host (optional).
+	Port     int    // container port.
+	Product  string // optional product group.
+	WithDB   bool   // include a primary postgres db.
 }
 
 // Files is the generated file set, keyed by relative path.
@@ -29,6 +33,9 @@ func Generate(o Options) (Files, error) {
 	if o.Name == "" {
 		return nil, fmt.Errorf("app name is required")
 	}
+	if o.Registry == "" {
+		return nil, fmt.Errorf("registry is required (set it in the platform repo's idp.yaml, or pass --registry)")
+	}
 	if o.Port == 0 {
 		o.Port = 8080
 	}
@@ -36,11 +43,8 @@ func Generate(o Options) (Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	// ship.yml is a STATIC thin caller stub (literal GitHub Actions ${{ }} syntax,
-	// no Go-template vars), so it is emitted verbatim rather than through render().
 	return Files{
-		"deploy.yaml":                deploy,
-		".github/workflows/ship.yml": []byte(shipTmpl),
+		"deploy.yaml": deploy,
 	}, nil
 }
 
@@ -78,7 +82,9 @@ func render(tmpl string, o Options) ([]byte, error) {
 }
 
 const deployTmpl = `# {{.Name}} — deploy.yaml (developer shopping list).
-# Render:  idpctl render --env dev --file deploy.yaml --image ghcr.io/jakenesler/{{.Name}}:<tag>
+# Render:  idpctl render --env dev --file deploy.yaml --image {{.Registry}}/{{.Name}}:<tag>
+# Ship:    register this app in the idp-shipper registry; every push to the
+#          watched branch then builds, renders, and deploys it automatically.
 
 app: {{.Name}}
 {{- if .Product}}
@@ -86,7 +92,7 @@ product: {{.Product}}
 {{- end}}
 
 runtime:
-  image: ghcr.io/jakenesler/{{.Name}}   # repo only; CI injects the tag via --image
+  image: {{.Registry}}/{{.Name}}   # repo only; the platform injects the tag via --image
   port: {{.Port}}
 {{- if .Host}}
 
@@ -113,50 +119,4 @@ logging:
   enabled: true
 metrics:
   enabled: true
-`
-
-// shipTmpl is the app-repo .github/workflows/ship.yml — a THIN caller stub for the
-// reusable IDP workflow. On push it builds + pushes this repo's image, renders its
-// deploy.yaml into the platform umbrella, and commits it (Flux reconciles). It is
-// STATIC (literal Actions ${{ }} syntax, no Go-template vars) so it is emitted as
-// raw bytes, not rendered. Teardown: run it manually with remove=true (or
-// `idpctl remove`) to delete the app from the platform.
-const shipTmpl = `# Ship — onboards/updates (or tears down) this app on IDP via the reusable
-# workflow in jakenesler/idp. The platform owns build -> render -> commit; Flux
-# reconciles. No deploy.yaml -> render details here; just the call.
-name: Ship
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      remove:
-        description: "Tear down: remove this app from the platform instead of deploying"
-        type: boolean
-        default: false
-
-jobs:
-  ship:
-    uses: jakenesler/idp/.github/workflows/ship.yml@v1   # pin a released major
-    permissions:
-      contents: read
-      packages: write
-    with:
-      env: dev                      # prod apps set env: prod
-      idpctl-tag: v1
-      remove: ${{ github.event.inputs.remove == 'true' }}
-      # manage-dns: true            # also upsert Cloudflare DNS for public routes
-                                    # (proxied CNAME -> the app's tunnel). Off by
-                                    # default; the Cloudflare Tunnel is the exposure
-                                    # either way. Set the domain by hand otherwise.
-    secrets:
-      # Prefer a GitHub App (org secrets => zero-config onboarding); PAT fallback.
-      JDP_APP_ID: ${{ secrets.JDP_APP_ID }}
-      JDP_APP_PRIVATE_KEY: ${{ secrets.JDP_APP_PRIVATE_KEY }}
-      # PLATFORM_REPO_TOKEN: ${{ secrets.PLATFORM_REPO_TOKEN }}
-      # For manage-dns: pass the Cloudflare token directly, OR give AWS creds and the
-      # step reads CLOUDFLARE_API_TOKEN + TUNNEL_TOKEN from SSM (existing prod creds).
-      # CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      # TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
-      # AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 `

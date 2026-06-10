@@ -1,0 +1,17 @@
+# idp.yaml — platform-instance identity (parsed by internal/tenant).
+#
+# This file is the ONE place a fork declares who it is. Nothing identity-shaped
+# is defaulted in Go code or charts: idpctl fails closed if this file is absent
+# where it's needed (e.g. `idpctl new app` without --registry).
+#
+# This is Jake's homelab instance. A fork replaces these values with its own.
+
+# Image registry prefix: scaffold derives app images as <registry>/<app>.
+registry: ghcr.io/jakenesler
+
+# This platform repo (the fork Flux syncs from and the shipper commits to).
+# Per-env cluster.yaml flux.{repoURL,branch} stay authoritative for clusters;
+# they must match this repo.
+repo:
+  url: https://github.com/jakenesler/idp.git
+  branch: main
