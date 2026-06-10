@@ -1,0 +1,33 @@
+{{- if .Values.rbac.trigger }}
+# A scoped Role so a token bound to the image-builder SA can TRIGGER builds
+# (create Jobs, read pods/logs) without any cluster-admin. The shipper carries
+# its own equivalent Role; this one serves CI tokens / idpctl users.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: image-builder-trigger
+  labels:
+    {{- include "image-builder.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: image-builder-trigger
+  labels:
+    {{- include "image-builder.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: image-builder-trigger
+subjects:
+  - kind: ServiceAccount
+    name: image-builder
+    namespace: {{ .Release.Namespace }}
+{{- end }}

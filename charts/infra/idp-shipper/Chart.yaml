@@ -1,0 +1,15 @@
+apiVersion: v2
+name: idp-shipper
+description: >
+  The platform's in-cluster CD orchestrator: polls each registered app repo and,
+  on a new head, builds its images (image-builder Jobs), renders each component
+  into the platform umbrella, and commits/pushes the platform repo for Flux to
+  reconcile. Deploy it into the SAME namespace as the image-builder module — it
+  reuses the git-token + ghcr-push secrets and creates build Jobs beside itself.
+type: application
+version: 0.1.0
+appVersion: "2"
+keywords:
+  - cd
+  - gitops
+home: https://github.com/jakenesler/idp

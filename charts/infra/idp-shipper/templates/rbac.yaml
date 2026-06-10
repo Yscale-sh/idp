@@ -1,0 +1,30 @@
+# The shipper drives builds by creating image-builder Jobs and watching their
+# pods/logs (via the kubectl wrapper in internal/kube). It needs nothing
+# cluster-wide — only Jobs + pod reads in its own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idp-shipper
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-shipper
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-shipper
+subjects:
+  - kind: ServiceAccount
+    name: idp-shipper

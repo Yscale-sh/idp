@@ -1,0 +1,37 @@
+# idp-shipper module values.
+#
+# The registry block is INSTANCE IDENTITY: which platform repo the shipper
+# commits to and which apps it ships. There are no defaults for those — the
+# chart fails at template time if they are unset (a fork must never silently
+# poll/push someone else's repos).
+
+image:
+  # The product's published idpctl image (the idp-shipper entrypoint lives in
+  # the same image). Override to pin your own build.
+  repository: ghcr.io/jakenesler/idpctl
+  tag: v2
+  pullPolicy: Always   # mutable tag — re-pull on every Recreate
+
+registry:
+  env: ""              # REQUIRED: target environment (dev|prod|...)
+  platformRepo: ""     # REQUIRED: org/repo of YOUR platform repo (e.g. your-org/idp)
+  platformBranch: main
+  platformRoot: /platform
+  intervalSeconds: 45
+  # Apps to ship: where each app's deploy.yaml shopping lists live. Build detail
+  # (context/dockerfile/submodules) stays in each deploy.yaml `build:` block.
+  # - name: my-app
+  #   repo: my-org/my-app
+  #   branch: main
+  #   deployFiles: [deploy.yaml]
+  apps: []
+
+secrets:
+  # Names of the pre-existing Secrets in the release namespace (provisioned by
+  # the image-builder module or out-of-band).
+  gitToken: git-token    # key `token`: reads app repos + pushes the platform repo
+  imagePull: ghcr-push   # dockerconfigjson; doubles as the pod's imagePullSecret
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: "1", memory: 512Mi }

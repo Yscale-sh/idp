@@ -266,3 +266,36 @@ modules:
       org (0 -> N on queued runs). Pools authenticate with a per-org fine-grained PAT
       Secret (github-token-<org>, out-of-band). Enabled orgs + per-org pools
       (orgs/repos/maxReplicas) set in environments/<env>/cluster.yaml.
+
+  # ── image-builder — in-cluster image build backend ───────────────────────────
+  # The persistent pieces the on-demand BuildKit build Jobs rely on: the SA build
+  # pods run as, trigger RBAC, the shared layer-cache PVC, and (optionally) the
+  # ExternalSecrets for the two build credentials (ghcr-push dockerconfigjson +
+  # git-token PAT — names are the internal/builder Job-template contract). The
+  # build Jobs themselves are rendered at build time by internal/builder
+  # (idp-shipper / idpctl), never by this chart. The platform cannot build app
+  # images without this module (or an equivalent out-of-band setup).
+  image-builder:
+    source: localChart
+    chart: charts/infra/image-builder
+    defaultNamespace: image-builder
+    description: >-
+      In-cluster image build backend: ServiceAccount, trigger RBAC, BuildKit
+      layer-cache PVC, optional ExternalSecrets for build credentials. Build Jobs
+      are created on demand by the shipper/idpctl via internal/builder.
+
+  # ── idp-shipper — the platform's CD orchestrator ─────────────────────────────
+  # Polls each registered app repo; on a new head: build images (image-builder
+  # Jobs) -> render components into the umbrella -> commit/push the platform repo
+  # -> Flux reconciles. Deploy into the SAME namespace as image-builder (it reuses
+  # the git-token + ghcr-push secrets and creates build Jobs beside itself). The
+  # registry block (platformRepo + apps) is instance identity and MUST be set in
+  # cluster.yaml values — the chart fails at template time without it.
+  idp-shipper:
+    source: localChart
+    chart: charts/infra/idp-shipper
+    defaultNamespace: image-builder
+    description: >-
+      The in-cluster CD orchestrator (push to app master -> build -> render ->
+      commit -> Flux). Registry (platformRepo, apps to ship) set per env in
+      cluster.yaml; no identity defaults.

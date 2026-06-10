@@ -1,0 +1,22 @@
+# The shipper's registry — only WHICH apps to ship and WHERE their deploy.yaml
+# shopping lists live. Build detail is NOT here: it lives in each app's
+# deploy.yaml `build:` block, so a developer self-serves bundling with zero
+# changes to this file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: idp-shipper-registry
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+data:
+  registry.yaml: |
+    env: {{ required "registry.env is required (target environment)" .Values.registry.env }}
+    platformRepo: {{ required "registry.platformRepo is required (org/repo of YOUR platform repo — instance identity, never defaulted)" .Values.registry.platformRepo }}
+    platformBranch: {{ .Values.registry.platformBranch }}
+    platformRoot: {{ .Values.registry.platformRoot }}
+    intervalSeconds: {{ .Values.registry.intervalSeconds }}
+    apps:
+{{- if .Values.registry.apps }}
+{{ toYaml .Values.registry.apps | indent 6 }}
+{{- else }} []
+{{- end }}
