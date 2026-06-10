@@ -16,6 +16,11 @@ import (
 type Values struct {
 	Image            ImageValues             `json:"image"`
 	ImagePullSecrets []ImagePullSecretValues `json:"imagePullSecrets"`
+
+	// PullSecret renders the registry pull-secret ExternalSecret into the app's
+	// namespace (chart template pullsecret-externalsecret.yaml). Nil when the
+	// env doesn't configure secrets.imagePull — omitted from values entirely.
+	PullSecret *PullSecretValues `json:"pullSecret,omitempty"`
 	Port             int                     `json:"port"`
 	// Worker is a portless background workload (runtime.port == 0): the chart
 	// renders a Deployment only — no Service, no HTTP probes, no ServiceMonitor.
@@ -188,6 +193,18 @@ type ExternalSecretValues struct {
 	RemoteRefs      []RemoteRefValues `json:"remoteRefs"`
 }
 
+// PullSecretValues wires the chart's registry pull-secret ExternalSecret: it
+// materializes the registry dockerconfigjson from the env's secrets backend
+// into the app namespace, so no cluster-side ClusterExternalSecret has to
+// track app namespaces by name.
+type PullSecretValues struct {
+	Enabled         bool           `json:"enabled"`
+	Name            string         `json:"name"`
+	RemoteKey       string         `json:"remoteKey"`
+	RefreshInterval string         `json:"refreshInterval"`
+	StoreRef        StoreRefValues `json:"storeRef"`
+}
+
 type KedaHTTPValues struct {
 	Hosts                 []string `json:"hosts"`
 	PathPrefixes          []string `json:"pathPrefixes"`
@@ -297,7 +314,8 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			Tag:        tag,
 			PullPolicy: "IfNotPresent",
 		},
-		ImagePullSecrets: defaultImagePullSecrets(),
+		ImagePullSecrets: imagePullSecrets(c),
+		PullSecret:       buildPullSecret(c),
 		Port:             app.Runtime.Port,
 		Worker:           app.IsWorker(),
 		Replicas:         app.Sizing.Replicas,
@@ -485,11 +503,38 @@ func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
 }
 
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its
-// ghcr.io image through. Kubernetes wants the {name: <secret>} object shape.
+// registry image through. Kubernetes wants the {name: <secret>} object shape.
 const DefaultImagePullSecret = "ghcr-pull"
 
-func defaultImagePullSecrets() []ImagePullSecretValues {
-	return []ImagePullSecretValues{{Name: DefaultImagePullSecret}}
+// imagePullSecrets resolves the pod's imagePullSecrets list: the env's
+// configured pull-secret name when set, the conventional default otherwise.
+func imagePullSecrets(c *clusterenv.Config) []ImagePullSecretValues {
+	name := DefaultImagePullSecret
+	if c != nil && c.Secrets.ImagePull != nil && c.Secrets.ImagePull.SecretName != "" {
+		name = c.Secrets.ImagePull.SecretName
+	}
+	return []ImagePullSecretValues{{Name: name}}
+}
+
+// buildPullSecret wires the chart's pull-secret ExternalSecret from the env's
+// secrets.imagePull config. Nil (rendered byte-identical to before) when the
+// env doesn't configure it — the pull Secret is then out-of-band.
+func buildPullSecret(c *clusterenv.Config) *PullSecretValues {
+	if c == nil || c.Secrets.ImagePull == nil {
+		return nil
+	}
+	ip := c.Secrets.ImagePull
+	refresh := c.Secrets.RefreshInterval
+	if refresh == "" {
+		refresh = clusterenv.DefaultRefresh
+	}
+	return &PullSecretValues{
+		Enabled:         true,
+		Name:            ip.SecretName,
+		RemoteKey:       ip.RemoteKey,
+		RefreshInterval: refresh,
+		StoreRef:        StoreRefValues{Name: ip.StoreRef.Name, Kind: ip.StoreRef.Kind},
+	}
 }
 
 // buildStores builds the chart's db/cache wiring hints. suffix is "DATABASE_URL"

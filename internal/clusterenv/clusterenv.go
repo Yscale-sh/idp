@@ -85,6 +85,30 @@ type SecretsConfig struct {
 
 	// RefreshInterval is how often external-secrets re-reads the backend.
 	RefreshInterval string `json:"refreshInterval,omitempty"`
+
+	// ImagePull configures the registry pull-secret the app chart materializes
+	// into EVERY app namespace via its own ExternalSecret — replacing any
+	// cluster-side ClusterExternalSecret with a hand-maintained namespace list.
+	// Unset => the chart renders no pull-secret ES (public images, or the
+	// secret is provided out-of-band).
+	ImagePull *ImagePullConfig `json:"imagePull,omitempty"`
+}
+
+// ImagePullConfig is the per-env registry pull-secret wiring.
+type ImagePullConfig struct {
+	// SecretName is the Secret the pods reference in imagePullSecrets and the
+	// ExternalSecret's target. Defaults to "ghcr-pull".
+	SecretName string `json:"secretName,omitempty"`
+
+	// RemoteKey is the backend key holding the registry dockerconfigjson
+	// (e.g. /homelab/ghcr/pull-dockerconfigjson). Required when ImagePull set.
+	RemoteKey string `json:"remoteKey,omitempty"`
+
+	// StoreRef is the store the pull ES reads from. It often differs from the
+	// env's main secrets store (e.g. dev runtime secrets use the local
+	// Kubernetes provider while the registry credential lives in SSM).
+	// Defaults to the env's secrets.storeRef.
+	StoreRef StoreRef `json:"storeRef,omitempty"`
 }
 
 // StoreRef references an external-secrets SecretStore or ClusterSecretStore.
@@ -238,6 +262,17 @@ func (c *Config) ApplyDefaults() {
 	if c.Secrets.StoreRef.Kind == "" {
 		c.Secrets.StoreRef.Kind = KindClusterSecretStore
 	}
+	if ip := c.Secrets.ImagePull; ip != nil {
+		if ip.SecretName == "" {
+			ip.SecretName = "ghcr-pull"
+		}
+		if ip.StoreRef.Name == "" {
+			ip.StoreRef = c.Secrets.StoreRef
+		}
+		if ip.StoreRef.Kind == "" {
+			ip.StoreRef.Kind = KindClusterSecretStore
+		}
+	}
 }
 
 // Validate checks the env config is internally consistent.
@@ -253,6 +288,9 @@ func (c *Config) Validate() error {
 	}
 	if k := c.Secrets.StoreRef.Kind; k != KindClusterSecretStore && k != KindSecretStore {
 		return fmt.Errorf("secrets.storeRef.kind %q must be %q or %q", k, KindClusterSecretStore, KindSecretStore)
+	}
+	if ip := c.Secrets.ImagePull; ip != nil && ip.RemoteKey == "" {
+		return fmt.Errorf("secrets.imagePull.remoteKey is required when imagePull is set (the backend key holding the registry dockerconfigjson)")
 	}
 	for name, m := range c.Modules {
 		if !m.Enabled {

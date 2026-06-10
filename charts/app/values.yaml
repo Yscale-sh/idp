@@ -62,6 +62,19 @@ image:
 imagePullSecrets:
   - name: ghcr-pull
 
+# Registry pull-secret ExternalSecret (pullsecret-externalsecret.yaml): when
+# enabled the chart materializes the registry dockerconfigjson into THIS app's
+# namespace from the env's secrets backend. The renderer sets this from
+# cluster.yaml secrets.imagePull; off by default (secret provided out-of-band).
+pullSecret:
+  enabled: false
+  name: ghcr-pull
+  remoteKey: ""
+  refreshInterval: 1h
+  storeRef:
+    name: ""
+    kind: ClusterSecretStore
+
 # ── runtime ──────────────────────────────────────────────────────────────────
 port: 8080
 # worker: a portless background workload (renderer sets it when runtime.port == 0).
