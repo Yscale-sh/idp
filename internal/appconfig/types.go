@@ -337,6 +337,12 @@ type Expose struct {
 	// IP pins the MetalLB LoadBalancer IP (optional; else auto-assigned).
 	IP string `json:"ip,omitempty" yaml:"ip,omitempty"`
 
+	// Pool names the MetalLB IPAddressPool to allocate from (optional). The
+	// platform's pools run autoAssign: false, so a service with neither ip
+	// nor pool sits in AllocationFailed; pool lets MetalLB pick any free
+	// address from the named pool without hand-tracking taken IPs.
+	Pool string `json:"pool,omitempty" yaml:"pool,omitempty"`
+
 	// Port is the LoadBalancer port (defaults to runtime.port).
 	Port int `json:"port,omitempty" yaml:"port,omitempty"`
 }

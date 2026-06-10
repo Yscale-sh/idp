@@ -5,7 +5,10 @@
   "description": "The developer 'shopping list' contract. Mirrors internal/appconfig/types.go (App). Used by `platformctl validate`.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["app", "runtime"],
+  "required": [
+    "app",
+    "runtime"
+  ],
   "properties": {
     "app": {
       "type": "string",
@@ -26,7 +29,10 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "port"],
+      "required": [
+        "image",
+        "port"
+      ],
       "properties": {
         "image": {
           "type": "string",
@@ -46,7 +52,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["host"],
+        "required": [
+          "host"
+        ],
         "properties": {
           "host": {
             "type": "string",
@@ -83,7 +91,12 @@
         "profile": {
           "type": "string",
           "description": "Resource preset.",
-          "enum": ["minimal", "small", "medium", "large"],
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large"
+          ],
           "default": "minimal"
         },
         "replicas": {
@@ -96,7 +109,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
             "scaleToZero": {
               "type": "boolean",
               "description": "Scale fully to 0 when idle, wake on first request (sugar for kind: HTTPScaledObject + min: 0; needs the keda-http-add-on module)."
@@ -114,7 +130,10 @@
             "kind": {
               "type": "string",
               "description": "KEDA object kind.",
-              "enum": ["ScaledObject", "HTTPScaledObject"],
+              "enum": [
+                "ScaledObject",
+                "HTTPScaledObject"
+              ],
               "default": "ScaledObject"
             },
             "metric": {
@@ -128,7 +147,9 @@
             "triggers": {
               "type": "array",
               "description": "Raw KEDA triggers ({type, metadata}) passed through to the ScaledObject.",
-              "items": { "type": "object" }
+              "items": {
+                "type": "object"
+              }
             }
           }
         }
@@ -137,12 +158,16 @@
     "db": {
       "type": "array",
       "description": "Requested databases. First/default entry also yields DATABASE_URL.",
-      "items": { "$ref": "#/$defs/dataStore" }
+      "items": {
+        "$ref": "#/$defs/dataStore"
+      }
     },
     "cache": {
       "type": "array",
       "description": "Requested caches. First/default entry also yields REDIS_URL.",
-      "items": { "$ref": "#/$defs/dataStore" }
+      "items": {
+        "$ref": "#/$defs/dataStore"
+      }
     },
     "storage": {
       "type": "array",
@@ -150,7 +175,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -158,11 +185,19 @@
           },
           "type": {
             "type": "string",
-            "enum": ["r2", "s3"],
+            "enum": [
+              "r2",
+              "s3"
+            ],
             "default": "r2"
           },
-          "bucket": { "type": "string" },
-          "public": { "type": "boolean", "default": false }
+          "bucket": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean",
+            "default": false
+          }
         }
       }
     },
@@ -199,10 +234,20 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["env"],
+        "required": [
+          "env"
+        ],
         "anyOf": [
-          { "required": ["app"] },
-          { "required": ["component"] }
+          {
+            "required": [
+              "app"
+            ]
+          },
+          {
+            "required": [
+              "component"
+            ]
+          }
         ],
         "properties": {
           "app": {
@@ -219,7 +264,11 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["publicRoute", "clusterService", "serviceToken"],
+            "enum": [
+              "publicRoute",
+              "clusterService",
+              "serviceToken"
+            ],
             "default": "clusterService"
           }
         }
@@ -229,13 +278,41 @@
       "type": "boolean",
       "description": "Inject Tailscale egress sidecar env only when true.",
       "default": false
+    },
+    "expose": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "LAN exposure via MetalLB (on-prem only; the one sanctioned LoadBalancer). Prod exposure is the Cloudflare Tunnel.",
+      "properties": {
+        "lan": {
+          "type": "boolean",
+          "description": "Publish on the LAN via a MetalLB LoadBalancer.",
+          "default": false
+        },
+        "ip": {
+          "type": "string",
+          "description": "Pin the MetalLB LoadBalancer IP (optional)."
+        },
+        "pool": {
+          "type": "string",
+          "description": "MetalLB IPAddressPool to auto-allocate from (optional; pools run autoAssign: false, so unpinned services need this)."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "LoadBalancer port (defaults to runtime.port)."
+        }
+      }
     }
   },
   "$defs": {
     "dataStore": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -244,11 +321,20 @@
         "type": {
           "type": "string",
           "description": "Engine. mongo is an external exception.",
-          "enum": ["postgres", "redis", "mongo"]
+          "enum": [
+            "postgres",
+            "redis",
+            "mongo"
+          ]
         },
         "size": {
           "type": "string",
-          "enum": ["minimal", "small", "medium", "large"],
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large"
+          ],
           "default": "minimal"
         }
       }

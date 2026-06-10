@@ -112,6 +112,7 @@ type AutosizeValues struct {
 type LanExposeValues struct {
 	Enabled bool   `json:"enabled"`
 	IP      string `json:"ip,omitempty"`
+	Pool    string `json:"pool,omitempty"`
 	Port    int    `json:"port"`
 }
 
@@ -499,7 +500,7 @@ func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
 	if port == 0 {
 		port = app.Runtime.Port
 	}
-	return &LanExposeValues{Enabled: true, IP: app.Expose.IP, Port: port}
+	return &LanExposeValues{Enabled: true, IP: app.Expose.IP, Pool: app.Expose.Pool, Port: port}
 }
 
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its

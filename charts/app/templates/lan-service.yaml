@@ -18,9 +18,16 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
     platform/expose: lan
-  {{- with .Values.lanExpose.ip }}
+  {{- if or .Values.lanExpose.ip .Values.lanExpose.pool }}
   annotations:
+    {{- with .Values.lanExpose.ip }}
     metallb.universe.tf/loadBalancerIPs: {{ . | quote }}
+    {{- end }}
+    {{- /* address-pool lets MetalLB auto-pick a free IP from a named pool even
+        when the pool runs autoAssign: false (the platform default). */}}
+    {{- with .Values.lanExpose.pool }}
+    metallb.universe.tf/address-pool: {{ . | quote }}
+    {{- end }}
   {{- end }}
 spec:
   type: LoadBalancer
