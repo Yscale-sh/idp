@@ -82,13 +82,14 @@ func newInfraRenderCmd() *cobra.Command {
 			entries := make([]render.ModuleEntry, 0, len(planned))
 			for _, p := range planned {
 				entries = append(entries, render.ModuleEntry{
-					Name:      p.Name,
-					Namespace: p.Namespace,
-					Source:    p.Source,
-					Chart:     p.Chart,
-					RepoURL:   c.Modules[p.Name].RepoURL,
-					Version:   p.Version,
-					Values:    p.HelmRelease.Spec.Values,
+					Name:        p.Name,
+					Namespace:   p.Namespace,
+					Source:      p.Source,
+					Chart:       p.Chart,
+					RepoURL:     c.Modules[p.Name].RepoURL,
+					Version:     p.Version,
+					Values:      p.HelmRelease.Spec.Values,
+					DisableWait: c.Modules[p.Name].DisableWait,
 				})
 			}
 			path, err := render.SetModules(root, env, c, entries)
