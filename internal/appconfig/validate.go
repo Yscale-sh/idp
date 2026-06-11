@@ -37,6 +37,8 @@ func (e ValidationErrors) Error() string {
 
 // dns1123Label is the Kubernetes DNS-1123 label rule (used for app/product/
 // component/capability names). Mirrors the JSON Schema pattern.
+var retentionPattern = regexp.MustCompile(`^[1-9][0-9]*[dh]$`)
+
 var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
 // validStoreType / validStorageType / validConnectMode are the closed sets the
@@ -115,6 +117,11 @@ func (a *App) Validate() error {
 	}
 	if a.IsWorker() && len(a.Routes) > 0 {
 		add("routes", "a worker (runtime.port: 0) has no Service and cannot declare routes")
+	}
+
+	// logging.retention: a duration Loki accepts in retention_stream ("90d", "12h").
+	if r := a.Logging.Retention; r != "" && !retentionPattern.MatchString(r) {
+		add("logging.retention", `must be <N>d or <N>h (e.g. "90d", "12h")`)
 	}
 
 	// volumes (name + mountPath required; type in nfs|emptyDir|pvc; source per type).
