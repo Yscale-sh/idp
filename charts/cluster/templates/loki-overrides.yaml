@@ -3,11 +3,19 @@ Per-app log retention -> Loki runtime overrides. Each app's deploy.yaml may set
 logging.retention ("90d", "12h"); the renderer carries it into the umbrella as
 values.logging.retention, and this template aggregates every set value into ONE
 ConfigMap of per-namespace retention_stream overrides. Loki live-reloads it via
-runtime_config (see infrastructure/onprem/logging — the volume is optional, so
-Loki runs fine when no app declares a retention). Tenant key "fake" = the
-single-tenant id Loki uses with auth_enabled: false. Apps without a retention
-fall to the env default (limits_config.retention_period, 30d).
+runtime_config. Tenant key "fake" = the single-tenant id Loki uses with
+auth_enabled: false. Apps without a retention fall to the env default
+(limits_config.retention_period).
+
+The ConfigMap renders WHENEVER a loki module is present — even with zero
+declared retentions (empty overrides) — because Loki's runtime-config service
+treats a MISSING file as fatal (observed: crashloop on adoption, 2026-06-11).
+On a fresh bootstrap the loki ns may not exist yet when the umbrella first
+applies; Flux remediation retries until the loki module has created it.
 */}}
+{{- $hasLoki := false }}
+{{- range .Values.modules }}{{- if eq .name "loki" }}{{- $hasLoki = true }}{{- end }}{{- end }}
+{{- if $hasLoki }}
 {{- $entries := list }}
 {{- range .Values.apps }}
 {{- $ret := dig "logging" "retention" "" (.values | default dict) }}
@@ -15,7 +23,6 @@ fall to the env default (limits_config.retention_period, 30d).
 {{- $entries = append $entries (dict "ns" .namespace "period" $ret) }}
 {{- end }}
 {{- end }}
-{{- if $entries }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -26,6 +33,7 @@ metadata:
     platform/managed-by: platformctl
 data:
   overrides.yaml: |
+{{- if $entries }}
     overrides:
       fake:
         retention_stream:
@@ -33,5 +41,8 @@ data:
           - selector: '{namespace="{{ .ns }}"}'
             priority: 10
             period: {{ .period }}
+{{- end }}
+{{- else }}
+    overrides: {}
 {{- end }}
 {{- end }}
