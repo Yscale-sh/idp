@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/jakenesler/idp/internal/clusterenv"
@@ -32,7 +33,24 @@ func loadEnvModules(root, env string) (*clusterenv.Config, []modules.PlannedModu
 	if err != nil {
 		return nil, nil, err
 	}
+	warnMissingLoki(c)
 	return c, planned, nil
+}
+
+// warnMissingLoki nags (loudly, non-fatally) when the env promises every app a
+// Loki endpoint but no loki module backs it. Non-fatal because an external /
+// managed Loki is legitimate — but a fork forgetting logging entirely is not.
+func warnMissingLoki(c *clusterenv.Config) {
+	if c.Observability.LokiURL == "" {
+		return
+	}
+	if m, ok := c.Modules["loki"]; ok && m.Enabled {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "WARNING: observability.lokiURL is set but no enabled `loki` module backs it —")
+	fmt.Fprintln(os.Stderr, "  every app gets LOKI_URL injected and logging.retention renders overrides for")
+	fmt.Fprintln(os.Stderr, "  a Loki that this env does not provide. Enable the loki module (catalog:")
+	fmt.Fprintln(os.Stderr, "  modules/registry.yaml) unless this env intentionally uses an external Loki.")
 }
 
 func newInfraPlanCmd() *cobra.Command {

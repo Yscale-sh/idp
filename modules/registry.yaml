@@ -299,3 +299,48 @@ modules:
       The in-cluster CD orchestrator (push to app master -> build -> render ->
       commit -> Flux). Registry (platformRepo, apps to ship) set per env in
       cluster.yaml; no identity defaults.
+
+  # ── loki — the platform log store (REQUIRED wherever observability.lokiURL ───
+  # is set). Every app gets LOKI_URL injected as Tier-A env and may declare
+  # logging.retention in its deploy.yaml (rendered into the loki-runtime-overrides
+  # ConfigMap in this module's namespace) — so an env that promises a lokiURL
+  # without enabling this module gets a loud warning from infra plan/render
+  # (external/managed Loki is the only reason to ignore it).
+  #
+  # Defaults are GENERIC + OSS-clean: filesystem storage, 30d retention, the
+  # runtime-overrides hook mounted (optional ConfigMap — safe when absent), and
+  # -config.expand-env so object-storage credentials come from a Secret (e.g.
+  # `loki-r2`, materialized by the env's secrets backend) via env vars — NEVER
+  # committed values. Per-env cluster.yaml overrides add the real storage
+  # (e.g. R2/S3 schema period — see infrastructure/onprem/logging for the shape).
+  loki:
+    source: chartRepo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki-stack
+    version: 2.10.3
+    defaultNamespace: loki
+    defaultValues:
+      loki:
+        extraArgs:
+          config.expand-env: "true"
+        config:
+          compactor:
+            retention_enabled: true
+          limits_config:
+            retention_period: 720h            # 30d platform default
+          runtime_config:
+            file: /etc/loki/runtime/overrides.yaml
+        extraVolumes:
+          - name: runtime-overrides
+            configMap:
+              name: loki-runtime-overrides    # rendered by the umbrella from
+              optional: true                  # deploy.yaml logging.retention
+        extraVolumeMounts:
+          - name: runtime-overrides
+            mountPath: /etc/loki/runtime
+            readOnly: true
+    description: >-
+      Loki, the platform log store backing the Tier-A LOKI_URL contract and the
+      per-app logging.retention feature. 30d default retention; runtime
+      overrides ConfigMap hook; credentials via env expansion from a Secret.
+      Enable in every env that sets observability.lokiURL.
