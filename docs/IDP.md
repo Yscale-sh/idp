@@ -4,8 +4,9 @@
 > sidecar exposes its API with no NodeBalancer) and a full build/deploy model (Docker Hub
 > `stackmaster/*`, self-hosted k8s runner, SSM secrets, pg_dump→R2 backups). The full,
 > research-backed version of this plan — single-cluster consolidation, Cloudflare Tunnel as the
-> default ingress (replaces ingress-nginx, $0 vs $20/mo), and self-hosted Postgres — lives in
-> **`MIGRATION.md`**, which supersedes the ingress-nginx approach sketched below. Read that first.
+> default ingress (replaces ingress-nginx, $0 vs $20/mo), and self-hosted Postgres — is now
+> captured in **`../ARCHITECTURE.md`**, which supersedes the ingress-nginx approach sketched
+> below. Read that first. (This doc is kept as design history.)
 
 ## Why
 Today every new app becomes a `Service type=LoadBalancer` → a new **$10/mo NodeBalancer**, plus
@@ -109,4 +110,4 @@ monitor: true                                   # emit ServiceMonitor
 - A single place to enforce cost hygiene, so the bill doesn't silently creep back up.
 
 > This is the "make it like that, but real" version of the cartogopher nginx pattern — and it's
-> the prerequisite that makes the Phase 5 "one cluster" consolidation in `PLAN.md` tractable.
+> the prerequisite that makes a later "one cluster" consolidation tractable.

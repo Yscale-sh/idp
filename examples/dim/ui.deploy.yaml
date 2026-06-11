@@ -1,0 +1,29 @@
+# Dim UI — nginx serving the React SPA + reverse-proxying /api,/ws,/images to the
+# api component. The ONLY LAN-reachable service (MetalLB LoadBalancer on the LAN).
+#   idpctl render --env dev --file examples/dim/ui.deploy.yaml --image ghcr.io/jakenesler/dim-ui:<tag>
+app: dim
+component: ui
+
+runtime:
+  image: ghcr.io/jakenesler/dim-ui
+  port: 80
+
+sizing:
+  profile: minimal
+  replicas: 2          # UI scales freely (no GPU / sticky state)
+
+# LAN entrypoint: a MetalLB LoadBalancer (the on-prem twin of the tunnel). On the
+# local backend the renderer adds lan-service.yaml; the no-LB guardrail still blocks
+# any other LoadBalancer. Pick a free IP from your MetalLB pool.
+expose:
+  lan: true
+  ip: 192.168.1.240
+
+# nginx upstream -> the api component's in-cluster Service (cross-namespace DNS).
+# scheme: none => bare host:port (nginx `upstream { server ...; }` rejects a scheme).
+connectsTo:
+  - component: api
+    env: DIM_API_UPSTREAM
+    mode: clusterService
+    port: 8000
+    scheme: none

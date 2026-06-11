@@ -5,9 +5,9 @@
 > Postgres is a `StatefulSet`+Service, yscale is a dynamically-scaling k8s node mesh, cloudflared is
 > a `Deployment`. Savings come from fewer/leaner nodes + Tunnel + self-hosted PG — not from dropping k8s.
 
-The cheapest *and* most scalable shape on the table. Replaces the "one fat LKE cluster" node layer
-in `MIGRATION.md §3`. Everything else in `MIGRATION.md` (Cloudflare Tunnel ingress, self-hosted
-Postgres per `POSTGRES_BACKUPS.md`, the IDP app-chart, namespace model) stays the same.
+The cheapest *and* most scalable shape on the table. Replaces the "one fat managed cluster" node
+layer from the earlier migration plan. Everything else from that plan (Cloudflare Tunnel ingress,
+self-hosted Postgres per `docs/POSTGRES_BACKUPS.md`, the IDP app-chart, namespace model) stays the same.
 
 ```
                  Cloudflare  (DNS + edge TLS + DDoS + free Tunnel)
@@ -65,7 +65,7 @@ stateless apps and jobs are free to schedule onto the mesh. KEDA drives the mesh
   the trade you want. (LKE's free managed control plane is the alternative if you'd rather not own
   this — but it pins you to one region and the CCM, which the mesh model is designed to escape.)
 - **Storage.** k3s doesn't bundle the Linode CSI; install it so Postgres PVCs survive node loss
-  (don't use local-path for the DB). Backups per `POSTGRES_BACKUPS.md`.
+  (don't use local-path for the DB). Backups per `docs/POSTGRES_BACKUPS.md`.
 
 ---
 
@@ -109,9 +109,10 @@ while it's actually serving load. The two levers doing the work: **Cloudflare Tu
 **lean floor + dynamic mesh (−$60+)**.
 
 ## How this changes the migration
-`MIGRATION.md` already gets you off NodeBalancers and off managed Postgres. This swaps its Phase 3–4
-("migrate everything onto one fat LKE cluster, right-size to ~4 nodes") for **"stand up the minimal
-k3s host + yscale mesh, move apps onto it via the IDP chart, point Cloudflare Tunnel at it, retire
-both LKE clusters."** Same destination (one production environment, IDP-driven, Tunnel ingress),
-leaner floor, and it runs on your own stack. Phases 1–2 (Tunnel cutover, self-host Postgres) are
-still worth doing first since they bank ~$100/mo independently of the cluster move.
+The earlier migration plan already gets you off per-app load balancers and off managed Postgres.
+This swaps its middle phases ("migrate everything onto one fat managed cluster, right-size to ~4
+nodes") for **"stand up the minimal k3s host + yscale mesh, move apps onto it via the IDP chart,
+point Cloudflare Tunnel at it, retire the managed clusters."** Same destination (one production
+environment, IDP-driven, Tunnel ingress), leaner floor, and it runs on your own stack. The Tunnel
+cutover and self-hosted Postgres are still worth doing first since they bank most of the savings
+independently of the cluster move.

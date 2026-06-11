@@ -21,6 +21,7 @@ argocd-initial-admin-secret*
 *.test
 *.out
 /idpctl
+/jdpctl
 cmd/platformctl/platformctl
 
 # ── Helm ──

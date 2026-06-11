@@ -150,7 +150,7 @@ storage:uploads-> UPLOADS_BUCKET / UPLOADS_ENDPOINT / UPLOADS_ACCESS_KEY_ID / UP
 
 ---
 
-## 2. Environment variable tiers (from ENV.md — verbatim intent)
+## 2. Environment variable tiers (from docs/ENV.md — verbatim intent)
 
 How env reaches a pod: (1) the chart injects Tier-A into every app; (2) a
 per-app `ExternalSecret` pulls the app's SSM root into the runtime Secret the pod

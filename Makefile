@@ -42,7 +42,7 @@ help: ## Show this help.
 
 # ── build / test ───────────────────────────────────────────────────────────────
 .PHONY: build
-build: ## Compile the platformctl binary to ./idpctl.
+build: ## Compile the idpctl binary to ./idpctl.
 	$(GO) build -o $(BINARY) $(CMD_PKG)
 
 .PHONY: test

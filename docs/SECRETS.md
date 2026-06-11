@@ -5,7 +5,7 @@
 > backend; prod *specs* `backend: ssm`); the per-tenant model is the target to
 > implement when prod / multi-tenant is actually on the table. This doc is the
 > decision so it doesn't get lost. Naming conventions live in
-> [`CONVENTIONS.md`](CONVENTIONS.md) §5; the Crossplane hook is in
+> [`CONVENTIONS.md`](../CONVENTIONS.md) §5; the Crossplane hook is in
 > [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md).
 
 ## The core move: the platform mints secrets, the tenant never holds a key

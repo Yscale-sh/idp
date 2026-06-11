@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'private/**']
+  pull_request:
+    paths-ignore: ['**.md', 'private/**']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: Vet
+        run: make vet
+
+      - name: Unit + golden tests
+        run: make test
+
+      - name: Helm lint
+        run: make helm-lint
+
+      - name: Validate examples
+        run: |
+          ./idpctl validate --file examples/carshowdb/deploy.yaml
+          ./idpctl validate --file examples/dim/api.deploy.yaml
+          ./idpctl validate --file examples/dim/scanner.deploy.yaml
+          ./idpctl validate --file examples/dim/ui.deploy.yaml
+
+      - name: Render smoke (must not dirty tracked state unexpectedly)
+        run: |
+          ./idpctl render --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:dev-ci0000
+          ./idpctl infra render --env dev

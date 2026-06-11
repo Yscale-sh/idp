@@ -1,13 +1,17 @@
-# idp — Jake's Developer Platform
+# idp
 
 > A tiny, opinionated **Internal Developer Platform** for self-hosted Kubernetes (k3s).
 > A developer writes one small `deploy.yaml`; the platform renders desired state; **Flux**
 > (Flux Operator + `HelmRelease`/`GitRepository`) reconciles it into the cluster. No
 > hand-written Kubernetes YAML, no per-app load balancers.
 
-**Status:** early / work-in-progress. Built and validated against a homelab k3s cluster (`dev`)
-before it targets cloud k3s (`prod`). Repo is being kept private until it's ready to open-source.
-The CLI is **`idpctl`** (Go module `github.com/jakenesler/idp`).
+**Status:** early / work-in-progress, but running real workloads. Built and validated against a
+homelab k3s cluster (`dev`) before it targets cloud k3s (`prod`). The CLI is **`idpctl`**
+(Go module `github.com/jakenesler/idp`). Apache-2.0.
+
+This repo is **both the platform and a live instance of it**: `clusters/` and `environments/`
+hold the author's real rendered state. That's the model — you don't install idp, you
+**fork it and make it yours** (see [Make it yours](#make-it-yours)).
 
 ---
 
@@ -121,8 +125,11 @@ idpctl new app <name>                              # scaffold an app repo (deplo
 | `clusters/{dev,prod}` | the per-env `FluxInstance` (the one bootstrap) + `platform.yaml` (the rendered umbrella HelmRelease) |
 | `examples/{carshowdb,dim}` | onboarded apps — a single service and a multi-component product |
 | `schemas/`, `test/` | the `deploy.yaml` JSON schema + unit/golden/e2e tests |
+| `docs/` | design notes & references (env tiers, secrets model, CLI design, backups, history) |
 
 ## Quickstart (dev)
+
+No cluster, cloud account, or credentials needed — render is local:
 
 ```bash
 make build && make test                            # compiles ./idpctl, runs unit/golden tests
@@ -132,15 +139,42 @@ make build && make test                            # compiles ./idpctl, runs uni
 make e2e          # spins an ephemeral k3d cluster, applies, asserts rollout, tears down (SKIPs if k3d absent)
 ```
 
+## Make it yours
+
+The platform has exactly **one identity file**: [`idp.yaml`](idp.yaml). Nothing identity-shaped is
+defaulted in Go code or charts — `idpctl` fails closed if it's missing. To run your own instance:
+
+1. **Fork** this repo, then edit `idp.yaml`: your image registry prefix and your fork's URL/branch.
+2. Edit `environments/<env>/cluster.yaml`: point `flux.repoURL`/`branch` at your fork and toggle
+   the modules you want.
+3. Re-render the state as your own: `./idpctl infra render --env dev`, then onboard your first app
+   with `idpctl new app <name>` (or start from `examples/`).
+4. Bootstrap a cluster: install the Flux Operator and apply `clusters/<env>/flux-instance.yaml`.
+   From then on, deploying is a git commit.
+
+The `clusters/` and `examples/` content you inherit from the fork is just the author's instance —
+`idpctl remove` / re-render replaces it with yours.
+
+Only the optional cloud features need accounts: `idpctl dns` / `idpctl tunnel` (Cloudflare) and the
+`ssm` secrets backend (AWS). The dev environment runs without any of them.
+
 ## Background / design
 
-This grew out of a Linode cost review (see [`COST_REVIEW.md`](COST_REVIEW.md)) and the design notes
-in [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`IDP.md`](IDP.md),
-and [`ENV.md`](ENV.md). The driving idea: make the cheap, correct path the *default* — one ingress
-path, ClusterIP-only apps, self-hosted data stores, elastic cloud burst only when load demands it.
+Design notes live in [`docs/`](docs/): the CLI design ([`DEPLOY_GO_CLI.md`](docs/DEPLOY_GO_CLI.md)),
+the secrets trust model ([`SECRETS.md`](docs/SECRETS.md)), env-var tiers ([`ENV.md`](docs/ENV.md)),
+Postgres backups ([`POSTGRES_BACKUPS.md`](docs/POSTGRES_BACKUPS.md)), and design history
+([`IDP.md`](docs/IDP.md)). The platform contract is [`CONVENTIONS.md`](CONVENTIONS.md); the target
+production shape is [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-> Operational docs in this repo still contain environment-specific details (LAN IPs, cluster IDs);
-> these get scrubbed before any public release.
+The project grew out of a cloud cost review: seven $10/mo load balancers, a $32/mo managed
+Postgres, and hand-rolled nginx made the wrong path the easy one. The driving idea: make the
+cheap, correct path the *default* — one ingress path, ClusterIP-only apps, self-hosted data
+stores, elastic cloud burst only when load demands it.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). TL;DR: `make test` and `make lint` must pass;
+`make e2e` if you touched rendering or charts.
 
 ## License
 
