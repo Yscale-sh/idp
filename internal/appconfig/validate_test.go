@@ -169,3 +169,25 @@ func TestValidationErrors_Aggregate(t *testing.T) {
 		t.Fatalf("expected multiple aggregated errors, got %d: %v", len(verrs), verrs)
 	}
 }
+
+func TestValidate_LoggingRetention(t *testing.T) {
+	base := func() App {
+		a := App{App: "x", Runtime: Runtime{Image: "ghcr.io/e/x", Port: 80}}
+		a.ApplyDefaults()
+		return a
+	}
+	for _, ok := range []string{"", "90d", "12h", "365d"} {
+		a := base()
+		a.Logging.Retention = ok
+		if err := a.Validate(); err != nil {
+			t.Errorf("retention %q should be valid: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"90", "0d", "90 days", "d90", "1.5d", "90m"} {
+		a := base()
+		a.Logging.Retention = bad
+		if err := a.Validate(); err == nil {
+			t.Errorf("retention %q should be rejected", bad)
+		}
+	}
+}

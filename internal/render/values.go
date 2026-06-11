@@ -17,6 +17,12 @@ type Values struct {
 	Image            ImageValues             `json:"image"`
 	ImagePullSecrets []ImagePullSecretValues `json:"imagePullSecrets"`
 
+	// Logging carries the app's log-retention override (deploy.yaml
+	// logging.retention). Nil when unset — renders byte-identical to before;
+	// the umbrella aggregates set values into the loki-runtime-overrides
+	// ConfigMap (per-namespace retention_stream).
+	Logging *LoggingValues `json:"logging,omitempty"`
+
 	// PullSecret renders the registry pull-secret ExternalSecret into the app's
 	// namespace (chart template pullsecret-externalsecret.yaml). Nil when the
 	// env doesn't configure secrets.imagePull — omitted from values entirely.
@@ -194,6 +200,11 @@ type ExternalSecretValues struct {
 	RemoteRefs      []RemoteRefValues `json:"remoteRefs"`
 }
 
+// LoggingValues is the rendered logging block (only the retention override).
+type LoggingValues struct {
+	Retention string `json:"retention,omitempty"`
+}
+
 // PullSecretValues wires the chart's registry pull-secret ExternalSecret: it
 // materializes the registry dockerconfigjson from the env's secrets backend
 // into the app namespace, so no cluster-side ClusterExternalSecret has to
@@ -317,6 +328,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		},
 		ImagePullSecrets: imagePullSecrets(c),
 		PullSecret:       buildPullSecret(c),
+		Logging:          buildLogging(app),
 		Port:             app.Runtime.Port,
 		Worker:           app.IsWorker(),
 		Replicas:         app.Sizing.Replicas,
@@ -536,6 +548,15 @@ func buildPullSecret(c *clusterenv.Config) *PullSecretValues {
 		RefreshInterval: refresh,
 		StoreRef:        StoreRefValues{Name: ip.StoreRef.Name, Kind: ip.StoreRef.Kind},
 	}
+}
+
+// buildLogging carries logging.retention into values; nil when unset so
+// existing apps render byte-identically.
+func buildLogging(app appconfig.App) *LoggingValues {
+	if app.Logging.Retention == "" {
+		return nil
+	}
+	return &LoggingValues{Retention: app.Logging.Retention}
 }
 
 // buildStores builds the chart's db/cache wiring hints. suffix is "DATABASE_URL"

@@ -351,6 +351,12 @@ type Expose struct {
 type Logging struct {
 	// Enabled defaults to true via ApplyDefaults.
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+
+	// Retention is how long this app's logs are kept in the platform log store
+	// (Loki), e.g. "90d" or "12h". Empty = the environment default (30d). The
+	// umbrella aggregates every app's value into a per-namespace
+	// retention_stream override (the loki-runtime-overrides ConfigMap).
+	Retention string `json:"retention,omitempty" yaml:"retention,omitempty"`
 }
 
 // Metrics toggles platform metrics wiring (ServiceMonitor / OTEL).
