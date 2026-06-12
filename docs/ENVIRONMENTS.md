@@ -87,6 +87,14 @@ reserved name — document it as such.
 | secrets | local store | local store | SSM (`platform-ssm`) |
 | modules | full shared set | **none** (dev umbrella owns the cluster) | keda + ESO (+ yscale) |
 | data stores | per-app dev pg/redis | per-app dev pg/redis (stage copies) | managed PG via SSM `DATABASE_URL` |
+| exposure | **LAN only** (`expose.lan` → MetalLB + AdGuard) | **LAN only** (MetalLB) | Cloudflare Tunnel (`routes: public`) |
+
+**NOT YET (deliberate):** dev and stage have **no Cloudflare Tunnel** — they're
+LAN-only, so both declare `seams.publicRoutes: false`. A `deploy.yaml` route with
+`public: true` is rejected there (it would get no real exposure); apps reach the
+LAN via `expose.lan`. Public internet routing is a **prod-only** capability today.
+Stage therefore can't rehearse public-route behaviour until a tunnel is added to
+the homelab — flip the seam + provide the tunnel when that's wanted.
 
 ## Promotion mechanics (digest-forward)
 
