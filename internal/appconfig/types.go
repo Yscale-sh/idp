@@ -171,8 +171,12 @@ type Sizing struct {
 	Profile string `json:"profile,omitempty" yaml:"profile,omitempty"`
 
 	// Replicas is the desired baseline replica count (when not autoscaling, or
-	// the autoscale floor seed).
-	Replicas int `json:"replicas,omitempty" yaml:"replicas,omitempty"`
+	// the autoscale floor seed). A pointer so an explicit replicas:0 (a gated
+	// GPU worker pool that "costs nothing at rest") is preserved — a plain int
+	// can't tell an intentional 0 from an unset field, and ApplyDefaults would
+	// silently promote it to 1. Unset (nil) defaults to DefaultReplicas; use
+	// ReplicaCount() to read.
+	Replicas *int `json:"replicas,omitempty" yaml:"replicas,omitempty"`
 
 	// Autoscale configures KEDA/HPA scaling.
 	Autoscale Autoscale `json:"autoscale,omitempty" yaml:"autoscale,omitempty"`
@@ -188,6 +192,16 @@ type Sizing struct {
 	// mid-work — the pod is right-sized at (re)creation. Requires the `vpa` module
 	// enabled in the cluster.
 	Autosize bool `json:"autosize,omitempty" yaml:"autosize,omitempty"`
+}
+
+// ReplicaCount returns the desired baseline replica count, treating an unset
+// (nil) value as DefaultReplicas. An explicit replicas:0 (a gated worker pool)
+// is preserved as 0 — that's the whole reason Replicas is a pointer.
+func (s Sizing) ReplicaCount() int {
+	if s.Replicas == nil {
+		return DefaultReplicas
+	}
+	return *s.Replicas
 }
 
 // Autoscale configures KEDA-driven scaling. Kind+Triggers let an app pick either
@@ -446,20 +460,23 @@ func (a *App) ApplyDefaults() {
 	if a.Sizing.Profile == "" {
 		a.Sizing.Profile = DefaultProfile
 	}
-	if a.Sizing.Replicas == 0 {
-		a.Sizing.Replicas = DefaultReplicas
+	if a.Sizing.Replicas == nil {
+		// Unset -> default. An explicit replicas:0 (gated worker) stays nil-free
+		// and is preserved; only a truly absent field is promoted to the default.
+		r := DefaultReplicas
+		a.Sizing.Replicas = &r
 	}
 	if a.Sizing.Autoscale.Enabled {
 		if a.Sizing.Autoscale.Kind == "" {
 			a.Sizing.Autoscale.Kind = DefaultAutoscaleK
 		}
 		if a.Sizing.Autoscale.Min == 0 && a.Sizing.Autoscale.Kind != HTTPScaledObjectK {
-			a.Sizing.Autoscale.Min = a.Sizing.Replicas
+			a.Sizing.Autoscale.Min = a.Sizing.ReplicaCount()
 		}
 		if a.Sizing.Autoscale.Max == 0 {
 			a.Sizing.Autoscale.Max = a.Sizing.Autoscale.Min
 			if a.Sizing.Autoscale.Max == 0 {
-				a.Sizing.Autoscale.Max = a.Sizing.Replicas
+				a.Sizing.Autoscale.Max = a.Sizing.ReplicaCount()
 			}
 		}
 	}

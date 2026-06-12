@@ -165,7 +165,7 @@ func (a *App) Validate() error {
 	if a.Sizing.Profile != "" && !validProfileSet[a.Sizing.Profile] {
 		add("sizing.profile", "must be one of "+keysOf(validProfileSet))
 	}
-	if a.Sizing.Replicas < 0 {
+	if a.Sizing.Replicas != nil && *a.Sizing.Replicas < 0 {
 		add("sizing.replicas", "must be >= 0")
 	}
 	a.validateAutoscale(add)

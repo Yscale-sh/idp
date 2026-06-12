@@ -332,7 +332,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		Logging:          buildLogging(app),
 		Port:             app.Runtime.Port,
 		Worker:           app.IsWorker(),
-		Replicas:         app.Sizing.Replicas,
+		Replicas:         app.Sizing.ReplicaCount(),
 		Resources: ResourceRequirements{
 			Requests:    ResourceSpec{CPU: envelope.Requests.CPU, Memory: envelope.Requests.Memory},
 			Limits:      ResourceSpec{CPU: envelope.Limits.CPU, Memory: envelope.Limits.Memory},
@@ -650,8 +650,8 @@ func buildKeda(app appconfig.App) KedaValues {
 	k := KedaValues{
 		Enabled:     as.Enabled,
 		Kind:        appconfig.DefaultAutoscaleK,
-		MinReplicas: app.Sizing.Replicas,
-		MaxReplicas: app.Sizing.Replicas,
+		MinReplicas: app.Sizing.ReplicaCount(),
+		MaxReplicas: app.Sizing.ReplicaCount(),
 		Triggers:    []map[string]any{},
 		HTTP: KedaHTTPValues{
 			Hosts:                 hostsOf(app),
@@ -751,7 +751,7 @@ func buildServiceMonitor(app appconfig.App) ServiceMonitorValues {
 
 func buildPDB(app appconfig.App) PdbValues {
 	// Enable a PDB when there is more than one replica (or autoscaling keeps >1).
-	enabled := app.Sizing.Replicas > 1
+	enabled := app.Sizing.ReplicaCount() > 1
 	if app.Sizing.Autoscale.Enabled && app.Sizing.Autoscale.Min > 1 {
 		enabled = true
 	}

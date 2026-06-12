@@ -127,7 +127,7 @@ func TestValidate_Table(t *testing.T) {
 				a.Product = "carshow"
 				a.Component = "api"
 				a.Routes = []Route{{Host: "carshowdb.example.com", Public: true}}
-				a.Sizing = Sizing{Profile: "small", Replicas: 2, Autoscale: Autoscale{Enabled: true, Min: 2, Max: 5}}
+				a.Sizing = Sizing{Profile: "small", Replicas: intPtr(2), Autoscale: Autoscale{Enabled: true, Min: 2, Max: 5}}
 				a.DB = []DataStore{{Name: "primary", Type: "postgres", Size: "minimal"}}
 				a.Cache = []DataStore{{Name: "sessions", Type: "redis"}}
 				a.Storage = []Storage{{Name: "uploads", Type: "r2", Bucket: "carshowdb-uploads"}}
@@ -191,3 +191,7 @@ func TestValidate_LoggingRetention(t *testing.T) {
 		}
 	}
 }
+
+// intPtr returns a pointer to i — for setting Sizing.Replicas (a *int so an
+// explicit 0 is distinguishable from unset) in table-driven tests.
+func intPtr(i int) *int { return &i }
