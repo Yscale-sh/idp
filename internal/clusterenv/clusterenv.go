@@ -76,8 +76,73 @@ type Config struct {
 	// source env, so a digest can only reach this env through its gate.
 	Promotion *PromotionConfig `json:"promotion,omitempty"`
 
+	// Seams declares which platform capabilities this env PROVIDES. It turns the
+	// loose coupling into a fail-closed contract: an app may only request a seam
+	// the env provides (policy), and an env may only claim a seam it actually
+	// backs (Validate). Omit it and the seams derive permissively from the rest
+	// of this config (back-compat). See Seams / EffectiveSeams.
+	Seams *Seams `json:"seams,omitempty"`
+
 	// Modules is the platform module registry for this env.
 	Modules map[string]Module `json:"modules,omitempty"`
+}
+
+// Seams declares the platform capabilities ("seams" — the interfaces apps
+// depend on: data stores, LAN exposure, public routes, autoscaling, volumes)
+// that an environment provides. Each is a *bool: nil = DERIVE the default from
+// the rest of cluster.yaml (so existing envs keep working); explicit true/false
+// overrides. Resolve to concrete values with EffectiveSeams.
+type Seams struct {
+	// StatefulStores: the env hosts in-cluster db/cache (the dev-postgres /
+	// dev-redis path). false => apps must NOT declare db/cache here and instead
+	// receive DATABASE_URL/REDIS_URL from the secrets backend (managed/external
+	// — the prod posture; keeps prod PVC-free). Default: true.
+	StatefulStores *bool `json:"statefulStores,omitempty"`
+	// LANExpose: MetalLB is present, so apps may use expose.lan. false => no LAN
+	// LoadBalancers (prod is Cloudflare-Tunnel-only). Default: true.
+	LANExpose *bool `json:"lanExpose,omitempty"`
+	// PublicRoutes: public routes[] are allowed (an ingress/tunnel path exists).
+	// Default: derived (true iff zones are declared).
+	PublicRoutes *bool `json:"publicRoutes,omitempty"`
+	// Autoscale: sizing.autoscale is available. Default: derived (true iff the
+	// keda module is enabled).
+	Autoscale *bool `json:"autoscale,omitempty"`
+	// Volumes: volumes[] (nfs/pvc/emptyDir) are mountable. Default: true.
+	Volumes *bool `json:"volumes,omitempty"`
+}
+
+// ResolvedSeams is the concrete seam set after defaults/derivation.
+type ResolvedSeams struct {
+	StatefulStores, LANExpose, PublicRoutes, Autoscale, Volumes bool
+}
+
+// EffectiveSeams resolves the declared Seams against derivation defaults so
+// callers (policy, doctor) get concrete booleans. Derivation: PublicRoutes
+// follows whether zones are declared; Autoscale follows the keda module;
+// StatefulStores / LANExpose / Volumes default true (the historical behavior —
+// envs opt OUT to tighten, e.g. prod).
+func (c *Config) EffectiveSeams() ResolvedSeams {
+	kedaOn := false
+	if m, ok := c.Modules["keda"]; ok && m.Enabled {
+		kedaOn = true
+	}
+	pick := func(p *bool, def bool) bool {
+		if p != nil {
+			return *p
+		}
+		return def
+	}
+	s := c.Seams
+	if s == nil {
+		s = &Seams{}
+	}
+	return ResolvedSeams{
+		StatefulStores: pick(s.StatefulStores, true),
+		LANExpose:      pick(s.LANExpose, true),
+		PublicRoutes:   pick(s.PublicRoutes, len(c.Zones) > 0),
+		Autoscale:      pick(s.Autoscale, kedaOn),
+		Volumes:        pick(s.Volumes, true),
+	}
 }
 
 // PromotionConfig declares the env's promotion gate (see Config.Promotion).
@@ -195,7 +260,7 @@ const (
 	DefaultFluxSourceName = "flux-system"
 	// DefaultBranch is the git branch the FluxInstance tracks (ref
 	// refs/heads/<branch>) when cluster.yaml omits flux.branch.
-	DefaultBranch = "main"
+	DefaultBranch  = "main"
 	DefaultRefresh = "1h"
 )
 
@@ -324,6 +389,22 @@ func (c *Config) Validate() error {
 		default:
 			return fmt.Errorf("module %q: source %q must be %q or %q", name, m.Source, SourceLocalChart, SourceChartRepo)
 		}
+	}
+
+	// Seam coherence: an env may only DECLARE a seam it actually backs. (The
+	// resolver derives sensible defaults; these checks catch a declaration that
+	// contradicts the rest of cluster.yaml — required stores/routes/endpoints.)
+	seams := c.EffectiveSeams()
+	if seams.PublicRoutes && len(c.Zones) == 0 {
+		return fmt.Errorf("seams.publicRoutes is on but no zones are declared — a public route would have no approved host zone to validate against")
+	}
+	if seams.Autoscale {
+		if m, ok := c.Modules["keda"]; !ok || !m.Enabled {
+			return fmt.Errorf("seams.autoscale is on but the keda module is not enabled — apps could request autoscaling with nothing to drive it")
+		}
+	}
+	if c.Observability.LokiURL == "" || c.Observability.OTLPEndpoint == "" {
+		return fmt.Errorf("observability.lokiURL and observability.otlpEndpoint are required (injected into every app as Tier-A env) — declare the endpoints this env provides")
 	}
 	return nil
 }

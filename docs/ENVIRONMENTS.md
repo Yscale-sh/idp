@@ -149,20 +149,27 @@ idp), decouple their **change streams**:
    `platform-ssm` store → promote apps one by one, flip the CF Tunnel route at
    cutover (rollback = flip back).
 
-### OPEN: cross-branch promote friction (found wiring the chain)
+### Cross-branch promote — SOLVED (`--source-root`)
 
 dev+stage umbrellas live on `main`; the prod umbrella lives on the `prod`
-branch. `idpctl promote ... prod --from stage` reads the source umbrella and
-writes the target from ONE `--root`, but a prod-branch worktree doesn't have
-`clusters/stage`. Worked around by `git checkout origin/main -- clusters/stage
-environments/prod/cluster.yaml` into the prod worktree before promoting. Clean
-fixes (pick one): (a) `--source-root` flag so promote reads the source env from
-a `main` checkout while writing the target to the prod checkout; (b) promote
-fetches the source umbrella from the source env's `flux.branch` directly (git
-cat-file), no second checkout. Note prod-local's Flux only needs
-`clusters/prod` — `environments/prod/cluster.yaml` (the gate) is a
+branch. `idpctl promote ... prod --from stage --source-root <main-checkout>`
+now READS the source env from the main checkout while WRITING the target into
+the (prod-branch) `--root`. No more hand `git checkout` of source dirs. (The
+alternative — git-cat-file the source umbrella from its `flux.branch` — is left
+as a future no-checkout convenience.) prod-local's Flux only needs
+`clusters/prod`; `environments/prod/cluster.yaml` (gate + seams) is a
 RENDER-time input, never applied — so the prod-branch promote commit stays
 clean (just `clusters/prod/platform.yaml`).
+
+### The seam contract (built)
+
+Loose coupling is now enforced as data, not convention: each env's
+`cluster.yaml` declares a `seams:` block (statefulStores / lanExpose /
+publicRoutes / autoscale / volumes; omitted → derived). `clusterenv.Validate`
+rejects an env that claims a seam it doesn't back; `policy.checkSeams` rejects
+an app requesting a seam the env doesn't provide (so prod is PVC-free *by
+contract*); `idpctl doctor` probes the live cluster for them. See the README
+"seam contract" section.
 
 ## Reliability (prod)
 

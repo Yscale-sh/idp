@@ -133,6 +133,29 @@ modules:
 `idpctl infra render --env <env>` sets the **enabled** modules in the umbrella; `charts/cluster`
 then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `chartRepo` module).
 
+## The seam contract (loose coupling, enforced)
+
+idp deploys *apps*; the surrounding infra provides the *cluster* — and they meet at a few named
+**seams** (interfaces): in-cluster data stores, LAN exposure, public routes, autoscaling, volumes.
+Each environment **declares which seams it provides** as data, and the platform makes that
+declaration a fail-closed contract:
+
+```yaml
+# environments/prod/cluster.yaml
+seams:
+  statefulStores: false   # PVC-free: apps get DATABASE_URL from the secrets backend, not an in-cluster PG
+  lanExpose: false        # Cloudflare-Tunnel-only; no MetalLB
+  # publicRoutes/autoscale derive from `zones` + the keda module; omit `seams` entirely to derive all
+```
+
+- **An env can't claim a seam it doesn't back** — `Validate` rejects e.g. `publicRoutes` with no
+  `zones`, `autoscale` with no `keda` module, or missing observability endpoints.
+- **An app can't request a seam the env doesn't provide** — a `deploy.yaml` declaring `db:` in a
+  `statefulStores: false` env (or `expose.lan` in a tunnel-only env) fails policy at render/promote
+  time, with a message pointing at the missing seam. So prod stays PVC-free *by contract*, not by hope.
+- **`idpctl doctor`** verifies the live cluster actually backs the declared seams (Flux, ESO store,
+  observability services, KEDA + its ownership, ingress/tunnel) — the runtime half of the contract.
+
 ## CLI
 
 ```bash
@@ -140,6 +163,7 @@ idpctl validate --file deploy.yaml                 # schema + policy checks (fai
 idpctl plan     --env dev --file deploy.yaml       # show what would change
 idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
 idpctl promote  <app> <env> --from <env> -f deploy.yaml       # digest-forward promote (dev→stage→prod)
+idpctl doctor   --env <env>                         # probe the live cluster for the seams this env declares
 idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes

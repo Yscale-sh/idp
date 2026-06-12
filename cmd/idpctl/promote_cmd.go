@@ -22,7 +22,7 @@ import (
 // command renders the file and PRINTS the commit/branch step rather than
 // running git itself, so any CI shape can own the actual push.
 func newPromoteCmd() *cobra.Command {
-	var from, file, root, deployTime string
+	var from, file, root, sourceRoot, deployTime string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "promote <app-or-workload> <target-env>",
@@ -64,16 +64,24 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 				fmt.Fprintf(out, "WARNING: bypassing promotion gate (%s only accepts %s) via --force\n", toEnv, g.From)
 			}
 
-			source, err := loadCluster(root, from)
+			// Cross-branch read: dev/stage umbrellas live on `main`, the prod
+			// umbrella on the `prod` branch. --source-root lets promote READ the
+			// source env from a `main` checkout while WRITING the target into the
+			// (prod-branch) --root. Defaults to --root for same-tree promotes.
+			srcRoot := sourceRoot
+			if srcRoot == "" {
+				srcRoot = root
+			}
+			source, err := loadCluster(srcRoot, from)
 			if err != nil {
 				return err
 			}
 			if source == nil {
-				return fmt.Errorf("no environments/%s/cluster.yaml under --root", from)
+				return fmt.Errorf("no environments/%s/cluster.yaml under --source-root (%s)", from, srcRoot)
 			}
 
 			// Provenance: the image reference comes from the source umbrella.
-			image, err := imageFromUmbrella(root, from, source, workload)
+			image, err := imageFromUmbrella(srcRoot, from, source, workload)
 			if err != nil {
 				return err
 			}
@@ -107,7 +115,8 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 	}
 	cmd.Flags().StringVar(&from, "from", "dev", "source environment (the umbrella the image is read from)")
 	cmd.Flags().StringVarP(&file, "file", "f", "deploy.yaml", "path to the workload's deploy.yaml (use the revision that built the image)")
-	cmd.Flags().StringVar(&root, "root", ".", "platform repo root")
+	cmd.Flags().StringVar(&root, "root", ".", "platform repo root (TARGET — where the render is written)")
+	cmd.Flags().StringVar(&sourceRoot, "source-root", "", "repo root to READ the source env from (default: --root); set to a main checkout when promoting to a branch-isolated env like prod")
 	cmd.Flags().StringVar(&deployTime, "deploy-time", "", "CI deploy/build stamp for DEPLOY_TIME")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the target env's promotion.from gate")
 	return cmd

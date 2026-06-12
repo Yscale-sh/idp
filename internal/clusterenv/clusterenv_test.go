@@ -12,6 +12,10 @@ func validConfig() *Config {
 			Backend:  BackendLocal,
 			StoreRef: StoreRef{Name: "platform-local", Kind: KindClusterSecretStore},
 		},
+		Observability: Observability{
+			LokiURL:      "http://loki.monitoring.svc.cluster.local:3100",
+			OTLPEndpoint: "http://otel-collector.monitoring.svc.cluster.local:4317",
+		},
 		Flux: FluxConfig{RepoURL: "https://github.com/example-org/idp.git"},
 	}
 	c.ApplyDefaults()

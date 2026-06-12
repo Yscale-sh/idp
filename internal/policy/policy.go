@@ -35,6 +35,7 @@ const (
 	KindNamespace      Kind = "Namespace"
 	KindInvalidProfile Kind = "InvalidProfile"
 	KindMissingSecrets Kind = "MissingSecrets"
+	KindUnprovidedSeam Kind = "UnprovidedSeam"
 )
 
 // Sentinel errors so callers can errors.Is on a Kind without constructing a
@@ -152,6 +153,49 @@ func Check(in Input) Violations {
 	// (4) Resource bounds (needs cluster bounds + chosen profile resources).
 	vs = append(vs, checkResourceBounds(app, in.Cluster)...)
 
+	// (5) Seam contract: an app may only request a capability the env provides.
+	vs = append(vs, checkSeams(app, in.Cluster)...)
+
+	return vs
+}
+
+// checkSeams enforces the loose-coupling contract from the app side: a
+// deploy.yaml may only REQUEST a seam (data store, LAN exposure, public route,
+// autoscaling, volumes) that the target env DECLARES it provides
+// (clusterenv.EffectiveSeams). Fail-closed: an app can't quietly depend on a
+// capability the cluster doesn't offer (e.g. an in-cluster Postgres in a
+// PVC-free prod). Degrades to a no-op when the env config is absent.
+func checkSeams(app appconfig.App, c *clusterenv.Config) Violations {
+	if c == nil {
+		return nil
+	}
+	s := c.EffectiveSeams()
+	var vs Violations
+	deny := func(req, seam, hint string) {
+		vs = append(vs, &Violation{KindUnprovidedSeam,
+			fmt.Sprintf("requests %s but env %q does not provide the %q seam — %s", req, c.Env, seam, hint)})
+	}
+	if (len(app.DB) > 0 || len(app.Cache) > 0) && !s.StatefulStores {
+		deny("an in-cluster data store (db/cache)", "statefulStores",
+			"this env hosts no stores; wire DATABASE_URL/REDIS_URL from the secrets backend (managed/external) instead")
+	}
+	if app.Expose != nil && app.Expose.LAN && !s.LANExpose {
+		deny("expose.lan", "lanExpose", "no MetalLB here; apps are ClusterIP behind tunnels")
+	}
+	if !s.PublicRoutes {
+		for _, r := range app.Routes {
+			if r.Public {
+				deny("a public route ("+r.Host+")", "publicRoutes", "this env exposes no public ingress")
+				break
+			}
+		}
+	}
+	if (app.Sizing.Autoscale.Enabled || app.Sizing.Autosize) && !s.Autoscale {
+		deny("sizing.autoscale/autosize", "autoscale", "no KEDA/VPA here to drive scaling")
+	}
+	if len(app.Volumes) > 0 && !s.Volumes {
+		deny("volumes[]", "volumes", "this env mounts no volumes")
+	}
 	return vs
 }
 
