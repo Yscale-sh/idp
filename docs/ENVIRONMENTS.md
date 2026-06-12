@@ -127,28 +127,42 @@ idp), decouple their **change streams**:
   Deployments and cluster-config changes never share a commit, so they
   never share a rollback.
 
-## What's left to build
+## Status: full dev→stage→prod chain PROVEN end-to-end 2026-06-12
 
-1. **Umbrella naming** (blocker for stage): the generated umbrella HelmRelease
-   is `platform` in `flux-system` for every env — dev+stage on one cluster
-   collide. `internal/render` must name it `platform-<env>` (keep `platform`
-   for dev as legacy alias or migrate once).
-2. **`clusters/stage/`**: kustomization + the generated `platform.yaml`
-   (env=stage), plus a `sync-stage.yaml` Flux Kustomization added to
-   `clusters/dev/kustomization.yaml` so the homelab Flux applies it.
-3. ~~`idpctl promote`~~ **BUILT + proven live 2026-06-12** (cmd/idpctl/
-   promote_cmd.go): `idpctl promote <workload> <env> --from <env> -f
-   deploy.yaml`. Provenance from the source umbrella (refuses unknown
-   workloads + mutable tags), per-env gate via `promotion: {from: <env>}` in
-   cluster.yaml (`--force` overrides), prints the flux.branch commit step
-   (CI-agnostic by design). Prod currently declares `from: dev`; flip to
-   stage when stage is wired. TODO: deploy.yaml-at-built-SHA auto-fetch.
-4. **Shipper stays dev-only** (`registry.env: dev`). Promotion is human-driven
-   by design (auto-dev / manual-stage+prod).
-5. **Prod bring-up order:** jaK3s cluster → flux-operator +
-   `clusters/prod/flux-instance.yaml` (branch prod) → `platform-ssm`
-   ClusterSecretStore creds → promote apps one by one, flipping each app's
-   Cloudflare Tunnel route at cutover (instant rollback = flip back).
+1. ~~Umbrella naming~~ **DONE** — `platform-<env>` (dev keeps the bare legacy
+   name); `render.platformReleaseName`.
+2. ~~`clusters/stage/`~~ **DONE + LIVE on homelab** — `platform-stage` umbrella
+   (0 modules) + `clusters/dev/sync-stage.yaml` (a Flux Kustomization the dev
+   sync applies → reconciles `clusters/stage`). Second env, same FluxInstance,
+   one object.
+3. ~~`idpctl promote`~~ **BUILT + PROVEN both hops** (cmd/idpctl/promote_cmd.go):
+   `idpctl promote <workload> <env> --from <env> -f deploy.yaml`. Provenance
+   from the source umbrella (refuses unknown workloads + mutable tags), gate
+   via `promotion: {from: <env>}` (`--force` overrides), prints the flux.branch
+   commit step (CI-agnostic). Demonstrated: dev→stage (homelab), prod gate
+   `from: stage` REJECTS dev / accepts stage, stage→prod (prod-local). TODO:
+   deploy.yaml-at-built-SHA auto-fetch.
+4. **Shipper stays dev-only** (`registry.env: dev`) — promotion is human-driven
+   by design.
+5. **Prod bring-up order** (rehearsed on prod-local): jaK3s cluster →
+   flux-operator + `clusters/prod/flux-instance.yaml` (branch prod) →
+   `platform-ssm` store → promote apps one by one, flip the CF Tunnel route at
+   cutover (rollback = flip back).
+
+### OPEN: cross-branch promote friction (found wiring the chain)
+
+dev+stage umbrellas live on `main`; the prod umbrella lives on the `prod`
+branch. `idpctl promote ... prod --from stage` reads the source umbrella and
+writes the target from ONE `--root`, but a prod-branch worktree doesn't have
+`clusters/stage`. Worked around by `git checkout origin/main -- clusters/stage
+environments/prod/cluster.yaml` into the prod worktree before promoting. Clean
+fixes (pick one): (a) `--source-root` flag so promote reads the source env from
+a `main` checkout while writing the target to the prod checkout; (b) promote
+fetches the source umbrella from the source env's `flux.branch` directly (git
+cat-file), no second checkout. Note prod-local's Flux only needs
+`clusters/prod` — `environments/prod/cluster.yaml` (the gate) is a
+RENDER-time input, never applied — so the prod-branch promote commit stays
+clean (just `clusters/prod/platform.yaml`).
 
 ## Reliability (prod)
 
