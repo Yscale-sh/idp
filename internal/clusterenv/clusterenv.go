@@ -70,8 +70,21 @@ type Config struct {
 	// from, and the git branch it tracks. Defaults applied if unset.
 	Flux FluxConfig `json:"flux,omitempty"`
 
+	// Promotion declares how workloads ARRIVE in this env. Pure data — env
+	// names are the operator's own (the platform never hardcodes "prod"):
+	// `promotion: {from: stage}` makes `idpctl promote` refuse any other
+	// source env, so a digest can only reach this env through its gate.
+	Promotion *PromotionConfig `json:"promotion,omitempty"`
+
 	// Modules is the platform module registry for this env.
 	Modules map[string]Module `json:"modules,omitempty"`
+}
+
+// PromotionConfig declares the env's promotion gate (see Config.Promotion).
+type PromotionConfig struct {
+	// From is the only env `idpctl promote` accepts as a source for this env
+	// (e.g. prod declares from: stage). Empty = any source allowed.
+	From string `json:"from,omitempty"`
 }
 
 // SecretsConfig is the env's secrets backend + store reference.

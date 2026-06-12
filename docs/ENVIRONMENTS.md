@@ -136,10 +136,13 @@ idp), decouple their **change streams**:
 2. **`clusters/stage/`**: kustomization + the generated `platform.yaml`
    (env=stage), plus a `sync-stage.yaml` Flux Kustomization added to
    `clusters/dev/kustomization.yaml` so the homelab Flux applies it.
-3. **`idpctl promote <app> <env>`** (cmd/idpctl): read source-env umbrella →
-   extract app image digest → render target env pinned to it → commit (+ FF
-   for prod). Guardrails: refuse mutable tags; refuse prod unless the digest
-   is in stage; print a diff first.
+3. ~~`idpctl promote`~~ **BUILT + proven live 2026-06-12** (cmd/idpctl/
+   promote_cmd.go): `idpctl promote <workload> <env> --from <env> -f
+   deploy.yaml`. Provenance from the source umbrella (refuses unknown
+   workloads + mutable tags), per-env gate via `promotion: {from: <env>}` in
+   cluster.yaml (`--force` overrides), prints the flux.branch commit step
+   (CI-agnostic by design). Prod currently declares `from: dev`; flip to
+   stage when stage is wired. TODO: deploy.yaml-at-built-SHA auto-fetch.
 4. **Shipper stays dev-only** (`registry.env: dev`). Promotion is human-driven
    by design (auto-dev / manual-stage+prod).
 5. **Prod bring-up order:** jaK3s cluster → flux-operator +
