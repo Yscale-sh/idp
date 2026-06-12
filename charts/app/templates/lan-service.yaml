@@ -18,7 +18,7 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
     platform/expose: lan
-  {{- if or .Values.lanExpose.ip .Values.lanExpose.pool }}
+  {{- if or .Values.lanExpose.ip .Values.lanExpose.pool .Values.lanExpose.host }}
   annotations:
     {{- with .Values.lanExpose.ip }}
     metallb.universe.tf/loadBalancerIPs: {{ . | quote }}
@@ -27,6 +27,11 @@ metadata:
         when the pool runs autoAssign: false (the platform default). */}}
     {{- with .Values.lanExpose.pool }}
     metallb.universe.tf/address-pool: {{ . | quote }}
+    {{- end }}
+    {{- /* the cluster ExternalDNS publishes <host> -> this LB's VIP into the LAN
+        resolver (AdGuard), giving the app a real name instead of a bare IP. */}}
+    {{- with .Values.lanExpose.host }}
+    external-dns.alpha.kubernetes.io/hostname: {{ . | quote }}
     {{- end }}
   {{- end }}
 spec:

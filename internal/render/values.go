@@ -27,7 +27,7 @@ type Values struct {
 	// namespace (chart template pullsecret-externalsecret.yaml). Nil when the
 	// env doesn't configure secrets.imagePull — omitted from values entirely.
 	PullSecret *PullSecretValues `json:"pullSecret,omitempty"`
-	Port             int                     `json:"port"`
+	Port       int               `json:"port"`
 	// Worker is a portless background workload (runtime.port == 0): the chart
 	// renders a Deployment only — no Service, no HTTP probes, no ServiceMonitor.
 	Worker    bool                 `json:"worker,omitempty"`
@@ -117,6 +117,7 @@ type AutosizeValues struct {
 // LoadBalancer Service on lanExpose.enabled; the ClusterIP Service is unchanged.
 type LanExposeValues struct {
 	Enabled bool   `json:"enabled"`
+	Host    string `json:"host,omitempty"`
 	IP      string `json:"ip,omitempty"`
 	Pool    string `json:"pool,omitempty"`
 	Port    int    `json:"port"`
@@ -512,7 +513,7 @@ func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
 	if port == 0 {
 		port = app.Runtime.Port
 	}
-	return &LanExposeValues{Enabled: true, IP: app.Expose.IP, Pool: app.Expose.Pool, Port: port}
+	return &LanExposeValues{Enabled: true, Host: app.Expose.Host, IP: app.Expose.IP, Pool: app.Expose.Pool, Port: port}
 }
 
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its

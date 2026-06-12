@@ -334,6 +334,12 @@ type Expose struct {
 	// LAN turns on the MetalLB LoadBalancer for this app (on-prem only).
 	LAN bool `json:"lan,omitempty" yaml:"lan,omitempty"`
 
+	// Host is an optional LAN hostname (e.g. grafana.lan). The chart annotates
+	// the LoadBalancer Service with external-dns.alpha.kubernetes.io/hostname so
+	// the cluster's ExternalDNS publishes <host> -> the MetalLB VIP into the LAN
+	// resolver (AdGuard). Without it the app is reachable only by its raw VIP IP.
+	Host string `json:"host,omitempty" yaml:"host,omitempty"`
+
 	// IP pins the MetalLB LoadBalancer IP (optional; else auto-assigned).
 	IP string `json:"ip,omitempty" yaml:"ip,omitempty"`
 
