@@ -122,6 +122,19 @@ func PlatformPath(root, env string) string {
 	return filepath.Join(root, "clusters", env, "platform.yaml")
 }
 
+// platformReleaseName is the umbrella HelmRelease (and helm release) name for
+// an env. Every umbrella lives in flux-system, and one cluster can host
+// SEVERAL envs (dev+stage share the homelab Flux), so the name must carry the
+// env — a bare "platform" collides. dev keeps the legacy bare name: its live
+// HelmRelease predates this and renaming a helm release means a full
+// uninstall/reinstall churn for zero benefit.
+func platformReleaseName(env string) string {
+	if env == "dev" {
+		return platformRelease
+	}
+	return platformRelease + "-" + env
+}
+
 // newPlatformRelease builds an empty umbrella HelmRelease for an env.
 func newPlatformRelease(env string, c *clusterenv.Config) *PlatformRelease {
 	srcName, srcNS := fluxSource(c)
@@ -129,7 +142,7 @@ func newPlatformRelease(env string, c *clusterenv.Config) *PlatformRelease {
 		APIVersion: helmReleaseAPIVersion,
 		Kind:       helmReleaseKind,
 		Metadata: FluxMetadata{
-			Name:      platformRelease,
+			Name:      platformReleaseName(env),
 			Namespace: srcNS,
 			Labels: map[string]string{
 				"platform/env":        env,
@@ -139,7 +152,7 @@ func newPlatformRelease(env string, c *clusterenv.Config) *PlatformRelease {
 		},
 		Spec: PlatformSpec{
 			Interval:         fluxInterval,
-			ReleaseName:      platformRelease,
+			ReleaseName:      platformReleaseName(env),
 			TargetNamespace:  srcNS,
 			StorageNamespace: srcNS,
 			Install:          InstallSpec{CreateNamespace: true, DisableWait: true, Remediation: &RemediationSpec{Retries: remediationRetries}},
