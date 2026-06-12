@@ -111,8 +111,12 @@ multi-tier products:
 | `connectsTo[]` | Wire app→app / component→component dependencies. The platform resolves the address per env and injects it into an env var — `clusterService` (in-cluster DNS), `publicRoute` (external), or `serviceToken` (Cloudflare Access); `scheme: none` yields a bare `host:port` for nginx upstreams / DSNs. |
 | `routes[]` | Public hostnames. In prod these are served over a **Cloudflare Tunnel** with DNS managed by `idpctl dns` / `idpctl tunnel`; dev stays LAN-only. |
 
-See `examples/carshowdb` (a single-service app) and `examples/dim` (a three-component media server
-sharing one Postgres + Redis, an iGPU, an NFS media library, and a LAN-exposed UI).
+See `examples/carshowdb` (a single-service app), `examples/dim` (a three-component media server
+sharing one Postgres + Redis, an iGPU, an NFS media library, and a LAN-exposed UI), and
+`examples/yscale-media` — a **fork of `dim`** that adds an *optionally-distributed sharded
+transcoder*: a `replicas: 0` GPU worker pool that scales out to encode one stream across many
+nodes. The real app idp runs; it exercises nearly the whole contract (`build` submodules, shared
+stores, GPU `extraLimits`, four volume kinds, `connectsTo`, `expose.lan.host`).
 
 ## The module system
 

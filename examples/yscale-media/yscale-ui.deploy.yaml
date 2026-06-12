@@ -1,0 +1,38 @@
+# Yscale UI — nginx serving the React SPA + reverse-proxying /api,/ws,/images to the
+# api component. The ONLY LAN-reachable service (MetalLB LoadBalancer on the LAN).
+#   idpctl render --env dev --file yscale-ui.deploy.yaml --image ghcr.io/jakenesler/yscale-media-ui:<tag>
+app: yscale-media
+component: ui
+
+runtime:
+  image: ghcr.io/jakenesler/yscale-media-ui
+  port: 80
+
+# Build: the UI image builds from the ui/ subdir (its own Dockerfile + package.json),
+# not the repo root (which is the Rust backend).
+build:
+  context: ui
+
+sizing:
+  profile: minimal
+  replicas: 1          # pinned to 1 (single LAN media UI; revisit if HA is needed)
+
+# LAN entrypoint: a MetalLB LoadBalancer (the on-prem twin of the tunnel). On the
+# local backend the renderer adds lan-service.yaml; the no-LB guardrail still blocks
+# any other LoadBalancer. `host` annotates the LB for ExternalDNS, so the cluster
+# publishes yscale.lan -> the VIP into the LAN resolver (AdGuard) — a real name,
+# not a bare IP. (Requires the env's lanExpose seam; dev/stage provide it.)
+expose:
+  lan: true
+  host: yscale.lan
+  ip: 10.0.0.206
+
+# nginx upstream -> the api component's in-cluster Service (cross-namespace DNS).
+connectsTo:
+  - component: api
+    env: YSCALE_API_UPSTREAM
+    mode: clusterService
+    port: 8000
+    # bare host:port — nginx `upstream { server ${YSCALE_API_UPSTREAM}; }` rejects a
+    # scheme. Without this nginx fails: "invalid host in upstream http://...". VERIFIED.
+    scheme: none
