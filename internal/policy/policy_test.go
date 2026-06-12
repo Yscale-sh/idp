@@ -277,3 +277,28 @@ func TestImageTag(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckSeams_StatefulStoreGate(t *testing.T) {
+	dbApp := appconfig.App{
+		App:     "needsdb",
+		Runtime: appconfig.Runtime{Image: "ghcr.io/x/needsdb", Port: 8080},
+		DB:      []appconfig.DataStore{{Name: "primary", Type: "postgres"}},
+	}
+	// default env (no seams declared) -> stores derive to allowed.
+	if vs := checkSeams(dbApp, devCluster()); len(vs) != 0 {
+		t.Errorf("dev (default seams) should allow db, got %v", vs)
+	}
+	// env that does NOT provide statefulStores -> db is rejected.
+	no := false
+	prod := devCluster()
+	prod.Env = "prod"
+	prod.Seams = &clusterenv.Seams{StatefulStores: &no}
+	vs := checkSeams(dbApp, prod)
+	if len(vs) != 1 || vs[0].Kind != KindUnprovidedSeam {
+		t.Fatalf("statefulStores:false should reject db with UnprovidedSeam, got %v", vs)
+	}
+	// nil cluster degrades to no-op.
+	if vs := checkSeams(dbApp, nil); vs != nil {
+		t.Errorf("nil cluster should be a no-op, got %v", vs)
+	}
+}
