@@ -99,16 +99,33 @@ digest with the target env's policy/values:
    currently rendered in the dev umbrella, re-renders the app into the stage
    umbrella (`clusters/stage/platform.yaml`) pinned to `@sha256:D`, commits to
    main. Same cluster picks it up minutes later in `<app>-stage-*`.
-3. **prod (deliberate):** `idpctl promote <app> prod` re-renders into
-   `clusters/prod/platform.yaml` pinned to the digest **currently in stage**
-   (refuses if stage ≠ a promoted digest), commits to main, then
-   fast-forwards: `git push origin main:prod`. Prod Flux applies.
-4. **Rollback:** `git revert` the promote commit (+ re-FF prod). Renders are
+3. **prod (deliberate):** `idpctl promote <app> prod` renders **directly onto
+   the `prod` branch** as a single commit (pinned to the digest currently in
+   stage; refuses otherwise). No main→prod fast-forward: an FF would carry
+   *everything* pending under the prod paths on main — an app promote could
+   silently ship an unrelated infra change. The prod branch is an
+   **append-only ledger of deliberate changes**, one unit per commit.
+4. **Rollback:** `git revert` that one commit on the prod branch. Renders are
    pure functions of (deploy.yaml, cluster.yaml, digest) — reverting is safe.
 
-Why FF instead of cherry-pick: `clusters/prod/` + `environments/prod/` only
-ever change via promote commits, so main:prod FF moves exactly those; app/dev
-churn on main is invisible to the prod Flux path filter.
+## Coupling: prod cluster vs prod deployments
+
+Couple their **location** (one repo, one FluxInstance — everything inside
+idp), decouple their **change streams**:
+
+- **Cluster existence isn't Flux's at all.** Nodes, the jaK3s image, Linode
+  instances, etcd — provisioned/rebuilt out-of-band from the golden image +
+  etcd snapshots. Flux only manages what runs *on* the cluster. A full
+  cluster rebuild (Gate 0 restore drill) never touches deployment state, and
+  vice versa.
+- **Two Flux Kustomizations inside the one sync:** `infra` (modules: keda,
+  ESO, yscale) and `apps` (the app umbrella). Separate health, separate
+  failure domains — a broken app render can't block an infra security bump,
+  and an infra upgrade gone wrong doesn't freeze app rollbacks.
+- **Two promote verbs, same ledger:** `idpctl promote <app> prod` and
+  `idpctl infra promote prod` each write one commit to the prod branch.
+  Deployments and cluster-config changes never share a commit, so they
+  never share a rollback.
 
 ## What's left to build
 
