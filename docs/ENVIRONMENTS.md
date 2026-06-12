@@ -87,7 +87,7 @@ reserved name — document it as such.
 | secrets | local store | local store | SSM (`platform-ssm`) |
 | modules | full shared set | **none** (dev umbrella owns the cluster) | keda + ESO (+ yscale) |
 | data stores | per-app dev pg/redis | per-app dev pg/redis (stage copies) | managed PG via SSM `DATABASE_URL` |
-| exposure | **LAN only** (`expose.lan` → MetalLB + AdGuard) | **LAN only** (MetalLB) | Cloudflare Tunnel (`routes: public`) |
+| exposure | **LAN only** (`expose.lan` → MetalLB VIP, by IP) | **LAN only** (MetalLB VIP, by IP) | Cloudflare Tunnel (`routes: public`) |
 
 **NOT YET (deliberate):** dev and stage have **no Cloudflare Tunnel** — they're
 LAN-only, so both declare `seams.publicRoutes: false`. A `deploy.yaml` route with
