@@ -135,6 +135,34 @@ then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `
 
 ## The seam contract (loose coupling, enforced)
 
+idp couples to a cluster only through a handful of **seams** — interfaces a host
+cluster provides: in-cluster data stores, LAN exposure, public routes, autoscaling,
+volumes, secrets, observability. Each environment **declares** which seams it
+provides, and that declaration is enforced from three sides:
+
+```yaml
+# environments/prod/cluster.yaml — prod is PVC-free + tunnel-only
+seams:
+  statefulStores: false   # no in-cluster db/cache — apps get DATABASE_URL from SSM
+  lanExpose:      false   # Cloudflare Tunnels only, no MetalLB
+  # publicRoutes / autoscale derive from zones / the keda module; volumes default true
+```
+
+- **`cluster.yaml` validates its own claims** — an env can't declare a seam it
+  doesn't back (`publicRoutes` needs zones, `autoscale` needs the keda module,
+  observability endpoints are required).
+- **apps can't request undeclared seams** — a `deploy.yaml` with `db:`/`cache:`
+  in a `statefulStores: false` env, or `expose.lan` where there's no MetalLB, is
+  rejected at render time (fail-closed, not silently degraded).
+- **`idpctl doctor`** probes the live cluster that every declared seam is actually
+  present and healthy (Flux, ESO store, KEDA, ingress/tunnel, observability) — a
+  CI pre-promote / pre-bootstrap gate.
+
+Omit `seams` and they derive permissively from the rest of `cluster.yaml`, so
+existing/forked envs keep working; tighten an env by declaring them.
+
+## The seam contract (loose coupling, enforced)
+
 idp deploys *apps*; the surrounding infra provides the *cluster* — and they meet at a few named
 **seams** (interfaces): in-cluster data stores, LAN exposure, public routes, autoscaling, volumes.
 Each environment **declares which seams it provides** as data, and the platform makes that
@@ -166,6 +194,7 @@ idpctl promote  <app> <env> --from <env> -f deploy.yaml       # digest-forward p
 idpctl doctor   --env <env>                         # probe the live cluster for the seams this env declares
 idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
+idpctl doctor --env <env> [--context <ctx>]        # probe the live cluster for the seams this env declares
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
 idpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
 idpctl new app <name>                              # scaffold an app repo (deploy.yaml; registry from idp.yaml)
