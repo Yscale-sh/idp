@@ -23,6 +23,58 @@ HOMELAB CLUSTER (k3s/kine)                      LINODE PROD (jaK3s: 3× 2GB,
 - **Prod isolation is the `prod` branch.** The prod cluster syncs
   `refs/heads/prod`; prod only moves when promotion fast-forwards it.
 
+## Why one FluxInstance per cluster (the load-bearing decision)
+
+**Environments are content; the reconciler is plumbing.** An environment is
+data — a `cluster.yaml` + a generated umbrella. The thing that applies it is
+infrastructure. Conflating them (one Flux per env) means every new env ships a
+control plane; keeping them separate means adding an env to a cluster is **one
+Flux Kustomization object** — additive, inspectable, removable.
+
+Why not two Flux instances on the homelab (dev + stage):
+1. **Flux controllers are cluster-singletons in practice.** Two
+   kustomize-controllers mean two SSA field managers racing over shared CRDs,
+   namespaces, and cluster-scoped objects. Every ugly incident this platform
+   has had (KEDA vs Flux replicas ownership — twice) lived exactly at
+   "two controllers co-own a field." Don't multiply that surface.
+2. **One pane of glass per cluster.** `kubectl get kustomizations -n
+   flux-system` shows every env on the box with revision + health. Drift
+   debugging has one address.
+3. **Isolation doesn't need duplication.** Each env's umbrella is its own
+   HelmRelease reconciled atomically: a broken stage render fails the *stage*
+   Kustomization and dev keeps reconciling. Namespaces + umbrella boundaries
+   provide the blast-radius wall; a second Flux adds ~500MB of controllers and
+   zero additional isolation.
+4. **One upgrade surface.** One Flux version per cluster to patch and test.
+
+Why not ONE global Flux (hub on homelab pushing to prod via kubeconfig):
+1. **Prod must self-heal with zero dependency on the homelab.** We literally
+   power homelab hosts off at night. Pull-based Flux on the prod cluster
+   reconciles from GitHub alone; the only coupling to dev is a git branch.
+2. **No cross-cluster admin kubeconfig at rest on the dev cluster** — the
+   hub model stores prod's keys on the least-trusted box. Pull-per-cluster is
+   the fail-closed posture the fork model promises users.
+3. **Symmetry for adopters:** every cluster is the same shape — bootstrap
+   flux-operator, apply `clusters/<name>/flux-instance.yaml`, done. One mental
+   model, N clusters.
+
+## idp stays generic: "prod" is declared behavior, not a magic name
+
+For the fork-and-self-host story, environments must be pure data. A user
+should be able to run `qa`, `eu-prod`, `customer-staging` — any set of envs on
+any clusters — and get identical machinery. What makes prod *prod* is what its
+cluster.yaml DECLARES, and promotion honors the declarations:
+
+- `flux.branch: prod` → branch isolation (promote FFs instead of riding main)
+- `allowMutableTags: false` → digest-only renders enforced at promote time
+- secrets backend, bounds, zones → already per-env data
+
+**Productization TODO:** `internal/clusterenv` still hardcodes
+`if c.Env == "prod"` for policy strictness. Replace with explicit fields
+(e.g. `policy.production: true`, `promotion.requiresSourceEnv: stage`) so the
+behavior follows the declaration, not the string. Until then, "prod" is a
+reserved name — document it as such.
+
 ## Environment contract
 
 | | dev | stage | prod |
