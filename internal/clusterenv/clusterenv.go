@@ -403,8 +403,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("seams.autoscale is on but the keda module is not enabled — apps could request autoscaling with nothing to drive it")
 		}
 	}
-	if c.Observability.LokiURL == "" || c.Observability.OTLPEndpoint == "" {
-		return fmt.Errorf("observability.lokiURL and observability.otlpEndpoint are required (injected into every app as Tier-A env) — declare the endpoints this env provides")
+	// Logs are a UNIVERSAL seam — every app logs, so lokiURL is required. OTLP
+	// (traces/metrics) is OPTIONAL: not every cluster runs a collector. Declare
+	// otlpEndpoint only if the env actually provides one (it's injected as
+	// OTEL_EXPORTER_OTLP_ENDPOINT only when set — see render.TierAEnv).
+	if c.Observability.LokiURL == "" {
+		return fmt.Errorf("observability.lokiURL is required (injected into every app as Tier-A env) — declare the log endpoint this env provides")
 	}
 	return nil
 }

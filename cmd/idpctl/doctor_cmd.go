@@ -168,7 +168,10 @@ func (d *doctor) checkSecrets(ctx context.Context) {
 func (d *doctor) checkObservability(ctx context.Context) {
 	for label, raw := range map[string]string{"loki": d.c.Observability.LokiURL, "otlp": d.c.Observability.OTLPEndpoint} {
 		if raw == "" {
-			d.failf("observability: "+label, "endpoint not declared")
+			if label == "loki" { // logs are the universal seam — required
+				d.failf("observability: loki", "lokiURL not declared")
+			}
+			// otlp is optional: absent endpoint = this env provides no collector, fine.
 			continue
 		}
 		ns, svc := svcFromURL(raw)

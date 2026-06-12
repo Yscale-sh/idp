@@ -21,14 +21,19 @@ type EnvVar struct {
 // intentionally NOT included (Helm sets the image). DEPLOY_TIME is supplied by
 // CI; when empty the renderer leaves it blank for Flux/CI to stamp.
 func TierAEnv(app appconfig.App, env string, obs clusterenv.Observability, deployTime string) map[string]string {
-	return map[string]string{
-		"ENVIRONMENT":                 env,
-		"LOKI_URL":                    obs.LokiURL,
-		"OTEL_EXPORTER_OTLP_ENDPOINT": obs.OTLPEndpoint,
-		"CONSOLE_LOGGING":             obs.ConsoleLoggingValue(),
-		"DEPLOY_TIME":                 deployTime,
-		"PORT":                        fmt.Sprintf("%d", app.Runtime.Port),
+	m := map[string]string{
+		"ENVIRONMENT":     env,
+		"LOKI_URL":        obs.LokiURL,
+		"CONSOLE_LOGGING": obs.ConsoleLoggingValue(),
+		"DEPLOY_TIME":     deployTime,
+		"PORT":            fmt.Sprintf("%d", app.Runtime.Port),
 	}
+	// Only inject the OTLP endpoint when the env actually provides a collector —
+	// an empty value makes OTEL SDKs fall back to localhost:4317 and retry-spam.
+	if obs.OTLPEndpoint != "" {
+		m["OTEL_EXPORTER_OTLP_ENDPOINT"] = obs.OTLPEndpoint
+	}
+	return m
 }
 
 // SecretKeys returns the full ordered list of secret-backed env keys this app
