@@ -5,9 +5,10 @@
 > (Flux Operator + `HelmRelease`/`GitRepository`) reconciles it into the cluster. No
 > hand-written Kubernetes YAML, no per-app load balancers.
 
-**Status:** early / work-in-progress, but running real workloads. Built and validated against a
-homelab k3s cluster (`dev`) before it targets cloud k3s (`prod`). The CLI is **`idpctl`**
-(Go module `github.com/jakenesler/idp`). Apache-2.0.
+**Status:** work-in-progress, running real workloads. `dev` is a live homelab k3s cluster; the
+full **dev → stage → prod** promotion pipeline is implemented and proven end-to-end against a
+local prod stand-in (`prod` itself targets self-provisioned k3s on Linode — migration gated, see
+below). The CLI is **`idpctl`** (Go module `github.com/jakenesler/idp`). Apache-2.0.
 
 This repo is **both the platform and a live instance of it**: `clusters/` and `environments/`
 hold the author's real rendered state. That's the model — you don't install idp, you
@@ -61,6 +62,38 @@ resource limits, autoscaling and observability wiring from that. The developer n
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
 
+## Promoting across environments (dev → stage → prod)
+
+The shipper auto-deploys **dev** on every push. Moving to **stage** and **prod** is
+deliberate and **digest-forward** — the artifact never rebuilds; `idpctl promote` reads
+the image already running in the source env's umbrella and re-renders it with the target
+env's policy, secrets backend, and namespaces:
+
+```bash
+idpctl promote yscale-website stage --from dev      # pins dev's running digest into stage
+idpctl promote yscale-website prod  --from stage    # pins stage's digest into prod
+```
+
+Promotion is **policy as data** — no env name is special to the platform, so a fork can run
+`qa`, `eu-prod`, anything. Each target env's `cluster.yaml` declares its own gate:
+
+```yaml
+# environments/prod/cluster.yaml
+promotion: { from: stage }    # promote refuses any other source (--force overrides)
+allowMutableTags: false       # and refuses :latest — promotion means a pinned artifact
+flux: { branch: prod }        # the branch the prod cluster's Flux tracks
+```
+
+`promote` renders the file and prints which `flux.branch` to commit it on; the git push stays
+CI-owned. Rollback is one `git revert` of that commit. One **FluxInstance per cluster** (stage
+rides the dev cluster's Flux as a second Kustomization; prod is its own cluster on the `prod`
+branch), so prod self-heals with zero dependency on dev. Full rationale + the proven walkthrough:
+[`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md).
+
+The prod target is a self-provisioned k3s cluster on Linode built from the **jaK3s** golden image
+(hardened Debian + Cilium + embedded-etcd, etcd snapshots → R2). Migration is gated, LKE untouched
+until cutover: [`docs/PROD_MIGRATION.md`](docs/PROD_MIGRATION.md).
+
 ## The app contract
 
 Beyond the basic shopping list above, `deploy.yaml` supports everything needed to run real,
@@ -106,6 +139,7 @@ then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `
 idpctl validate --file deploy.yaml                 # schema + policy checks (fail before mutation)
 idpctl plan     --env dev --file deploy.yaml       # show what would change
 idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
+idpctl promote  <app> <env> --from <env> -f deploy.yaml       # digest-forward promote (dev→stage→prod)
 idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
@@ -121,11 +155,11 @@ idpctl new app <name>                              # scaffold an app repo (deplo
 | `charts/app` | the shared app chart (Deployment + ClusterIP Service + optional KEDA / ServiceMonitor / ExternalSecret / PDB / LAN LoadBalancer / volumes) |
 | `charts/infra`, `modules/` | infra module charts (`dev-postgres`, `dev-redis`) + the module registry |
 | `charts/cluster` | the **umbrella** chart — templates a HelmRelease per app / store / module from the env values |
-| `environments/{dev,prod}` | per-env `cluster.yaml` (module matrix + flux source) — renderer **input**, not deployed |
-| `clusters/{dev,prod}` | the per-env `FluxInstance` (the one bootstrap) + `platform.yaml` (the rendered umbrella HelmRelease) |
+| `environments/{dev,stage,prod}` | per-env `cluster.yaml` (module matrix, policy, promotion gate, flux source) — renderer **input**, not deployed |
+| `clusters/{dev,stage,prod}` | the per-env `FluxInstance` + `platform-<env>.yaml` (rendered umbrella); `clusters/dev/sync-stage.yaml` bootstraps stage on the dev cluster |
 | `examples/{carshowdb,dim}` | onboarded apps — a single service and a multi-component product |
 | `schemas/`, `test/` | the `deploy.yaml` JSON schema + unit/golden/e2e tests |
-| `docs/` | design notes & references (env tiers, secrets model, CLI design, backups, history) |
+| `docs/` | design notes & references — see [`ENVIRONMENTS.md`](docs/ENVIRONMENTS.md) (envs + promotion), [`PROD_MIGRATION.md`](docs/PROD_MIGRATION.md) (gated LKE→jaK3s plan), plus env tiers, secrets model, CLI design, backups, history |
 
 ## Quickstart (dev)
 
