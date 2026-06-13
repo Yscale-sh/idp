@@ -62,6 +62,12 @@ func (a App) Expand() []App {
 		if c.Storage != nil {
 			m.Storage = c.Storage
 		}
+		if c.Logging != nil {
+			m.Logging = *c.Logging
+		}
+		if c.Metrics != nil {
+			m.Metrics = *c.Metrics
+		}
 		// env merges (component wins per key); secrets union (deduped).
 		m.Env = mergeEnv(a.Env, c.Env)
 		m.Secrets = unionStrings(a.Secrets, c.Secrets)

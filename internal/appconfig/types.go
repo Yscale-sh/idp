@@ -151,6 +151,12 @@ type Component struct {
 	DB         []DataStore       `json:"db,omitempty" yaml:"db,omitempty"`
 	Cache      []DataStore       `json:"cache,omitempty" yaml:"cache,omitempty"`
 	Storage    []Storage         `json:"storage,omitempty" yaml:"storage,omitempty"`
+	// Logging/Metrics override the base per component — e.g. a static nginx
+	// sibling that disables its ServiceMonitor (metrics: {enabled: false}) while
+	// the api keeps it on. Pointers so an explicit {enabled: false} is distinct
+	// from "inherit the base".
+	Logging *Logging `json:"logging,omitempty" yaml:"logging,omitempty"`
+	Metrics *Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 }
 
 // ProbeConfig overrides the app's liveness/readiness probes.
