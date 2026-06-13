@@ -345,9 +345,27 @@ storage:
   - { name: uploads, type: r2, bucket: <app>-uploads, public: false }
 connectsTo:
   - { app: <other>, env: API_BASE_URL, mode: publicRoute }
+secrets:                       # EXTRA secret env keys beyond the universal set (dev placeholder; prod from SSM)
+  - AWS_ACCESS_KEY_ID
 logging: { enabled: true }
 metrics: { enabled: true }
 tailscaleEgress: false
+```
+
+**Multi-component apps** — one file for a whole product. The top level is the shared base; each
+`components:` entry carries only its deltas (pointer fields override; `env` merges; `secrets` union;
+`db`/`cache`/`volumes` inherit-or-replace, `db: []` opts out; `port:`/`logging:`/`metrics:` override).
+App-level stores provision **once** (first component provisions, siblings auto-share). Each renders to
+its own `<app>-<component>` HelmRelease — identical to separate files:
+
+```yaml
+app: media
+runtime: { image: ghcr.io/jakenesler/media-api, port: 8000 }   # base image
+db: [{ name: primary, type: postgres }]                        # provisioned once
+components:
+  - { component: api }                                          # inherits base; provisions the store
+  - { component: scanner, port: 0, env: { ROLE: scanner } }     # worker; auto-shares the store
+  - { component: ui, runtime: { image: ghcr.io/jakenesler/media-ui, port: 80 }, db: [] }  # own image; opts out
 ```
 
 ---

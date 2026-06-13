@@ -58,6 +58,10 @@ resource limits, autoscaling and observability wiring from that. The developer n
   the umbrella's `spec.values.apps` (each app stays its own isolated Helm release). CI runs `idpctl`
   from its own published image; the in-cluster **idp-shipper** automates build → render → commit on push,
   and `idpctl new app` scaffolds a repo.
+- **Multi-component products** (api + workers + ui) are **one shopping list** with a `components:`
+  list — a shared base + per-component deltas that `Expand()`s into one isolated HelmRelease per
+  component (stores provision once; the shipper builds each unique image once). See `examples/yscale-media`
+  and `docs/DEPLOY_GO_CLI.md` → "Multi-component apps".
 
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
@@ -194,6 +198,7 @@ seams:
 idpctl validate --file deploy.yaml                 # schema + policy checks (fail before mutation)
 idpctl plan     --env dev --file deploy.yaml       # show what would change
 idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
+idpctl build    --repo <org/name> --ref <sha> --image <repo:tag>  # build+push via the in-cluster image-builder (no local Docker)
 idpctl promote  <app> <env> --from <env> -f deploy.yaml       # digest-forward promote (dev→stage→prod)
 idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
