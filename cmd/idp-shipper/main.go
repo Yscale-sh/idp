@@ -186,12 +186,17 @@ func fetchComponents(ctx context.Context, app AppSpec, sha, token string) ([]com
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := appconfig.LoadDefaulted(tmp)
+		cfg, err := appconfig.Load(tmp) // raw — Expand() defaults each component via deploy.Build
 		os.Remove(tmp)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", df, err)
 		}
-		out = append(out, component{file: df, cfg: cfg})
+		// One shopping list may declare several components (api+scanner+ui+…);
+		// Expand() yields one full App per component (a plain file → just itself),
+		// so a single deployFile entry can ship a whole multi-component product.
+		for _, a := range cfg.Expand() {
+			out = append(out, component{file: df, cfg: a})
+		}
 	}
 	return out, nil
 }

@@ -19,10 +19,21 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := app.Validate(); err != nil {
-				return fmt.Errorf("invalid deploy.yaml: %w", err)
+			comps := app.Expand()
+			for _, a := range comps {
+				a.ApplyDefaults()
+				if err := a.Validate(); err != nil {
+					if a.Component != "" {
+						return fmt.Errorf("invalid deploy.yaml (component %q): %w", a.Component, err)
+					}
+					return fmt.Errorf("invalid deploy.yaml: %w", err)
+				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "ok: %s is valid\n", app.App)
+			if len(comps) > 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "ok: %s is valid (%d components)\n", app.App, len(comps))
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "ok: %s is valid\n", app.App)
+			}
 			return nil
 		},
 	}
@@ -47,21 +58,27 @@ cluster. Use it as a CI preflight and for local debugging.`,
 			if err != nil {
 				return err
 			}
-			plan, err := deploy.Build(deploy.Request{
-				App: app, Env: env, Image: image, DeployTime: deployTime, Cluster: cluster,
-			})
-			if err != nil {
-				return err
-			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "── plan ───────────────────────────────────────")
-			fmt.Fprint(out, plan.Summary())
-			fmt.Fprintln(out, "── rendered Flux HelmRelease ───────────────────")
-			y, err := plan.Result.HelmReleaseYAML()
-			if err != nil {
-				return err
+			comps := app.Expand()
+			for i, a := range comps {
+				plan, err := deploy.Build(deploy.Request{
+					App: a, Env: env, Image: resolveImage(image, a, len(comps) > 1), DeployTime: deployTime, Cluster: cluster,
+				})
+				if err != nil {
+					return componentErr(a, err)
+				}
+				if i > 0 {
+					fmt.Fprintln(out)
+				}
+				fmt.Fprintln(out, "── plan ───────────────────────────────────────")
+				fmt.Fprint(out, plan.Summary())
+				fmt.Fprintln(out, "── rendered Flux HelmRelease ───────────────────")
+				y, err := plan.Result.HelmReleaseYAML()
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(out, string(y))
 			}
-			fmt.Fprintln(out, string(y))
 			return nil
 		},
 	}
@@ -89,29 +106,45 @@ this is the default deploy path (a git commit, not kubectl).`,
 			if err != nil {
 				return err
 			}
-			plan, err := deploy.Build(deploy.Request{
-				App: app, Env: env, Image: image, DeployTime: deployTime, Cluster: cluster,
-			})
-			if err != nil {
-				return err
-			}
 			out := cmd.OutOrStdout()
-			if stdout {
-				y, err := plan.Result.HelmReleaseYAML()
+			comps := app.Expand()
+			var lastPath string
+			for i, a := range comps {
+				plan, err := deploy.Build(deploy.Request{
+					App: a, Env: env, Image: resolveImage(image, a, len(comps) > 1), DeployTime: deployTime, Cluster: cluster,
+				})
+				if err != nil {
+					return componentErr(a, err)
+				}
+				if stdout {
+					y, err := plan.Result.HelmReleaseYAML()
+					if err != nil {
+						return err
+					}
+					if i > 0 {
+						fmt.Fprintln(out, "---")
+					}
+					fmt.Fprint(out, string(y))
+					continue
+				}
+				path, err := plan.Result.UpsertApp(root, cluster)
 				if err != nil {
 					return err
 				}
-				fmt.Fprint(out, string(y))
-				return nil
+				lastPath = path
+				fmt.Fprint(out, plan.Summary())
+				if a.Component != "" {
+					fmt.Fprintf(out, "\nupserted %s/%s into: %s\n", a.App, a.Component, path)
+				} else {
+					fmt.Fprintf(out, "\nupserted %s into: %s\n", a.App, path)
+				}
 			}
-			path, err := plan.Result.UpsertApp(root, cluster)
-			if err != nil {
-				return err
+			if !stdout {
+				if len(comps) > 1 {
+					fmt.Fprintf(out, "\n%d components upserted into %s\n", len(comps), lastPath)
+				}
+				fmt.Fprintln(out, "next: commit the file; Flux installs charts/cluster and reconciles each app.")
 			}
-			fmt.Fprint(out, plan.Summary())
-			fmt.Fprintf(out, "\nupserted app into: %s", path)
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, "next: commit the file; Flux installs charts/cluster and reconciles each app.")
 			return nil
 		},
 	}
@@ -163,6 +196,27 @@ it, EVERY component of the app is removed (tear down the whole multi-component a
 	_ = cmd.MarkFlagRequired("app")
 	_ = cmd.MarkFlagRequired("env")
 	return cmd
+}
+
+// resolveImage picks the concrete image for one expanded component. A single-
+// component app uses --image verbatim (the full repo:tag CI built). A multi-
+// component app's components have DIFFERENT image repos (e.g. api vs ui), so CI
+// passes the shared TAG (the commit) as --image and each component renders at
+// <its runtime.image>:<tag>. Empty --image (local dry runs) is left as-is.
+func resolveImage(image string, a appconfig.App, multi bool) string {
+	if !multi || image == "" || a.Runtime.Image == "" {
+		return image
+	}
+	return a.Runtime.Image + ":" + image
+}
+
+// componentErr prefixes an error with the component name (for multi-component
+// shopping lists) so a failure points at the offending part, not just the app.
+func componentErr(a appconfig.App, err error) error {
+	if a.Component != "" {
+		return fmt.Errorf("component %q: %w", a.Component, err)
+	}
+	return err
 }
 
 func addRenderFlags(cmd *cobra.Command, file, env, image, deployTime, root *string) {

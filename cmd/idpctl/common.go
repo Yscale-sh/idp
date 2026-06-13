@@ -20,10 +20,13 @@ func loadCluster(root, env string) (*clusterenv.Config, error) {
 	return clusterenv.Load(path)
 }
 
-// loadApp loads + defaults a deploy.yaml from file.
+// loadApp reads the shopping list WITHOUT applying defaults — callers Expand() it
+// into per-component Apps and default/validate/render each (a base carrying
+// `components:` is never rendered itself, so defaulting it is wrong). A plain
+// single-component file Expands to just itself, so the loop is uniform.
 func loadApp(file string) (appconfig.App, error) {
 	if file == "" {
 		return appconfig.App{}, fmt.Errorf("--file is required")
 	}
-	return appconfig.LoadDefaulted(file)
+	return appconfig.Load(file)
 }

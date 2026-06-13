@@ -108,6 +108,49 @@ type App struct {
 	// TailscaleEgress injects Tailscale egress sidecar env only when true (e.g.
 	// reaching an out-of-cluster DB). Most apps leave this false once in-cluster.
 	TailscaleEgress bool `json:"tailscaleEgress,omitempty" yaml:"tailscaleEgress,omitempty"`
+
+	// Components turns this file into a MULTI-COMPONENT app: one shopping list for
+	// a whole product (api + scanner + ui + …) instead of one file per component.
+	// Everything above is the shared BASE (app/product, image, build, db/cache/
+	// storage, volumes, env, …); each Component carries only its deltas. Expand()
+	// merges base+component into one full App per component, which render the same
+	// as today's separate files. Empty = a plain single-component app (unchanged).
+	Components []Component `json:"components,omitempty" yaml:"components,omitempty"`
+}
+
+// Component is one part of a multi-component App: the per-component deltas over
+// the shared base (see App.Components). Merge rules (App.Expand):
+//   - pointer fields (runtime/build/probes/sizing/expose) OVERRIDE the base when set;
+//   - env MERGES into base env (component wins per key); secrets UNION (deduped);
+//   - slice fields (volumes/routes/connectsTo/db/cache/storage) are inherit-or-
+//     replace: omit to inherit the base's, set (incl. an explicit `[]`) to override.
+//     So a UI component opts out of the app's stores with `db: []` / `cache: []`.
+//   - app-level stores are provisioned ONCE: the FIRST component to use a given
+//     store provisions it; later components that share it are auto-set provision:
+//     false — no more hand-written provision flags.
+type Component struct {
+	// Component is the part name (api|scanner|ui|…). Required; with App it forms
+	// the workload handle <app>-<component>.
+	Component string `json:"component" yaml:"component"`
+
+	Runtime    *Runtime          `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	// Port overrides JUST the container port, keeping the base image — the common
+	// case for a worker sibling that shares the app's image but listens on nothing
+	// (port: 0). A *int so an explicit 0 (worker) is distinct from "inherit". Set
+	// runtime: instead when the component also needs a different image.
+	Port       *int              `json:"port,omitempty" yaml:"port,omitempty"`
+	Build      *BuildConfig      `json:"build,omitempty" yaml:"build,omitempty"`
+	Probes     *ProbeConfig      `json:"probes,omitempty" yaml:"probes,omitempty"`
+	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	Secrets    []string          `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Sizing     *Sizing           `json:"sizing,omitempty" yaml:"sizing,omitempty"`
+	Volumes    []Volume          `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+	Expose     *Expose           `json:"expose,omitempty" yaml:"expose,omitempty"`
+	Routes     []Route           `json:"routes,omitempty" yaml:"routes,omitempty"`
+	ConnectsTo []Connection      `json:"connectsTo,omitempty" yaml:"connectsTo,omitempty"`
+	DB         []DataStore       `json:"db,omitempty" yaml:"db,omitempty"`
+	Cache      []DataStore       `json:"cache,omitempty" yaml:"cache,omitempty"`
+	Storage    []Storage         `json:"storage,omitempty" yaml:"storage,omitempty"`
 }
 
 // ProbeConfig overrides the app's liveness/readiness probes.
