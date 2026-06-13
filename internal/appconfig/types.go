@@ -133,7 +133,7 @@ type Component struct {
 	// the workload handle <app>-<component>.
 	Component string `json:"component" yaml:"component"`
 
-	Runtime    *Runtime          `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	Runtime *Runtime `json:"runtime,omitempty" yaml:"runtime,omitempty"`
 	// Port overrides JUST the container port, keeping the base image — the common
 	// case for a worker sibling that shares the app's image but listens on nothing
 	// (port: 0). A *int so an explicit 0 (worker) is distinct from "inherit". Set

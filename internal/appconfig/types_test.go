@@ -99,11 +99,11 @@ func TestNamespaceScheme(t *testing.T) {
 
 func TestSanitizeDNSLabel(t *testing.T) {
 	cases := map[string]string{
-		"CarShow_DB":          "carshow-db",
-		"a..b":                "a-b",
-		"-lead-trail-":        "lead-trail",
-		"already-good":        "already-good",
-		"UPPER/case path":     "upper-case-path",
+		"CarShow_DB":      "carshow-db",
+		"a..b":            "a-b",
+		"-lead-trail-":    "lead-trail",
+		"already-good":    "already-good",
+		"UPPER/case path": "upper-case-path",
 	}
 	for in, want := range cases {
 		if got := SanitizeDNSLabel(in); got != want {

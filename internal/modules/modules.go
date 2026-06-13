@@ -54,14 +54,14 @@ type ModuleMeta struct {
 }
 
 type ModuleReleaseSpec struct {
-	Interval         string            `json:"interval"`
-	ReleaseName      string            `json:"releaseName,omitempty"`
-	TargetNamespace  string            `json:"targetNamespace"`
-	StorageNamespace string            `json:"storageNamespace"`
-	Install          ModuleInstall     `json:"install"`
-	Upgrade          ModuleUpgrade     `json:"upgrade"`
-	Chart            ModuleChart       `json:"chart"`
-	Values           map[string]any    `json:"values,omitempty"`
+	Interval         string         `json:"interval"`
+	ReleaseName      string         `json:"releaseName,omitempty"`
+	TargetNamespace  string         `json:"targetNamespace"`
+	StorageNamespace string         `json:"storageNamespace"`
+	Install          ModuleInstall  `json:"install"`
+	Upgrade          ModuleUpgrade  `json:"upgrade"`
+	Chart            ModuleChart    `json:"chart"`
+	Values           map[string]any `json:"values,omitempty"`
 }
 
 type ModuleInstall struct {

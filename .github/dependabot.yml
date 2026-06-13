@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Go module dependencies (cobra, sigs.k8s.io/yaml, ...).
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-deps:
+        patterns: ["*"]
+  # Pinned GitHub Actions (keeps action versions current + lets us move to SHAs).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # The idpctl image base + tooling in the Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

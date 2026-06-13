@@ -102,13 +102,13 @@ type PlatformRelease struct {
 }
 
 type PlatformSpec struct {
-	Interval         string         `json:"interval"`
-	ReleaseName      string         `json:"releaseName"`
-	TargetNamespace  string         `json:"targetNamespace"`
-	StorageNamespace string         `json:"storageNamespace"`
-	Install          InstallSpec    `json:"install"`
-	Upgrade          UpgradeSpec    `json:"upgrade"`
-	Chart            ChartTemplate  `json:"chart"`
+	Interval         string        `json:"interval"`
+	ReleaseName      string        `json:"releaseName"`
+	TargetNamespace  string        `json:"targetNamespace"`
+	StorageNamespace string        `json:"storageNamespace"`
+	Install          InstallSpec   `json:"install"`
+	Upgrade          UpgradeSpec   `json:"upgrade"`
+	Chart            ChartTemplate `json:"chart"`
 	Values           ClusterValues `json:"values"`
 }
 

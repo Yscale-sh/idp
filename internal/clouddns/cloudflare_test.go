@@ -59,9 +59,9 @@ func TestZoneForHost(t *testing.T) {
 		wantOK bool
 	}{
 		{"app.example.com", "z1", true},
-		{"api.sub.example.com", "z2", true},       // longest suffix wins
-		{"sub.example.com", "z2", true},           // exact match on delegated zone
-		{"example.com", "z1", true},               // apex
+		{"api.sub.example.com", "z2", true}, // longest suffix wins
+		{"sub.example.com", "z2", true},     // exact match on delegated zone
+		{"example.com", "z1", true},         // apex
 		{"thing.other.org", "z3", true},
 		{"nope.elsewhere.net", "", false},
 	}

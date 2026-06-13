@@ -32,11 +32,11 @@ type HelmReleaseSpec struct {
 	// namespace <app>-<env>-<purpose>.
 	TargetNamespace string `json:"targetNamespace"`
 	// StorageNamespace is where Flux stores the Helm release history Secret.
-	StorageNamespace string         `json:"storageNamespace"`
-	Install          InstallSpec    `json:"install"`
-	Upgrade          UpgradeSpec    `json:"upgrade"`
-	Chart            ChartTemplate  `json:"chart"`
-	Values           any            `json:"values,omitempty"`
+	StorageNamespace string        `json:"storageNamespace"`
+	Install          InstallSpec   `json:"install"`
+	Upgrade          UpgradeSpec   `json:"upgrade"`
+	Chart            ChartTemplate `json:"chart"`
+	Values           any           `json:"values,omitempty"`
 }
 
 // InstallSpec sets createNamespace=true (replaces ArgoCD CreateNamespace=true)

@@ -23,7 +23,7 @@ type StoreRelease struct {
 	// Tool is the store engine/purpose ("postgres", "redis"), for the plan summary.
 	Tool string
 	// Namespace is the dedicated store namespace <app>-<env>-<tool>.
-	Namespace string
+	Namespace   string
 	HelmRelease HelmRelease
 }
 
