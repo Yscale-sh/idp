@@ -106,6 +106,11 @@ site: build ## Generate the whole-platform catalog site (every env + index) -> p
 	./$(BINARY) catalog --all --out-dir public
 	@echo "open public/index.html (read-only view of every environment)."
 
+PAGES_PROJECT ?= idp-catalog
+.PHONY: deploy-catalog
+deploy-catalog: site ## Deploy the catalog site to Cloudflare Pages (needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID).
+	npx --yes wrangler pages deploy public --project-name=$(PAGES_PROJECT) --branch=main
+
 # ── image (the idpctl container the reusable ship workflow runs) ─────────────────
 .PHONY: docker-build
 docker-build: ## Build the idpctl image (idpctl+helm+git+gh). Override TAG=...

@@ -1,10 +1,19 @@
 name: catalog
 
-# Publishes the read-only platform catalog (every env + an index) to GitHub
+# Publishes the read-only platform catalog (every env + an index) to Cloudflare
 # Pages. The site is a pure projection of the committed clusters/<env>/platform.yaml
-# — no cluster access, no secrets — so a public/private Pages page mirrors exactly
-# what is already in the repo. Enable once under Settings → Pages → Source:
-# "GitHub Actions".
+# — no cluster access, no secrets baked in — so it mirrors exactly what is already
+# in the repo.
+#
+# One-time setup:
+#   1. Create the Pages project (direct-upload):
+#        npx wrangler pages project create idp-catalog --production-branch=main
+#   2. Add two repo secrets (Settings → Secrets and variables → Actions) — the
+#      same names idpctl dns/tunnel already use:
+#        CLOUDFLARE_API_TOKEN    a token with Account → Cloudflare Pages → Edit
+#        CLOUDFLARE_ACCOUNT_ID   your Cloudflare account id
+#   The default site is then https://idp-catalog.pages.dev (add a custom domain in
+#   the Pages project if you want catalog.<your-zone>).
 
 on:
   push:
@@ -21,16 +30,14 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Never run two Pages deploys at once; let the latest win.
+# Never run two deploys at once; let the latest win.
 concurrency:
-  group: pages
+  group: catalog-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,16 +48,9 @@ jobs:
         run: make build
       - name: Render the catalog site
         run: ./idpctl catalog --all --out-dir public
-      - uses: actions/upload-pages-artifact@v3
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: public
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - uses: actions/deploy-pages@v4
-        id: deploy
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=idp-catalog --branch=main

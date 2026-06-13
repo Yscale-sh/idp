@@ -222,8 +222,21 @@ make site                                                 # -> public/ : every e
 `--all` builds the whole-platform site: one page per environment under `clusters/` plus an
 `index.html` that links them with per-env counts. Because it's a pure function of git state with
 no timestamp, the output is reproducible — the [`catalog` workflow](.github/workflows/catalog.yml)
-publishes it to **GitHub Pages** on every push to `main` and the diff stays clean (enable it once
-under *Settings → Pages → Source: GitHub Actions*). The rule it keeps: the UI is a **view, never a
+publishes it to **Cloudflare Pages** on every push to `main` (the same Cloudflare the platform
+already uses for Tunnel ingress and DNS). One-time setup:
+
+```bash
+# 1. create the Pages project (direct-upload)
+npx wrangler pages project create idp-catalog --production-branch=main
+# 2. add two repo secrets (Settings → Secrets and variables → Actions):
+#    CLOUDFLARE_API_TOKEN   (Account → Cloudflare Pages → Edit)
+#    CLOUDFLARE_ACCOUNT_ID
+# 3. (optional) deploy from your machine instead of CI:
+make deploy-catalog        # needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID in your env
+```
+
+The default site is `https://idp-catalog.pages.dev`; add a custom domain (e.g.
+`catalog.<your-zone>`) in the Pages project. The rule it keeps: the UI is a **view, never a
 writer** — all writes stay in git, and the site exposes nothing that isn't already in the repo.
 
 ## Layout
