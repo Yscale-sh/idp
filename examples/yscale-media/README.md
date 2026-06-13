@@ -3,20 +3,31 @@
 `examples/dim` is the reference three-component media server (api + scanner + ui
 sharing one Postgres/Redis, an iGPU, an NFS library, a LAN UI). **yscale-media is
 what `dim` becomes in production** — the same product, plus a fourth component:
-an **optionally-distributed sharded transcoder**. Same platform contract, no new
-machinery — the scale-out is just another `deploy.yaml`.
+an **optionally-distributed sharded transcoder** — authored as a single
+multi-component shopping list (`yscale-media.deploy.yaml`).
 
 This is the real app idp runs, kept here as the worked example because it
 exercises essentially the whole contract.
 
-## The components
+## One file, four components
 
-| Component | `deploy.yaml` | What it shows |
-|---|---|---|
-| **api** | `yscale-api.deploy.yaml` | the web tier (REST/WS) — **provisions** the shared Postgres + Redis, `build.submodules` (private vendored Rust transcoder), `probes.type: tcp` (no `/healthz`), `sizing.xlarge` + `extraLimits: gpu.intel.com/i915` (hardware transcode), three volume kinds (read-only NFS-via-FS-Cache PVC, NFS metadata, emptyDir scratch) |
-| **scanner** | `yscale-scanner.deploy.yaml` | a **portless worker** (`runtime.port: 0`) — **shares** the api's stores (`provision: false`), `sizing.autosize` (VPA right-sizes within the `large` envelope), a **provisioned** scratch PVC (just `name + size + mountPath`) |
-| **ui** | `yscale-ui.deploy.yaml` | nginx SPA — the **LAN entrypoint** (`expose.lan` → MetalLB) with `expose.lan.host: yscale.lan` (ExternalDNS publishes a real name, not a bare IP), and `connectsTo` the api's in-cluster Service with `scheme: none` (a bare `host:port` for the nginx `upstream`) |
-| **transcode** | `yscale-transcode.deploy.yaml` | **the sharded scale-out** — a GPU worker pool that drains a Redis chunk queue so one stream is encoded across many pods. `replicas: 0` (the GPU-spend gate: costs nothing at rest), `extraLimits: gpu.intel.com/i915` (shared-mode iGPU), shares the api's stores |
+The top level of `yscale-media.deploy.yaml` is the shared **base** (app identity,
+the api image, `build.submodules` for the vendored Rust transcoder, the app-level
+Postgres + Redis); each entry under `components:` carries only its deltas. The
+platform `Expand()`s it into one HelmRelease per component — identical to four
+separate files, with the boilerplate declared **once**.
+
+| Component | What it shows |
+|---|---|
+| **api** | the web tier (REST/WS) — inherits the base image + stores and **provisions** them (first user), `probes.type: tcp` (no `/healthz`), `sizing.xlarge` + `extraLimits: gpu.intel.com/i915` (hardware transcode), three volume kinds (read-only NFS-via-FS-Cache PVC, NFS metadata, emptyDir scratch) |
+| **scanner** | a **portless worker** (`port: 0`) sharing the base image — **auto-shares** the api's stores (no `provision: false` needed), `sizing.autosize` (VPA), a provisioned scratch PVC (just `name + size + mountPath`) |
+| **transcode** | **the sharded scale-out** — a GPU worker pool that drains a Redis chunk queue so one stream is encoded across many pods. `replicas: 0` (the GPU-spend gate: costs nothing at rest), `extraLimits: gpu.intel.com/i915`, shares the api's stores |
+| **ui** | nginx SPA — overrides `runtime` (its own image + port 80) and `build.context: ui`, opts out of the app stores (`db: []` / `cache: []`), the **LAN entrypoint** (`expose.lan` → MetalLB, `host: yscale.lan` → ExternalDNS), and `connectsTo` the api's Service with `scheme: none` |
+
+What's DRY'd by the base: the `app` identity, the api image, the `vendor/yscale-transcode`
+submodule build, and the Postgres/Redis — each declared **once** instead of four
+times. Stores provision once (api owns them; the workers auto-share; the ui opts
+out), so there are no hand-written `provision: false` flags.
 
 ## The "optionally distributed" part
 
@@ -37,11 +48,11 @@ farm — you opt into the scale-out one component at a time.**
 
 ## Render
 
+One file renders all four components (CI passes the shared commit tag; each
+component renders at `<its runtime.image>:<tag>`):
+
 ```sh
-idpctl render --env dev --file yscale-api.deploy.yaml      --image ghcr.io/jakenesler/yscale-media-api:<tag>
-idpctl render --env dev --file yscale-scanner.deploy.yaml  --image ghcr.io/jakenesler/yscale-media-api:<tag>   # same image
-idpctl render --env dev --file yscale-ui.deploy.yaml       --image ghcr.io/jakenesler/yscale-media-ui:<tag>
-idpctl render --env dev --file yscale-transcode.deploy.yaml --image ghcr.io/jakenesler/yscale-media-api:<tag>  # same image
+idpctl render --env dev --file yscale-media.deploy.yaml --image <tag>
 ```
 
 The two `YSCALE_*_KEY` values here are `REPLACE_ME` placeholders — in a real

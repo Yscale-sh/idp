@@ -237,6 +237,42 @@ metrics:
 CI injects the exact image tag with `--image`. The file describes desired app capabilities and
 runtime behavior, not Kubernetes resources and not a mutable build artifact.
 
+### Multi-component apps (one file, many parts)
+
+A product that ships several workloads (api + scanner + ui …) declares them in ONE shopping list
+via `components:`, instead of one file per part. The top level is the shared **base**; each
+component carries only its deltas:
+
+```yaml
+app: media
+runtime: { image: ghcr.io/you/media-api, port: 8000 }   # base image
+build:   { submodules: [vendor/transcoder] }             # declared once
+db:      [{ name: primary, type: postgres }]             # app-level store
+cache:   [{ name: events,  type: redis }]
+
+components:
+  - component: api                       # inherits the base; provisions the stores (first user)
+    sizing: { profile: large }
+  - component: scanner                   # portless worker; auto-shares the stores
+    port: 0
+    env:  { ROLE: scanner }
+  - component: ui                        # its own image; opts out of the stores
+    runtime: { image: ghcr.io/you/media-ui, port: 80 }
+    db: []
+    cache: []
+    expose: { lan: true }
+```
+
+Merge rules (`App.Expand`): pointer fields (`runtime`/`build`/`probes`/`sizing`/`expose`) override
+the base; `port:` overrides just the port (keeps the base image — the common worker case); `env`
+merges (component wins per key); `secrets` union; slice fields (`volumes`/`routes`/`connectsTo`/
+`db`/`cache`/`storage`) are inherit-or-replace — omit to inherit, set (incl. an explicit `[]`) to
+override. **App-level stores provision once**: the first component to use a store provisions it and
+later components auto-share it (no hand-written `provision: false`). Each component renders to its
+own `<app>-<component>` HelmRelease, identical to separate files. A file with no `components:` is a
+plain single-component app. The shipper lists ONE deployFile per app and builds each unique image
+once.
+
 ### Stackable capabilities
 
 Capabilities are always lists because real apps often need more than one of the same type:
