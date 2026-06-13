@@ -1,0 +1,56 @@
+name: catalog
+
+# Publishes the read-only platform catalog (every env + an index) to GitHub
+# Pages. The site is a pure projection of the committed clusters/<env>/platform.yaml
+# — no cluster access, no secrets — so a public/private Pages page mirrors exactly
+# what is already in the repo. Enable once under Settings → Pages → Source:
+# "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'clusters/**'
+      - 'cmd/**'
+      - 'internal/catalog/**'
+      - 'internal/render/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/catalog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let the latest win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build idpctl
+        run: make build
+      - name: Render the catalog site
+        run: ./idpctl catalog --all --out-dir public
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deploy

@@ -195,20 +195,42 @@ idpctl validate --file deploy.yaml                 # schema + policy checks (fai
 idpctl plan     --env dev --file deploy.yaml       # show what would change
 idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
 idpctl promote  <app> <env> --from <env> -f deploy.yaml       # digest-forward promote (dev→stage→prod)
-idpctl doctor   --env <env>                         # probe the live cluster for the seams this env declares
 idpctl remove   --env dev --app <name> [--component <c>]     # drop an app/component from the umbrella
 idpctl infra render --env dev                      # set the enabled modules in the umbrella
-idpctl doctor --env <env> [--context <ctx>]        # probe the live cluster for the seams this env declares
+idpctl catalog  --env dev [--format text|html|json] [--out f]  # read-only view of one env
+idpctl catalog  --all --out-dir public             # whole-platform site (every env + index.html)
+idpctl doctor   --env <env> [--context <ctx>]      # probe the live cluster for the seams this env declares
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
 idpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
 idpctl new app <name>                              # scaffold an app repo (deploy.yaml; registry from idp.yaml)
 ```
 
+### Seeing it: the catalog viewer
+
+The platform is CLI + GitOps, but `idpctl catalog` gives you **something to look at** — a
+read-only projection of `clusters/<env>/platform.yaml` (the committed desired state Flux
+reconciles). It never touches a cluster; it just renders what's already in git as a terminal
+summary, a **self-contained HTML page**, or JSON:
+
+```bash
+idpctl catalog --env dev                                  # quick terminal glance
+make catalog ENV=dev                                      # -> catalog.html (open in a browser)
+idpctl catalog --env dev --format json                    # machine-readable model
+make site                                                 # -> public/ : every env + an index page
+```
+
+`--all` builds the whole-platform site: one page per environment under `clusters/` plus an
+`index.html` that links them with per-env counts. Because it's a pure function of git state with
+no timestamp, the output is reproducible — the [`catalog` workflow](.github/workflows/catalog.yml)
+publishes it to **GitHub Pages** on every push to `main` and the diff stays clean (enable it once
+under *Settings → Pages → Source: GitHub Actions*). The rule it keeps: the UI is a **view, never a
+writer** — all writes stay in git, and the site exposes nothing that isn't already in the repo.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `cmd/idpctl`, `internal/*` | the Go CLI (`appconfig`, `render`, `policy`, `modules`, `clouddns`, `clusterenv`, `helmrunner`, `kube`, `secrets`, `scaffold`, `deploy`) |
+| `cmd/idpctl`, `internal/*` | the Go CLI (`appconfig`, `render`, `policy`, `modules`, `clouddns`, `clusterenv`, `helmrunner`, `kube`, `secrets`, `scaffold`, `deploy`, `catalog`) |
 | `charts/app` | the shared app chart (Deployment + ClusterIP Service + optional KEDA / ServiceMonitor / ExternalSecret / PDB / LAN LoadBalancer / volumes) |
 | `charts/infra`, `modules/` | infra module charts (`dev-postgres`, `dev-redis`) + the module registry |
 | `charts/cluster` | the **umbrella** chart — templates a HelmRelease per app / store / module from the env values |

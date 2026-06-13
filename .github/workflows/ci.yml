@@ -43,3 +43,9 @@ jobs:
         run: |
           ./idpctl render --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:dev-ci0000
           ./idpctl infra render --env dev
+
+      - name: Catalog smoke (read-only viewer over the rendered state)
+        run: |
+          ./idpctl catalog --env dev --format json > /dev/null
+          ./idpctl catalog --all --out-dir /tmp/site
+          test -f /tmp/site/index.html

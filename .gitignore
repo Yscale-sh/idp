@@ -28,6 +28,10 @@ cmd/platformctl/platformctl
 charts/**/charts/
 *.tgz
 
+# ── Generated viewer (idpctl catalog) ──
+/catalog.html
+/public/
+
 # ── Node / tooling / OS ──
 node_modules/
 .dist/

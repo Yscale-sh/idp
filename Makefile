@@ -96,6 +96,16 @@ render: build ## Render carshowdb into environments/$(ENV)/apps (IMAGE=... ENV=.
 infra-render: build ## Render enabled infra modules into environments/$(ENV)/infra.
 	./$(BINARY) infra render --env $(ENV)
 
+.PHONY: catalog
+catalog: build ## Generate the read-only HTML catalog for $(ENV) -> catalog.html.
+	./$(BINARY) catalog --env $(ENV) --format html --out catalog.html
+	@echo "open catalog.html in a browser (read-only view of clusters/$(ENV)/platform.yaml)."
+
+.PHONY: site
+site: build ## Generate the whole-platform catalog site (every env + index) -> public/.
+	./$(BINARY) catalog --all --out-dir public
+	@echo "open public/index.html (read-only view of every environment)."
+
 # ── image (the idpctl container the reusable ship workflow runs) ─────────────────
 .PHONY: docker-build
 docker-build: ## Build the idpctl image (idpctl+helm+git+gh). Override TAG=...
