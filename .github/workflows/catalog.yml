@@ -15,17 +15,11 @@ name: catalog
 #   The default site is then https://idp-catalog.pages.dev (add a custom domain in
 #   the Pages project if you want catalog.<your-zone>).
 
+# Manual-only for now: this does NOT auto-publish on push. Run it by hand from
+# Actions → catalog → "Run workflow" once Cloudflare Pages is set up (project
+# created + CLOUDFLARE_API_TOKEN/ACCOUNT_ID secrets added). To re-enable
+# publish-on-push later, add back a `push:` trigger.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'clusters/**'
-      - 'cmd/**'
-      - 'internal/catalog/**'
-      - 'internal/render/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/catalog.yml'
   workflow_dispatch:
 
 permissions:
