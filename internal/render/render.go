@@ -52,6 +52,7 @@ func Render(app appconfig.App, env string, c *clusterenv.Config, image, deployTi
 	var secretKeys []string
 	secretKeys = append(secretKeys, DataStoreEnvKeys(app)...)
 	secretKeys = append(secretKeys, StorageEnvKeys(app)...)
+	secretKeys = append(secretKeys, app.Secrets...)
 
 	return &Result{
 		App:           app,

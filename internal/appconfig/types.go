@@ -66,6 +66,14 @@ type App struct {
 	// secrets backend. Reserved Tier-A keys (PORT, ENVIRONMENT, ...) are ignored.
 	Env map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 
+	// Secrets are EXTRA secret-backed env keys this app needs at boot, beyond the
+	// universal set and the keys derived from declared db/cache/storage — for
+	// app-specific credentials a platform convention doesn't cover (e.g. a bare
+	// AWS_ACCESS_KEY_ID an SDK expects). Declared by NAME only; never a value. In
+	// dev each gets a marked placeholder so the app boots with no real secret; in
+	// prod each is supplied by the env's secret backend (SSM) via the app's Secret.
+	Secrets []string `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+
 	// Volumes are extra pod volumes + their mounts (NFS, emptyDir, PVC) — e.g. a
 	// read-only NFS media share, a shared-RW metadata dir, an ephemeral cache.
 	Volumes []Volume `json:"volumes,omitempty" yaml:"volumes,omitempty"`

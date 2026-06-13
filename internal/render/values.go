@@ -633,13 +633,20 @@ func buildDevPlaceholders(app appconfig.App, c *clusterenv.Config) []SecretPlace
 	if !isLocalBackend(c) {
 		return []SecretPlaceholderValues{}
 	}
-	keys := make([]string, 0, len(devAppSecretKeys)+len(app.Storage)*4)
+	keys := make([]string, 0, len(devAppSecretKeys)+len(app.Storage)*4+len(app.Secrets))
 	keys = append(keys, devAppSecretKeys...)
 	// Object-storage credentials per declared bucket (Tier C storage convention).
 	keys = append(keys, StorageEnvKeys(app)...)
+	// App-declared extra secret keys (e.g. a bare AWS_ACCESS_KEY_ID an SDK wants).
+	keys = append(keys, app.Secrets...)
 
 	out := make([]SecretPlaceholderValues, 0, len(keys))
+	seen := make(map[string]bool, len(keys))
 	for _, k := range keys {
+		if seen[k] {
+			continue // an app-declared key may duplicate a universal/storage one
+		}
+		seen[k] = true
 		out = append(out, SecretPlaceholderValues{Name: k, Value: DevPlaceholderValue})
 	}
 	return out
