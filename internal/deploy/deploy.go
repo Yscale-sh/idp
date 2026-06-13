@@ -167,7 +167,16 @@ func (p *Plan) Summary() string {
 	for _, route := range app.Routes {
 		exposure := "internal"
 		if route.Public {
-			exposure = "public (Cloudflare Tunnel)"
+			// Name the exposure the env actually renders for this route: a
+			// Cloudflare Tunnel (prod) or a MetalLB LAN LoadBalancer (dev).
+			switch {
+			case r.Values.Tunnel != nil:
+				exposure = "public (Cloudflare Tunnel)"
+			case r.Values.LanExpose != nil:
+				exposure = "public (LAN LoadBalancer)"
+			default:
+				exposure = "public"
+			}
 		}
 		fmt.Fprintf(&b, "route:      %s [%s]\n", route.Host, exposure)
 	}
@@ -178,12 +187,16 @@ func (p *Plan) Summary() string {
 // With no cluster config or no zones configured, all routes are kept (zone
 // policy is unrestricted in that case, matching clusterenv.HostInZone).
 func selectRoutes(routes []appconfig.Route, c *clusterenv.Config) []appconfig.Route {
-	if c == nil || len(c.Zones) == 0 {
+	if c == nil {
 		return routes
 	}
 	kept := make([]appconfig.Route, 0, len(routes))
 	for _, r := range routes {
-		if c.HostInZone(r.Host) {
+		// Expand a bare label (host: web) into this env's full host (web.local /
+		// web.example.com) so one deploy.yaml route resolves per environment, then
+		// narrow to the env's zones. Full hosts pass through ComposeHost unchanged.
+		r.Host = c.ComposeHost(r.Host)
+		if len(c.Zones) == 0 || c.HostInZone(r.Host) {
 			kept = append(kept, r)
 		}
 	}

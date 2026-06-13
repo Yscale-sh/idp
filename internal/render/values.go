@@ -499,21 +499,65 @@ func buildVolumes(app appconfig.App) (vols, mounts, claims []map[string]any) {
 	return vols, mounts, claims
 }
 
-// buildLanExpose returns the on-prem MetalLB LoadBalancer config when the app opts
-// in (expose.lan) on a LOCAL backend and is not a worker. Nil otherwise — so prod
-// apps (Cloudflare Tunnel is their exposure) and the common case render unchanged.
+// buildLanExpose returns the on-prem MetalLB LoadBalancer config for an app on a
+// LAN env (local backend, not a worker), or nil. It fires in two ways:
+//
+//   - explicit — the app sets expose.lan, for advanced pinning of ip/pool/host/port;
+//   - derived  — the app has a PUBLIC route and the env exposes over the LAN (no
+//     Cloudflare Tunnel). This is what makes ONE deploy.yaml route give a LAN
+//     IP+hostname here and a Cloudflare Tunnel in prod, with NO env-specific
+//     fields: a public route means "expose to users", and the LAN MetalLB
+//     LoadBalancer is the on-prem twin of the tunnel. The hostname comes from the
+//     (env-composed) route host; the IP is auto-assigned from the env's LanPool.
+//
+// Explicit expose.lan settings always win when present. Nil for prod (the tunnel
+// is the exposure there), workers, and apps with no exposure — those render
+// byte-identically.
 func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
-	if app.Expose == nil || !app.Expose.LAN || app.IsWorker() {
+	if app.IsWorker() || !isLocalBackend(c) {
 		return nil
 	}
-	if !isLocalBackend(c) {
-		return nil // prod exposes via the tunnel, never a LAN LoadBalancer
+	explicit := app.Expose != nil && app.Expose.LAN
+	derived := !explicit && hasPublicRoute(app) && envProvidesLAN(c)
+	if !explicit && !derived {
+		return nil
 	}
-	port := app.Expose.Port
-	if port == 0 {
-		port = app.Runtime.Port
+	lan := &LanExposeValues{Enabled: true}
+	if app.Expose != nil {
+		lan.Host, lan.IP, lan.Pool, lan.Port = app.Expose.Host, app.Expose.IP, app.Expose.Pool, app.Expose.Port
 	}
-	return &LanExposeValues{Enabled: true, Host: app.Expose.Host, IP: app.Expose.IP, Pool: app.Expose.Pool, Port: port}
+	if derived {
+		if lan.Host == "" {
+			lan.Host = publicHostList(app) // every public host -> external-dns name(s)
+		}
+		if lan.IP == "" && lan.Pool == "" {
+			lan.Pool = c.LanPool // MetalLB auto-assigns a free IP from the env's pool
+		}
+	}
+	if lan.Port == 0 {
+		lan.Port = app.Runtime.Port
+	}
+	return lan
+}
+
+// envProvidesLAN reports whether the env exposes apps over the on-prem LAN (a
+// MetalLB LoadBalancer) rather than a Cloudflare Tunnel.
+func envProvidesLAN(c *clusterenv.Config) bool {
+	return c != nil && c.EffectiveSeams().LANExpose
+}
+
+// publicHostList is the comma-joined list of an app's public route hosts (already
+// env-composed by render time). external-dns accepts a comma-separated hostname
+// annotation, so EVERY public host on a LAN-exposed app gets a DNS name pointing
+// at the one MetalLB VIP — not just the first.
+func publicHostList(app appconfig.App) string {
+	var hosts []string
+	for _, r := range app.Routes {
+		if r.Public && r.Host != "" {
+			hosts = append(hosts, r.Host)
+		}
+	}
+	return strings.Join(hosts, ",")
 }
 
 // DefaultImagePullSecret is the registry-credentials Secret every app pulls its

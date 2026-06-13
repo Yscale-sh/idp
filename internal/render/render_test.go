@@ -39,7 +39,8 @@ func devCluster() *clusterenv.Config {
 			LokiURL:      "http://loki.monitoring.svc.cluster.local:3100",
 			OTLPEndpoint: "http://otel-collector.monitoring.svc.cluster.local:4317",
 		},
-		Domain: "svc.cluster.local",
+		Domain:  "svc.cluster.local",
+		LanPool: "lan-pool",
 		Flux: clusterenv.FluxConfig{
 			Namespace:  "flux-system",
 			RepoURL:    "https://github.com/jakenesler/idp.git",
@@ -109,13 +110,16 @@ func goldenCase(t *testing.T, deployFile, env string, c *clusterenv.Config, imag
 	}
 }
 
+// selectInZone mirrors deploy.selectRoutes: compose bare labels to the env's full
+// host, then narrow to the env's zones.
 func selectInZone(routes []appconfig.Route, c *clusterenv.Config) []appconfig.Route {
-	if c == nil || len(c.Zones) == 0 {
+	if c == nil {
 		return routes
 	}
 	kept := make([]appconfig.Route, 0, len(routes))
 	for _, r := range routes {
-		if c.HostInZone(r.Host) {
+		r.Host = c.ComposeHost(r.Host)
+		if len(c.Zones) == 0 || c.HostInZone(r.Host) {
 			kept = append(kept, r)
 		}
 	}

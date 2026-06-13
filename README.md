@@ -32,7 +32,7 @@ The contract is a **shopping list**, not Kubernetes:
 ```yaml
 app: carshowdb
 runtime: { image: ghcr.io/jakenesler/carshowdb-api, port: 8080 }
-routes:  [{ host: carshowdb.example.com, public: true }]
+routes:  [{ host: carshowdb, public: true }]   # bare label: carshowdb.local in dev, carshowdb.<domain> over a tunnel in prod
 sizing:  { profile: minimal, replicas: 2, autoscale: { enabled: true, max: 5 } }
 db:      [{ name: primary, type: postgres, size: minimal }]   # platform provisions + wires DATABASE_URL
 cache:   [{ name: default, type: redis }]
@@ -105,11 +105,11 @@ multi-tier products:
 | `runtime.port: 0` | A **worker** — Deployment only, no Service / probes / ServiceMonitor (e.g. a scanner or queue consumer). |
 | `db[] / cache[]` `provision: false` | **Share** a sibling component's store instead of provisioning a new one (one Postgres + Redis for the whole product). |
 | `volumes[]` | Mount `nfs` / `emptyDir` / `pvc` volumes (read-only media libraries, shared RWX metadata, scratch caches). |
-| `expose.lan` (+ `ip`) | Publish on the LAN via a **MetalLB** LoadBalancer — the *only* sanctioned LB (policy exempts the `platform/expose: lan` label); local-backend only. |
+| `expose.lan` (+ `ip`) | *Advanced/optional.* A public route already gets a LAN LoadBalancer in dev — use `expose` only to pin a specific IP/pool/port or expose on the LAN with no route. The *only* sanctioned LB (policy exempts the `platform/expose: lan` label). |
 | `probes.type` | `http` (default), `tcp` (port-open, for services with no health route), or `none`. |
 | `sizing.extraLimits` | Arbitrary resource limits, e.g. `gpu.intel.com/i915: "1"` for hardware transcode. |
 | `connectsTo[]` | Wire app→app / component→component dependencies. The platform resolves the address per env and injects it into an env var — `clusterService` (in-cluster DNS), `publicRoute` (external), or `serviceToken` (Cloudflare Access); `scheme: none` yields a bare `host:port` for nginx upstreams / DSNs. |
-| `routes[]` | Public hostnames. In prod these are served over a **Cloudflare Tunnel** with DNS managed by `idpctl dns` / `idpctl tunnel`; dev stays LAN-only. |
+| `routes[]` | Where users reach the app — **one declaration, env-aware**. Mark a route `public: true` and the platform exposes it over a **Cloudflare Tunnel** in prod and a **MetalLB LAN LoadBalancer** (auto IP + hostname) in dev. A bare `host:` label is composed per env (`web` → `web.local` / `web.example.com`), so the *same* `deploy.yaml` works everywhere — no env-specific fields. |
 
 See `examples/carshowdb` (a single-service app), `examples/dim` (a three-component media server
 sharing one Postgres + Redis, an iGPU, an NFS media library, and a LAN-exposed UI), and

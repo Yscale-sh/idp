@@ -151,19 +151,28 @@ type BuildConfig struct {
 
 // Route is one hostname plus its access policy.
 type Route struct {
-	// Host is the external hostname (e.g. carshowdb.example.com). Must be inside
-	// an approved zone for the environment (policy guardrail).
+	// Host is the route hostname. A BARE label (no dot, e.g. "web") is composed
+	// per environment under the env's route domain — web.local in dev,
+	// web.example.com in prod — so ONE deploy.yaml route works everywhere. A full
+	// hostname (with a dot) is used as-is. Either way it must fall inside an
+	// approved zone for the environment (policy guardrail).
 	Host string `json:"host" yaml:"host"`
 
-	// Public exposes the host via Cloudflare Tunnel + DNS. When false the route
-	// is internal/cluster-only.
+	// Public means "expose this route to users". The platform fulfills it per
+	// environment: a Cloudflare Tunnel + DNS where the env has one (prod), or a
+	// MetalLB LAN LoadBalancer + external-dns name on-prem (dev) — so the same
+	// route gives a LAN IP+hostname in dev and a tunnel in prod with no
+	// env-specific fields. When false the route is internal/cluster-only.
 	Public bool `json:"public,omitempty" yaml:"public,omitempty"`
 
 	// Access is the Cloudflare Access policy for this host.
 	Access Access `json:"access,omitempty" yaml:"access,omitempty"`
 }
 
-// Access expresses who/what may reach a route through Cloudflare Access.
+// Access expresses who/what may reach a route through Cloudflare Access. It
+// applies only where the route is served over a Cloudflare Tunnel (prod); on a
+// LAN-exposed route in dev (no Cloudflare in front) it is a no-op — gate LAN
+// access at the network layer instead.
 type Access struct {
 	// Humans gates the route behind interactive human SSO (Cloudflare Access).
 	Humans bool `json:"humans,omitempty" yaml:"humans,omitempty"`
@@ -348,12 +357,15 @@ func (v Volume) ResolvedType() string {
 	}
 }
 
-// Expose opts an app into LOCAL LAN exposure on the on-prem backend: a MetalLB
-// LoadBalancer in front of the app's Service, since the LAN has no Cloudflare
-// Tunnel. This is the ONLY sanctioned LoadBalancer — the no-LB guardrail still
-// blocks any other. IP pins a MetalLB address (else MetalLB auto-assigns).
+// Expose is OPTIONAL, advanced LAN pinning. A public route (routes[].public)
+// already gives an app a MetalLB LAN LoadBalancer on the on-prem backend — with
+// an auto-assigned IP (from the env's pool) and the route host as its name — so
+// most apps need NO expose block at all. Set it only to pin a specific IP/pool/
+// port or a different LAN hostname, or to expose on the LAN with no route. It is
+// the ONLY sanctioned LoadBalancer — the no-LB guardrail blocks any other.
 type Expose struct {
-	// LAN turns on the MetalLB LoadBalancer for this app (on-prem only).
+	// LAN turns on the MetalLB LoadBalancer for this app (on-prem only). Implied
+	// by a public route; set explicitly only to expose on the LAN WITHOUT a route.
 	LAN bool `json:"lan,omitempty" yaml:"lan,omitempty"`
 
 	// Host is an optional LAN hostname (e.g. grafana.lan). The chart annotates

@@ -58,11 +58,11 @@
         "properties": {
           "host": {
             "type": "string",
-            "description": "External hostname; must be in an approved zone for the env."
+            "description": "Route hostname. A bare label (e.g. \"web\") is composed per env (web.local in dev, web.example.com in prod); a full hostname is used as-is. Must land in an approved zone."
           },
           "public": {
             "type": "boolean",
-            "description": "Expose via Cloudflare Tunnel + DNS.",
+            "description": "Expose to users — a Cloudflare Tunnel in prod, a MetalLB LAN LoadBalancer (auto IP + hostname) in dev. One route works in both.",
             "default": false
           },
           "access": {

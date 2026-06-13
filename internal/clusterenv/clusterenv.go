@@ -65,6 +65,14 @@ type Config struct {
 	// Defaults to "svc.cluster.local".
 	Domain string `json:"domain,omitempty"`
 
+	// LanPool names the MetalLB IPAddressPool the renderer assigns a LAN
+	// LoadBalancer from when an app is exposed on this env over the on-prem LAN
+	// (no Cloudflare Tunnel) and does not pin its own expose.lan.ip/pool. This is
+	// what lets a single deploy.yaml route get an auto-assigned LAN IP here while
+	// it tunnels in prod. Empty => a derived LAN service carries no pool (the app
+	// must pin expose.lan.ip instead, or MetalLB leaves it AllocationFailed).
+	LanPool string `json:"lanPool,omitempty"`
+
 	// Flux holds Flux wiring: the GitRepository source HelmReleases reference
 	// cross-namespace (name + namespace), the repo URL the FluxInstance syncs
 	// from, and the git branch it tracks. Defaults applied if unset.
@@ -596,4 +604,34 @@ func (c *Config) HostInZone(host string) bool {
 		}
 	}
 	return false
+}
+
+// RouteDomain is the DNS domain this env composes bare route labels under — the
+// base of its wildcard zone ("*.local" -> "local"). Empty when the env declares
+// no wildcard zone (then ComposeHost is a no-op). See ComposeHost.
+func (c *Config) RouteDomain() string {
+	for _, z := range c.Zones {
+		z = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(z)), ".")
+		if strings.HasPrefix(z, "*.") {
+			return z[2:]
+		}
+	}
+	return ""
+}
+
+// ComposeHost expands a BARE route label (no dot) into a full host under this
+// env's RouteDomain, so ONE deploy.yaml route works in every environment:
+// `host: web` becomes web.local in dev and web.example.com in prod. A host that
+// already contains a dot (an explicit FQDN) is returned unchanged, so existing
+// full-host manifests render byte-identically. Idempotent.
+func (c *Config) ComposeHost(host string) string {
+	h := strings.TrimSuffix(strings.TrimSpace(host), ".")
+	if h == "" || strings.Contains(h, ".") {
+		return host
+	}
+	dom := c.RouteDomain()
+	if dom == "" {
+		return host
+	}
+	return h + "." + dom
 }

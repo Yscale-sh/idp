@@ -182,10 +182,15 @@ func checkSeams(app appconfig.App, c *clusterenv.Config) Violations {
 	if app.Expose != nil && app.Expose.LAN && !s.LANExpose {
 		deny("expose.lan", "lanExpose", "no MetalLB here; apps are ClusterIP behind tunnels")
 	}
-	if !s.PublicRoutes {
+	// A public route means "expose to users". The env fulfills that EITHER via a
+	// Cloudflare Tunnel (publicRoutes) OR, on-prem, via a MetalLB LAN LoadBalancer
+	// (lanExpose) — so the same deploy.yaml route works in both. Deny only when the
+	// env provides neither path.
+	if !s.PublicRoutes && !s.LANExpose {
 		for _, r := range app.Routes {
 			if r.Public {
-				deny("a public route ("+r.Host+")", "publicRoutes", "this env exposes no public ingress")
+				deny("a public route ("+r.Host+")", "publicRoutes/lanExpose",
+					"this env exposes neither a Cloudflare Tunnel nor a LAN LoadBalancer")
 				break
 			}
 		}
@@ -378,10 +383,13 @@ func checkRoutes(app appconfig.App, c *clusterenv.Config) Violations {
 		if r.Host == "" {
 			continue
 		}
-		if r.Public && !c.HostInZone(r.Host) {
+		// Compose a bare label to this env's full host before the zone check, so a
+		// single `host: web` (which becomes web.local / web.example.com per env) is
+		// validated against the env it's rendering for, not rejected as out-of-zone.
+		if r.Public && !c.HostInZone(c.ComposeHost(r.Host)) {
 			vs = append(vs, &Violation{KindRouteZone,
 				fmt.Sprintf("public route host %q is not in any approved zone for env %q (%s)",
-					r.Host, c.Env, strings.Join(c.Zones, ", "))})
+					c.ComposeHost(r.Host), c.Env, strings.Join(c.Zones, ", "))})
 		}
 	}
 	return vs
