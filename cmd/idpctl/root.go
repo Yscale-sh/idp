@@ -26,6 +26,7 @@ idpctl never runs helm/kubectl against the cluster on the default path.`,
 	}
 
 	root.AddCommand(
+		newInitCmd(),
 		newValidateCmd(),
 		newPlanCmd(),
 		newRenderCmd(),

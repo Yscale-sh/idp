@@ -195,6 +195,7 @@ seams:
 ## CLI
 
 ```bash
+idpctl init     --env dev                          # scaffold environments/<env>/cluster.yaml from idp.yaml (fork's first step)
 idpctl validate --file deploy.yaml                 # schema + policy checks (fail before mutation)
 idpctl plan     --env dev --file deploy.yaml       # show what would change
 idpctl render   --env dev --file deploy.yaml --image <ref>   # upsert the app into the umbrella
@@ -276,8 +277,10 @@ The platform has exactly **one identity file**: [`idp.yaml`](idp.yaml). Nothing 
 defaulted in Go code or charts — `idpctl` fails closed if it's missing. To run your own instance:
 
 1. **Fork** this repo, then edit `idp.yaml`: your image registry prefix and your fork's URL/branch.
-2. Edit `environments/<env>/cluster.yaml`: point `flux.repoURL`/`branch` at your fork and toggle
-   the modules you want.
+2. **Generate your own env** instead of inheriting this instance's: `idpctl init --env dev`
+   writes a fresh `environments/dev/cluster.yaml` wired to *your* `idp.yaml` (no homelab IPs,
+   module matrix, or registry orgs carried over). Repeat for `stage`/`prod`; then edit each to
+   toggle the modules you run and point the secret store at yours.
 3. Re-render the state as your own: `./idpctl infra render --env dev`, then onboard your first app
    with `idpctl new app <name>` (or start from `examples/`).
 4. Bootstrap a cluster: install the Flux Operator and apply `clusters/<env>/flux-instance.yaml`.
