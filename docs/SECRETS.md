@@ -1,9 +1,12 @@
 # Secrets & provisioning — the multi-tenant trust model
 
-> **Status: design decision, not yet implemented.** Captured 2026-06-06. The
-> single-store model below is what exists in spirit today (dev uses a local
-> backend; prod *specs* `backend: ssm`); the per-tenant model is the target to
-> implement when prod / multi-tenant is actually on the table. This doc is the
+> **Status: single-store model LIVE; per-tenant model still the target.** Captured
+> 2026-06-06; updated 2026-06-14. The single-store model is now real: External-Secrets
+> Operator is installed, dev uses the `platform-local` (Kubernetes-provider) store and
+> the `homelab-ssm` ClusterSecretStore (AWS SSM, `eso-homelab` reader) is live — app
+> Secrets sync from it today. Prod *specs* `backend: ssm`. The PER-TENANT model below
+> (platform mints per-app keys, per-app SecretStore + IAM derivation) remains the
+> target for when prod / multi-tenant is actually on the table. This doc is the
 > decision so it doesn't get lost. Naming conventions live in
 > [`CONVENTIONS.md`](../CONVENTIONS.md) §5; the Crossplane hook is in
 > [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md).
@@ -141,8 +144,11 @@ Two conventions, two trust scopes — keep them distinct:
 
 - ✅ A scoped homelab reader IAM user `eso-homelab` exists
   (`ssm:Get*` on `/homelab/*`, read-only) — for the **platform-infra** tier.
-- ⏳ External-Secrets Operator is **not yet installed** on the homelab cluster
-  (the `external-secrets` module is in the registry, disabled).
+- ✅ External-Secrets Operator is **installed** (the `external-secrets` module is
+  enabled in `environments/dev/cluster.yaml`). Dev runtime secrets use the
+  `platform-local` Kubernetes-provider store; the `homelab-ssm` ClusterSecretStore
+  (AWS SSM via `eso-homelab`) backs platform-infra secrets (ghcr pull, image-builder,
+  loki R2) and app Secrets sync from it today.
 - ⏳ Per-app provisioner + reader identities, per-app `SecretStore`, and the
   `idpctl render` IAM-policy derivation are **unimplemented** — do them when prod /
   multi-tenant is live.
