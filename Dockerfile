@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/idp-shipper ./cmd/idp-shipper
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache git github-cli ca-certificates bash
 # helm from the official pinned image (keeps the render-time LoadBalancer guardrail).
 COPY --from=alpine/helm:3.16.4 /usr/bin/helm /usr/local/bin/helm
