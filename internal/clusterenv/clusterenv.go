@@ -109,6 +109,12 @@ type Seams struct {
 	// LANExpose: MetalLB is present, so apps may use expose.lan. false => no LAN
 	// LoadBalancers (prod is Cloudflare-Tunnel-only). Default: true.
 	LANExpose *bool `json:"lanExpose,omitempty"`
+	// Tunnel: the env has a real Cloudflare Tunnel, so a public route renders the
+	// cloudflared sidecar (and pins TUNNEL_TOKEN). false => public routes render NO
+	// tunnel (ClusterIP only, no token) — e.g. a LOCAL prod stand-in with no real
+	// Cloudflare, so a deploy can't open a tunnel. Default: derived true iff the
+	// secrets backend is ssm (real prod).
+	Tunnel *bool `json:"tunnel,omitempty"`
 	// PublicRoutes: public routes[] are allowed (an ingress/tunnel path exists).
 	// Default: derived (true iff zones are declared).
 	PublicRoutes *bool `json:"publicRoutes,omitempty"`
@@ -121,7 +127,7 @@ type Seams struct {
 
 // ResolvedSeams is the concrete seam set after defaults/derivation.
 type ResolvedSeams struct {
-	StatefulStores, LANExpose, PublicRoutes, Autoscale, Volumes bool
+	StatefulStores, LANExpose, Tunnel, PublicRoutes, Autoscale, Volumes bool
 }
 
 // EffectiveSeams resolves the declared Seams against derivation defaults so
@@ -147,6 +153,7 @@ func (c *Config) EffectiveSeams() ResolvedSeams {
 	return ResolvedSeams{
 		StatefulStores: pick(s.StatefulStores, true),
 		LANExpose:      pick(s.LANExpose, true),
+		Tunnel:         pick(s.Tunnel, c.Secrets.Backend == BackendSSM),
 		PublicRoutes:   pick(s.PublicRoutes, len(c.Zones) > 0),
 		Autoscale:      pick(s.Autoscale, kedaOn),
 		Volumes:        pick(s.Volumes, true),

@@ -26,7 +26,7 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	// sidecar, whose TUNNEL_TOKEN lives under the app's SSM root and is pulled into
 	// the runtime Secret by dataFrom — so it needs that Secret even with no
 	// db/cache/storage. (Dev never tunnels, so no dev placeholder is needed.)
-	if !isLocalBackend(c) && hasPublicRoute(app) {
+	if envProvidesTunnel(c) && hasPublicRoute(app) {
 		needsSecret = true
 	}
 
@@ -61,7 +61,7 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	// pulls the whole app root, the explicit remoteRef makes the dependency + its SSM
 	// location visible in the rendered ExternalSecret and makes a missing token fail
 	// loudly at the ExternalSecret instead of as an opaque pod CreateContainerConfigError.
-	if !isLocalBackend(c) && hasPublicRoute(app) {
+	if envProvidesTunnel(c) && hasPublicRoute(app) {
 		ev.RemoteRefs = append(ev.RemoteRefs, RemoteRefValues{
 			SecretKey: "TUNNEL_TOKEN",
 			RemoteRef: map[string]string{"key": spec.AppRoot + "/TUNNEL_TOKEN"},

@@ -1,6 +1,47 @@
 package render
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jakenesler/idp/internal/clusterenv"
+)
+
+// TestTunnelSeam proves the seams.tunnel toggle: a prod env with a real tunnel
+// renders the cloudflared sidecar for a public route, but a LOCAL prod stand-in
+// (seams.tunnel:false) renders NO tunnel and pins NO TUNNEL_TOKEN — so a deploy
+// can never open a real Cloudflare tunnel and the app boots without the token.
+func TestTunnelSeam(t *testing.T) {
+	// Default prod (ssm backend, no seam override) → tunnel renders.
+	prod := prodCluster()
+	app := loadTestApp(t, "web.deploy.yaml")
+	app.Routes = selectInZone(app.Routes, prod)
+	res, err := Render(app, "prod", prod, "ghcr.io/x/web:1", "")
+	if err != nil {
+		t.Fatalf("prod render: %v", err)
+	}
+	if res.Values.Tunnel == nil {
+		t.Fatal("default prod (ssm) should render a Cloudflare Tunnel for a public route")
+	}
+
+	// seams.tunnel:false (local prod stand-in) → NO tunnel, NO TUNNEL_TOKEN.
+	noTun := prodCluster()
+	off := false
+	noTun.Seams = &clusterenv.Seams{Tunnel: &off}
+	app2 := loadTestApp(t, "web.deploy.yaml")
+	app2.Routes = selectInZone(app2.Routes, noTun)
+	res2, err := Render(app2, "prod", noTun, "ghcr.io/x/web:1", "")
+	if err != nil {
+		t.Fatalf("prod (tunnel:false) render: %v", err)
+	}
+	if res2.Values.Tunnel != nil {
+		t.Errorf("tunnel:false must render NO cloudflared sidecar, got %+v", res2.Values.Tunnel)
+	}
+	for _, rr := range res2.Values.ExternalSecret.RemoteRefs {
+		if rr.SecretKey == "TUNNEL_TOKEN" {
+			t.Error("tunnel:false must NOT pin TUNNEL_TOKEN (no real Cloudflare to authenticate to)")
+		}
+	}
+}
 
 // TestSingleManifestRouting proves the headline contract: ONE deploy.yaml with a
 // single bare-host public route, no env-specific fields, yields a MetalLB LAN

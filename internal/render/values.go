@@ -420,7 +420,7 @@ func hasPublicRoute(app appconfig.App) bool {
 // and never tunnels. Each public host maps through the tunnel to the app's OWN
 // Service on localhost:<port> in the pod — exposure with NO LoadBalancer.
 func buildTunnel(app appconfig.App, c *clusterenv.Config) *TunnelValues {
-	if isLocalBackend(c) || !hasPublicRoute(app) {
+	if !envProvidesTunnel(c) || !hasPublicRoute(app) {
 		return nil
 	}
 	svc := fmt.Sprintf("http://localhost:%d", app.Runtime.Port)
@@ -544,6 +544,15 @@ func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
 // MetalLB LoadBalancer) rather than a Cloudflare Tunnel.
 func envProvidesLAN(c *clusterenv.Config) bool {
 	return c != nil && c.EffectiveSeams().LANExpose
+}
+
+// envProvidesTunnel reports whether the env serves public routes over a real
+// Cloudflare Tunnel (the cloudflared sidecar + a pinned TUNNEL_TOKEN). Defaults
+// to the ssm/prod backend; an env can set seams.tunnel:false (e.g. a LOCAL prod
+// stand-in with no real Cloudflare) so public routes render with NO sidecar and
+// NO token — ClusterIP only, and a deploy can never open a tunnel.
+func envProvidesTunnel(c *clusterenv.Config) bool {
+	return c != nil && c.EffectiveSeams().Tunnel
 }
 
 // publicHostList is the comma-joined list of an app's public route hosts (already
