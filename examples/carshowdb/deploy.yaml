@@ -8,8 +8,8 @@
 # Port: 8080 (ASSUMPTION — verify against the real container; carshowdb's port was
 #       not captured in ENV.md. Override here if the image listens elsewhere.)
 #
-# Render to dev:  platformctl render --env dev  --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
-# Render to prod: platformctl render --env prod --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
+# Render to dev:  idpctl render --env dev  --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
+# Render to prod: idpctl render --env prod --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
 
 app: carshowdb
 
@@ -24,21 +24,13 @@ runtime:
   port: 8080
 
 routes:
-  # A single deploy.yaml carries hosts for several envs. The renderer narrows the
-  # route set to the target env's approved zones (host policy). Cross-env hosts are
-  # kept INTERNAL (public: false) so they pass policy everywhere and are silently
-  # narrowed out of envs whose zone they do not match — a PUBLIC host must always
-  # be in-zone for the env it is built into, or policy rejects it (never silently
-  # dropped). The prod host stays a non-public placeholder until its real public
-  # zone is confirmed; flip it to public once carshowdb.example.com is the approved
-  # prod zone and Cloudflare Tunnel exposure is wired.
-  - host: carshowdb.local          # dev (.local, cluster-internal)
-    public: false
-    access:
-      humans: false
-      serviceToken: false
-  - host: carshowdb.example.com     # prod-ish placeholder (internal until zone confirmed)
-    public: false
+  # ONE route, env-aware — no env-specific fields; the same route works in every env.
+  # The bare label composes per environment under the env's wildcard zone
+  # (carshowdb.local in dev, carshowdb.<prod-zone> in prod), and `public: true`
+  # ("expose to users") is fulfilled by whatever the env provides: a MetalLB LAN
+  # LoadBalancer with an auto-assigned IP + hostname in dev, a Cloudflare Tunnel in prod.
+  - host: carshowdb
+    public: true
     access:
       humans: false
       serviceToken: false

@@ -5,10 +5,11 @@
 > (Flux Operator + `HelmRelease`/`GitRepository`) reconciles it into the cluster. No
 > hand-written Kubernetes YAML, no per-app load balancers.
 
-**Status:** work-in-progress, running real workloads. `dev` is a live homelab k3s cluster; the
-full **dev → stage → prod** promotion pipeline is implemented and proven end-to-end against a
-local prod stand-in (`prod` itself targets self-provisioned k3s on Linode — migration gated, see
-below). The CLI is **`idpctl`** (Go module `github.com/jakenesler/idp`). Apache-2.0.
+**Status:** work-in-progress, running real workloads. `dev` is a live homelab k3s cluster, and the
+active promotion path is **dev → prod** (digest-forward via `idpctl promote`). A **stage** tier is
+scaffolded in-repo but deferred for now; `prod` targets self-provisioned k3s on Linode (migration
+gated — see [`docs/PROD_ON_MAIN.md`](docs/PROD_ON_MAIN.md)). The CLI is **`idpctl`** (Go module
+`github.com/jakenesler/idp`). Apache-2.0.
 
 This repo is **both the platform and a live instance of it**: `clusters/` and `environments/`
 hold the author's real rendered state. That's the model — you don't install idp, you
@@ -66,33 +67,35 @@ resource limits, autoscaling and observability wiring from that. The developer n
 The Flux Operator ships an **embedded Web UI** (the operator Service on `:9080`) — no separate
 dashboard install — for watching reconciliations.
 
-## Promoting across environments (dev → stage → prod)
+## Promoting across environments (dev → prod)
 
-The shipper auto-deploys **dev** on every push. Moving to **stage** and **prod** is
-deliberate and **digest-forward** — the artifact never rebuilds; `idpctl promote` reads
-the image already running in the source env's umbrella and re-renders it with the target
-env's policy, secrets backend, and namespaces:
+The shipper auto-deploys **dev** on every push. Moving to **prod** is deliberate and
+**digest-forward** — the artifact never rebuilds; `idpctl promote` reads the image already
+running in the source env's umbrella and re-renders it with the target env's policy, secrets
+backend, and namespaces:
 
 ```bash
-idpctl promote yscale-website stage --from dev      # pins dev's running digest into stage
-idpctl promote yscale-website prod  --from stage    # pins stage's digest into prod
+idpctl promote yscale-website prod --from dev      # pins dev's running digest into prod
 ```
+
+> A **stage** tier (`idpctl promote <app> stage --from dev`, then `prod --from stage`) is
+> scaffolded in-repo for combining PRs before prod, but is **deferred** for now — prod promotes
+> from dev directly. See [`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md).
 
 Promotion is **policy as data** — no env name is special to the platform, so a fork can run
 `qa`, `eu-prod`, anything. Each target env's `cluster.yaml` declares its own gate:
 
 ```yaml
 # environments/prod/cluster.yaml
-promotion: { from: stage }    # promote refuses any other source (--force overrides)
+promotion: { from: dev }      # promote refuses any other source (--force overrides)
 allowMutableTags: false       # and refuses :latest — promotion means a pinned artifact
-flux: { branch: prod }        # the branch the prod cluster's Flux tracks
+flux: { branch: prod }        # the branch prod's Flux tracks (target: main — see docs/PROD_ON_MAIN.md)
 ```
 
 `promote` renders the file and prints which `flux.branch` to commit it on; the git push stays
-CI-owned. Rollback is one `git revert` of that commit. One **FluxInstance per cluster** (stage
-rides the dev cluster's Flux as a second Kustomization; prod is its own cluster on the `prod`
-branch), so prod self-heals with zero dependency on dev. Full rationale + the proven walkthrough:
-[`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md).
+CI-owned. Rollback is one `git revert` of that commit. One **FluxInstance per cluster** (stage,
+when enabled, rides the dev cluster's Flux as a second Kustomization; prod is its own cluster), so
+prod self-heals with zero dependency on dev. Full rationale: [`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md).
 
 The prod target is a self-provisioned k3s cluster on Linode built from the **jaK3s** golden image
 (hardened Debian + Cilium + embedded-etcd, etcd snapshots → R2). Migration is gated, LKE untouched
@@ -143,34 +146,6 @@ then renders a Flux `HelmRelease` per module (plus a `HelmRepository` for each `
 
 ## The seam contract (loose coupling, enforced)
 
-idp couples to a cluster only through a handful of **seams** — interfaces a host
-cluster provides: in-cluster data stores, LAN exposure, public routes, autoscaling,
-volumes, secrets, observability. Each environment **declares** which seams it
-provides, and that declaration is enforced from three sides:
-
-```yaml
-# environments/prod/cluster.yaml — prod is PVC-free + tunnel-only
-seams:
-  statefulStores: false   # no in-cluster db/cache — apps get DATABASE_URL from SSM
-  lanExpose:      false   # Cloudflare Tunnels only, no MetalLB
-  # publicRoutes / autoscale derive from zones / the keda module; volumes default true
-```
-
-- **`cluster.yaml` validates its own claims** — an env can't declare a seam it
-  doesn't back (`publicRoutes` needs zones, `autoscale` needs the keda module,
-  observability endpoints are required).
-- **apps can't request undeclared seams** — a `deploy.yaml` with `db:`/`cache:`
-  in a `statefulStores: false` env, or `expose.lan` where there's no MetalLB, is
-  rejected at render time (fail-closed, not silently degraded).
-- **`idpctl doctor`** probes the live cluster that every declared seam is actually
-  present and healthy (Flux, ESO store, KEDA, ingress/tunnel, observability) — a
-  CI pre-promote / pre-bootstrap gate.
-
-Omit `seams` and they derive permissively from the rest of `cluster.yaml`, so
-existing/forked envs keep working; tighten an env by declaring them.
-
-## The seam contract (loose coupling, enforced)
-
 idp deploys *apps*; the surrounding infra provides the *cluster* — and they meet at a few named
 **seams** (interfaces): in-cluster data stores, LAN exposure, public routes, autoscaling, volumes.
 Each environment **declares which seams it provides** as data, and the platform makes that
@@ -191,6 +166,9 @@ seams:
   time, with a message pointing at the missing seam. So prod stays PVC-free *by contract*, not by hope.
 - **`idpctl doctor`** verifies the live cluster actually backs the declared seams (Flux, ESO store,
   observability services, KEDA + its ownership, ingress/tunnel) — the runtime half of the contract.
+
+Omit `seams` entirely and they derive permissively from the rest of `cluster.yaml`, so
+existing/forked envs keep working; tighten an env by declaring them.
 
 ## CLI
 

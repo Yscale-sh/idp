@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jakenesler/platformctl/schemas/deploy.schema.json",
-  "title": "platformctl deploy.yaml",
-  "description": "The developer 'shopping list' contract. Mirrors internal/appconfig/types.go (App). Used by `platformctl validate`.",
+  "$id": "https://github.com/jakenesler/idp/schemas/deploy.schema.json",
+  "title": "idpctl deploy.yaml",
+  "description": "The developer 'shopping list' contract. Mirrors internal/appconfig/types.go (App). Authoritative validation is in Go (`idpctl validate`); this schema is for editors/docs.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -95,7 +95,8 @@
             "minimal",
             "small",
             "medium",
-            "large"
+            "large",
+            "xlarge"
           ],
           "default": "minimal"
         },
@@ -289,6 +290,10 @@
           "description": "Publish on the LAN via a MetalLB LoadBalancer.",
           "default": false
         },
+        "host": {
+          "type": "string",
+          "description": "LAN hostname published via external-dns (annotates the LoadBalancer Service)."
+        },
         "ip": {
           "type": "string",
           "description": "Pin the MetalLB LoadBalancer IP (optional)."
@@ -304,6 +309,38 @@
           "description": "LoadBalancer port (defaults to runtime.port)."
         }
       }
+    },
+    "env": {
+      "type": "object",
+      "description": "Arbitrary non-secret env vars passed to the container (platform-reserved keys are dropped).",
+      "additionalProperties": { "type": "string" }
+    },
+    "secrets": {
+      "type": "array",
+      "description": "Extra secret env keys beyond the universal set (dev placeholder; prod from the secrets backend).",
+      "items": { "type": "string" }
+    },
+    "probes": {
+      "type": "object",
+      "description": "Health-probe shape. type: http (default) | tcp (port-open) | none.",
+      "properties": {
+        "type": { "type": "string", "enum": ["http", "tcp", "none"] }
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "description": "Mounted volumes: nfs | emptyDir | pvc.",
+      "items": { "type": "object" }
+    },
+    "build": {
+      "type": "object",
+      "description": "Image build hints for the in-cluster image-builder (context, dockerfile, submodules).",
+      "additionalProperties": true
+    },
+    "components": {
+      "type": "array",
+      "description": "Multi-component product: the top level is the shared base, each entry carries only its deltas; each renders to a <app>-<component> HelmRelease.",
+      "items": { "type": "object" }
     }
   },
   "$defs": {

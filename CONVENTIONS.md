@@ -176,12 +176,13 @@ The chart sets these; apps stop hard-coding them. Rendered into
 ### Tier B — Sidecar / infra env (platform-managed)
 
 - **Cloudflare Tunnel**: `TUNNEL_TOKEN` — drives the per-app cloudflared sidecar the
-  app chart renders for `public: true` routes in a non-local (prod) env. It is
-  PLATFORM-managed, not a developer secret: the operator provisions it in SSM at
-  `/apps/<app>/<env>/TUNNEL_TOKEN` when a public route is onboarded (one tunnel +
-  token per app), and the renderer pins it as a remoteRef into the app's runtime
-  Secret (so a missing token fails loudly at the ExternalSecret). The developer
-  never lists it in deploy.yaml; `public: true` + prod is the only trigger.
+  app chart renders for a `public: true` route in a TUNNEL env (prod). (In a LAN env
+  (dev) the same `public: true` route is served by a MetalLB LoadBalancer instead — no
+  tunnel, no token; see "Routing & exposure" in §7.) It is PLATFORM-managed, not a
+  developer secret: the operator provisions it in SSM at `/apps/<app>/<env>/TUNNEL_TOKEN`
+  when a public route is onboarded (one tunnel + token per app), and the renderer pins it
+  as a remoteRef into the app's runtime Secret (so a missing token fails loudly at the
+  ExternalSecret). The developer never lists it in deploy.yaml.
 - **Tailscale egress**: `TAILSCALE_*` / `TS_*` — injected **only when
   `tailscaleEgress: true`** (e.g. reaching an out-of-cluster DB). Most apps drop
   these once in-cluster.
@@ -351,6 +352,25 @@ logging: { enabled: true }
 metrics: { enabled: true }
 tailscaleEgress: false
 ```
+
+### Routing & exposure — one route, env-aware
+
+A `route` with `public: true` means **"expose this to users"**; the platform fulfills it per
+environment, so ONE deploy.yaml works everywhere:
+
+- **Tunnel env (prod):** a Cloudflare Tunnel + DNS for the host (cloudflared sidecar + the
+  `TUNNEL_TOKEN` above).
+- **LAN env (dev):** a MetalLB LAN `LoadBalancer` — the on-prem twin of the tunnel — with an IP
+  auto-assigned from the env's `lanPool` and the host published via external-dns.
+
+The `host` may be a **bare label** (`web`), composed per env under the env's wildcard zone
+(`web.local` in dev, `web.example.com` in prod), or a full hostname (used as-is). A public route is
+allowed where the env provides **either** a tunnel (`publicRoutes`) **or** LAN exposure (`lanExpose`),
+and denied where it provides neither (fail-closed).
+
+`expose` is **optional, advanced pinning** — a public route already gives a LAN `LoadBalancer` in a
+LAN env; set `expose.{ip,pool,host,port}` only to pin a specific address or to expose on the LAN with
+no route.
 
 **Multi-component apps** — one file for a whole product. The top level is the shared base; each
 `components:` entry carries only its deltas (pointer fields override; `env` merges; `secrets` union;
