@@ -39,10 +39,13 @@ routes:
 sizing:
   profile: minimal
   replicas: 2
+  # autoscale DISABLED for the tunnel'd prod cutover: scaleToZero is incompatible with
+  # the cloudflared SIDECAR model — at 0 replicas the connector dies too, so the tunnel
+  # has no origin and nothing can wake it (chicken-and-egg). Fixed replicas: 2 keeps the
+  # tunnel up + gives HA. Re-enable autoscale (scaleToZero:false, or a standalone
+  # cloudflared Deployment in front of the keda-http interceptor) once that's designed.
   autoscale:
-    enabled: true
-    scaleToZero: true   # rarely hit -> go fully to 0 when idle, wake on first request
-    max: 5
+    enabled: false
 
 db:
   # First/default db -> bare DATABASE_URL alias (repoints carshowdb off Supabase
@@ -54,8 +57,11 @@ db:
 logging:
   enabled: true
 
+# metrics DISABLED in this env profile: prod has no Prometheus/monitoring stack, so the
+# ServiceMonitor CRD (monitoring.coreos.com/v1) isn't present and would fail the install.
+# Re-enable once a prod monitoring stack (or env-gated ServiceMonitor rendering) lands.
 metrics:
-  enabled: true
+  enabled: false
 
 # ── Secrets supplied by the env backend (dev=local, prod=ssm) ────────────────
 # These come from the env's SecretStore (NOT committed here). carshowdb's full
