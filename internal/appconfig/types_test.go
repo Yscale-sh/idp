@@ -36,15 +36,22 @@ func TestLoadCarshowdbExample(t *testing.T) {
 	if len(app.DB) != 1 || app.DB[0].Name != "primary" || app.DB[0].Type != "postgres" {
 		t.Errorf("db = %+v", app.DB)
 	}
-	if !app.Sizing.Autoscale.Enabled || app.Sizing.Autoscale.Max != 5 {
-		t.Errorf("autoscale = %+v", app.Sizing.Autoscale)
+	// autoscale is disabled in this example: scaleToZero is incompatible with the
+	// cloudflared sidecar (connector dies at 0 replicas), so the tunnel'd prod app
+	// runs at fixed replicas instead.
+	if app.Sizing.Autoscale.Enabled {
+		t.Errorf("autoscale should be disabled, got %+v", app.Sizing.Autoscale)
 	}
-	// Autoscale kind defaulted.
-	if app.Sizing.Autoscale.Kind != DefaultAutoscaleK {
-		t.Errorf("autoscale kind = %q, want %q", app.Sizing.Autoscale.Kind, DefaultAutoscaleK)
+	// logging stays on; metrics is off because prod has no Prometheus/ServiceMonitor CRD.
+	if !app.LoggingEnabled() {
+		t.Errorf("logging should be on")
 	}
-	if !app.LoggingEnabled() || !app.MetricsEnabled() {
-		t.Errorf("logging/metrics should default on")
+	if app.MetricsEnabled() {
+		t.Errorf("metrics should be off in this example")
+	}
+	// the app declares its SSM secret keys explicitly (per-key remoteRefs).
+	if len(app.Secrets) == 0 {
+		t.Errorf("expected declared secrets keys, got none")
 	}
 }
 

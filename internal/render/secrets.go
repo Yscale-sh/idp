@@ -50,8 +50,21 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	if !needsSecret {
 		return ev
 	}
-	// Pull every key under the app's SSM root.
-	ev.DataFrom = []DataFromValues{{Extract: map[string]string{"key": spec.AppRoot}}}
+	// Pin each declared secret key as an explicit per-key remoteRef under the app
+	// SSM root. We do NOT use dataFrom extract/find: ESO's AWS SSM provider extract
+	// is a single GetParameter (needs one JSON-blob param, which collides with the
+	// per-app TUNNEL_TOKEN sub-param hierarchy) and find.path is unsupported on the
+	// pinned external-secrets 0.14.4 ("unexpected find operator"). Explicit remoteRefs
+	// are the only thing that works against individual /apps/<app>/<env>/* params, and
+	// they also make a missing key fail loudly at the ExternalSecret. Apps therefore
+	// DECLARE every key they need in deploy.yaml `secrets:` (including db URL keys like
+	// DATABASE_URL — in prod those come from SSM, there is no in-cluster provisioner).
+	for _, key := range app.Secrets {
+		ev.RemoteRefs = append(ev.RemoteRefs, RemoteRefValues{
+			SecretKey: key,
+			RemoteRef: map[string]string{"key": spec.AppRoot + "/" + key},
+		})
+	}
 
 	// Pin shared-group keys discovered from the app's declared capabilities.
 	for _, ref := range spec.SharedRefs {

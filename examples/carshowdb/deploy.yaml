@@ -54,6 +54,21 @@ db:
     type: postgres
     size: minimal
 
+# Secret keys this app reads at boot, supplied by the env backend (prod=SSM at
+# /apps/carshowdb/prod/<key>; the renderer pins each as an explicit ExternalSecret
+# remoteRef). DATABASE_URL/PRIMARY_DATABASE_URL included because prod's Postgres is
+# self-hosted CNPG reached via a DATABASE_URL stored in SSM (no in-cluster provisioner).
+secrets:
+  - DATABASE_URL
+  - PRIMARY_DATABASE_URL
+  - JWT_SECRET
+  - GEMINI_API_KEY
+  - GEMINI_MODEL
+  - SENDGRID_API_KEY
+  - STRIPE_PUBLISHABLE_KEY
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+
 logging:
   enabled: true
 

@@ -54,9 +54,7 @@ spec:
         PORT: "8080"
     externalSecret:
       backend: ssm
-      dataFrom:
-      - extract:
-          key: /apps/carshowdb/prod
+      dataFrom: []
       enabled: true
       refreshInterval: 1h
       remoteRefs:
