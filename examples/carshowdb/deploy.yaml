@@ -47,6 +47,11 @@ sizing:
   autoscale:
     enabled: false
 
+# carshowdb-api's health endpoint is /health (the chart default /healthz + /readyz
+# 404 -> liveness kills the pod -> CrashLoopBackOff). Point both probes at /health.
+probes:
+  path: /health
+
 db:
   # First/default db -> bare DATABASE_URL alias (repoints carshowdb off Supabase
   # onto the platform Postgres) plus PRIMARY_DATABASE_URL.
