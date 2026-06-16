@@ -32,6 +32,16 @@ databases:
   - name: cartogopher
     owner: cartogopher
 
+# Declarative login roles + passwords (CNPG managed.roles). Each entry needs an SSM
+# parameter holding a JSON blob {"username":"<role>","password":"<pw>"} that ESO
+# `extract`s into a basic-auth Secret <role>-pg-auth. Use for any role whose password
+# must be GitOps-provisioned (no hand ALTER ROLE) or whose app onboarded AFTER initdb
+# (managed.roles creates it; postInitSQL can't). Roles NOT listed are left untouched
+# (e.g. ones with a hand-set password). Empty by default.
+managedRoles: []
+#  - name: cartogopher
+#    passwordParam: /apps/cartogopher/prod/PG_AUTH
+
 # ── backups: continuous WAL + daily base → R2 (barman; no CSI needed) ──────────
 backup:
   retention: "14d"

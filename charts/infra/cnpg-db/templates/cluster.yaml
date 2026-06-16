@@ -23,6 +23,24 @@ spec:
       {{- range $k, $v := .Values.parameters }}
       {{ $k }}: {{ $v | quote }}
       {{- end }}
+  {{- /* Declarative login roles: CNPG reconciles these continuously (NOT just at
+     initdb), so a role for an app onboarded AFTER the cluster exists is created
+     here — no hand CREATE ROLE — and its password comes from an ESO-synced
+     basic-auth Secret (<role>-pg-auth, from SSM; see managed-roles.yaml). This is
+     how a role+password is provisioned the GitOps way; postInitSQL still creates
+     any non-managed initdb roles. Roles NOT listed here are left untouched. */}}
+  {{- with .Values.managedRoles }}
+  managed:
+    roles:
+    {{- range . }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: {{ .name }}-pg-auth
+    {{- end }}
+  {{- end }}
   monitoring:
     enablePodMonitor: false          # no in-cluster Prometheus to scrape it (yet)
   backup:
@@ -46,14 +64,17 @@ spec:
     initdb:
       database: app
       owner: app
-      {{- /* Only the login ROLES are created at initdb. The per-app DATABASES and
-         their (untrusted: postgis/pgcrypto) EXTENSIONS are managed declaratively by
-         the CNPG Database CRD in databases.yaml — the operator reconciles those AFTER
-         the cluster is healthy, which fixes the old ordering bug: postInitSQL ran
-         CREATE DATABASE *before* postInitTemplateSQL seeded template1, so per-app DBs
-         never inherited the extensions. Roles must pre-exist here so the Database CRD
-         can set ownership; their passwords are set by hand at cutover. */}}
+      {{- /* The per-app DATABASES + their (untrusted: postgis/pgcrypto) EXTENSIONS are
+         managed by the CNPG Database CRD in databases.yaml — reconciled AFTER the
+         cluster is healthy, fixing the old ordering bug (postInitSQL CREATE DATABASE
+         ran before postInitTemplateSQL seeded template1). At initdb we still create
+         each database's owner LOGIN role so a fresh cluster can take ownership; roles
+         for apps onboarded later (and ALL role passwords) are handled declaratively by
+         managed.roles above. Collect DISTINCT owners — CREATE ROLE must not run twice
+         for a shared owner. */}}
+      {{- $owners := list }}
+      {{- range .Values.databases }}{{ $owners = append $owners (.owner | default .name) }}{{- end }}
       postInitSQL:
-      {{- range .Values.databases }}
-        - {{ printf "CREATE ROLE %s LOGIN" (.owner | default .name) | quote }}
+      {{- range ($owners | uniq) }}
+        - {{ printf "CREATE ROLE %s LOGIN" . | quote }}
       {{- end }}

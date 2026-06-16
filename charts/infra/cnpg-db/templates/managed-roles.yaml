@@ -1,0 +1,28 @@
+{{- /* One basic-auth Secret per managed role, for CNPG's role passwordSecret.
+   Each pulls a single SSM parameter that holds a JSON blob {"username","password"}
+   and `extract`s it into username+password keys (extract of ONE parameter is
+   supported by the AWS SSM provider — it's find.path that isn't). target.template
+   stamps the type as kubernetes.io/basic-auth, which is what CNPG requires. */}}
+{{- range .Values.managedRoles }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .name }}-pg-auth
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  refreshInterval: {{ $.Values.externalSecrets.refreshInterval }}
+  secretStoreRef:
+    name: {{ $.Values.externalSecrets.storeRef.name }}
+    kind: {{ $.Values.externalSecrets.storeRef.kind }}
+  target:
+    name: {{ .name }}-pg-auth
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/basic-auth
+  dataFrom:
+    - extract:
+        key: {{ .passwordParam }}
+{{- end }}
