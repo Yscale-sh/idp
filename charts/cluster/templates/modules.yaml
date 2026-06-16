@@ -13,6 +13,12 @@ metadata:
     platform/env: {{ $env }}
     platform/managed-by: platformctl
 spec:
+  {{- /* OCI registries (e.g. Bitnami's oci://registry-1.docker.io/bitnamicharts,
+     now that the classic HTTP charts.bitnami.com repo is retired) MUST declare
+     type: oci — Flux rejects an oci:// URL on a default-type HelmRepository. */}}
+  {{- if hasPrefix "oci://" .repoURL }}
+  type: oci
+  {{- end }}
   url: {{ .repoURL }}
   interval: 10m
 {{- end }}
