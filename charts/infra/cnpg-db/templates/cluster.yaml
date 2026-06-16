@@ -46,6 +46,16 @@ spec:
     initdb:
       database: app
       owner: app
+      {{- /* Extensions created in template1 are inherited by every per-app database
+         created below (and run as the initdb superuser — app roles can't CREATE
+         EXTENSION for untrusted ones like postgis/pgcrypto). Needs an image that
+         ships them, e.g. ghcr.io/cloudnative-pg/postgis. */}}
+      {{- with .Values.templateExtensions }}
+      postInitTemplateSQL:
+        {{- range . }}
+        - {{ printf "CREATE EXTENSION IF NOT EXISTS %s" . | quote }}
+        {{- end }}
+      {{- end }}
       postInitSQL:
       {{- range .Values.databases }}
         - {{ printf "CREATE ROLE %s LOGIN" (.owner | default .name) | quote }}
