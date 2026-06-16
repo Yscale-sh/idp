@@ -1,0 +1,11 @@
+apiVersion: v2
+name: redis
+description: >-
+  Lean standalone Redis for prod/hyperscaler envs on the OFFICIAL redis image
+  (NOT Bitnami — Bitnami deleted its community Docker Hub tags in 2025). Auth on
+  (password from an ESO-synced SSM secret), RDB persistence on a local-path PVC,
+  ClusterIP only. Apps reach it via REDIS_URL in SSM (the same connection-string
+  contract the shared CNPG uses for DATABASE_URL). The prod analogue of dev-redis.
+type: application
+version: 0.1.0
+appVersion: "7.4"
