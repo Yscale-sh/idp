@@ -1,0 +1,9 @@
+# R2 creds for Velero. The shared R2 keys live in SSM; reachable in dev via the
+# homelab-ssm store, in prod via platform-ssm (override in cluster.yaml).
+secretName: velero-r2
+storeRef:
+  name: homelab-ssm
+  kind: ClusterSecretStore
+refreshInterval: 1h
+r2AccessKeyParam: /shared/cloudflare/r2-access-key-id
+r2SecretKeyParam: /shared/cloudflare/r2-secret-access-key

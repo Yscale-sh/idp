@@ -1,0 +1,53 @@
+{{- /* Lean CloudNativePG cluster: small HA, modest resources, low-memory tuning.
+   Backups = continuous WAL + base → R2 (barmanObjectStore) for PITR — no CSI /
+   volume snapshots, so it runs the same on local-path (dev) and block storage
+   (prod). Per-app databases + roles created at init via postInitSQL. */}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.postgresImage }}
+  primaryUpdateStrategy: unsupervised
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+  storage:
+    size: {{ .Values.storage.size }}
+    storageClass: {{ .Values.storage.className }}
+  postgresql:
+    parameters:
+      {{- range $k, $v := .Values.parameters }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+  monitoring:
+    enablePodMonitor: false          # no in-cluster Prometheus to scrape it (yet)
+  backup:
+    retentionPolicy: {{ .Values.backup.retention | quote }}
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.r2.destinationPath | quote }}
+      endpointURL: {{ .Values.backup.r2.endpointURL | quote }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.backup.r2.secretName }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ .Values.backup.r2.secretName }}
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      postInitSQL:
+      {{- range .Values.databases }}
+        - {{ printf "CREATE ROLE %s LOGIN" (.owner | default .name) | quote }}
+        - {{ printf "CREATE DATABASE %s OWNER %s" .name (.owner | default .name) | quote }}
+      {{- end }}

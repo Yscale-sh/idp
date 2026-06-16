@@ -1,0 +1,57 @@
+# cnpg-db — LEAN CloudNativePG: small HA + WAL/base → R2 PITR. Overridable from
+# environments/<env>/cluster.yaml (modules.cnpg-db.values).
+
+clusterName: prod-pg
+instances: 2                        # primary + 1 replica (HA). Minimal; bump only if needed.
+
+postgresImage: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# ── lean footprint (small DBs) ────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+# Low-memory Postgres tuning so it sits comfortably on small nodes.
+parameters:
+  shared_buffers: 64MB
+  max_connections: "50"
+  max_slot_wal_keep_size: 1GB      # cap WAL growth (the disk-incident fix)
+
+storage:
+  size: 5Gi
+  className: local-path            # dev default; prod overrides to linode-block-storage
+
+# Per-app databases + login roles (created at init). Passwords + the app
+# DATABASE_URL are wired at cutover (Gate C), not here.
+databases:
+  - name: carshowdb
+    owner: carshowdb
+  - name: cartogopher
+    owner: cartogopher
+
+# ── backups: continuous WAL + daily base → R2 (barman; no CSI needed) ──────────
+backup:
+  retention: "14d"
+  schedule: "0 0 3 * * *"          # 6-field CNPG cron → 03:00 daily base
+  r2:
+    destinationPath: s3://prod-dr/pg/prod-pg
+    endpointURL: https://R2-ACCOUNT-ID.r2.cloudflarestorage.com
+    secretName: cnpg-r2
+
+externalSecrets:
+  storeRef:
+    name: homelab-ssm              # dev; prod overrides to platform-ssm
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  r2AccessKeyParam: /shared/cloudflare/r2-access-key-id
+  r2SecretKeyParam: /shared/cloudflare/r2-secret-access-key
+
+# ── backup-monitor: the "are we actually backed up?" tripwire ─────────────────
+monitor:
+  enabled: true
+  schedule: "0 8 * * *"
+  maxAgeHours: 26
+  image: bitnami/kubectl:1.31

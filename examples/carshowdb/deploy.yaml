@@ -26,10 +26,11 @@ runtime:
 routes:
   # ONE route, env-aware — no env-specific fields; the same route works in every env.
   # The bare label composes per environment under the env's wildcard zone
-  # (carshowdb.local in dev, carshowdb.<prod-zone> in prod), and `public: true`
-  # ("expose to users") is fulfilled by whatever the env provides: a MetalLB LAN
-  # LoadBalancer with an auto-assigned IP + hostname in dev, a Cloudflare Tunnel in prod.
-  - host: carshowdb
+  # (api.local in dev, api.<prod-zone> i.e. api.carshowdatabase.com in prod), and
+  # `public: true` ("expose to users") is fulfilled by whatever the env provides: a
+  # MetalLB LAN LoadBalancer with an auto-assigned IP + hostname in dev, a Cloudflare
+  # Tunnel in prod. Host is "api" to match the live API at api.carshowdatabase.com.
+  - host: api
     public: true
     access:
       humans: false

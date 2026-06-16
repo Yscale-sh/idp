@@ -1,0 +1,18 @@
+apiVersion: v2
+name: cnpg-db
+description: >
+  A lean CloudNativePG Postgres cluster: a small HA replica set (primary + 1
+  replica) on block storage, with continuous WAL + scheduled base backups to R2
+  (barman) for PITR — NO CSI snapshot machinery, so it runs identically on dev
+  (local-path) and prod. Tuned for small DBs: modest CPU/memory + low shared_buffers.
+  Ships the Cluster, the per-app databases, the daily ScheduledBackup, the R2
+  ExternalSecret, and a backup-monitor CronJob (fails loudly if the last backup
+  is stale). The cloudnative-pg operator is a separate module (cnpg-operator).
+type: application
+version: 0.1.0
+appVersion: "1"
+home: https://github.com/jakenesler/idp
+keywords:
+  - postgres
+  - cloudnativepg
+  - backup
