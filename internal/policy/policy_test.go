@@ -288,14 +288,24 @@ func TestCheckSeams_StatefulStoreGate(t *testing.T) {
 	if vs := checkSeams(dbApp, devCluster()); len(vs) != 0 {
 		t.Errorf("dev (default seams) should allow db, got %v", vs)
 	}
-	// env that does NOT provide statefulStores -> db is rejected.
+	// env with NO in-cluster stores AND a local backend (no managed store) -> db
+	// is rejected: the store can't be provided either way.
 	no := false
-	prod := devCluster()
+	prod := devCluster() // local backend
 	prod.Env = "prod"
 	prod.Seams = &clusterenv.Seams{StatefulStores: &no}
 	vs := checkSeams(dbApp, prod)
 	if len(vs) != 1 || vs[0].Kind != KindUnprovidedSeam {
-		t.Fatalf("statefulStores:false should reject db with UnprovidedSeam, got %v", vs)
+		t.Fatalf("statefulStores:false + local backend should reject db with UnprovidedSeam, got %v", vs)
+	}
+	// real prod: no in-cluster stores BUT a managed (ssm) backend supplies
+	// DATABASE_URL/REDIS_URL from SSM -> db is ALLOWED (managed/external).
+	ssmProd := devCluster()
+	ssmProd.Env = "prod"
+	ssmProd.Secrets.Backend = clusterenv.BackendSSM
+	ssmProd.Seams = &clusterenv.Seams{StatefulStores: &no}
+	if vs := checkSeams(dbApp, ssmProd); len(vs) != 0 {
+		t.Errorf("statefulStores:false + ssm backend should allow managed db, got %v", vs)
 	}
 	// nil cluster degrades to no-op.
 	if vs := checkSeams(dbApp, nil); vs != nil {

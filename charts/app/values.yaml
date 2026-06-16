@@ -46,9 +46,9 @@
 #                         an app boots without the external-secrets operator.
 #   platform              the label set stamped on every generated object.
 #
-# NOTE: there is NO tailscaleEgress key. Tailscale egress is a deploy.yaml-level
-# concern (appconfig) and is NOT rendered into chart values (the chart never
-# consumed it). Re-add here only if a Tailscale sidecar template is introduced.
+# NOTE: tailscaleEgress (appconfig, deploy.yaml-level) drives the `tailscale` block
+# below — the renderer sets tailscale.enabled for a non-local/prod app that declared
+# it, and deployment.yaml then adds the userspace Tailscale egress sidecar.
 
 # ── image ────────────────────────────────────────────────────────────────────
 image:
@@ -126,6 +126,19 @@ tunnel:
   enabled: false
   image: cloudflare/cloudflared:2024.10.0
   ingress: []   # [{hostname: app.example.com, service: http://localhost:8080}] — metadata; CF owns live ingress for token tunnels
+
+# ── tailscale: egress sidecar (renderer-driven) ───────────────────────────────
+# The renderer sets tailscale.enabled=true for a NON-LOCAL (prod) app that declares
+# `tailscaleEgress: true` (appconfig). When enabled, deployment.yaml adds a userspace
+# tailscale sidecar (no host privileges) that joins the tailnet so the app can reach
+# out-of-cluster services with no in-cluster DNS — e.g. a Linode prod pod shipping
+# logs to the on-prem Loki. TS_AUTHKEY comes from the runtime Secret (prod:
+# ExternalSecret from the SHARED SSM key /shared/tailscale/auth-key). Default OFF so
+# dev and any app that didn't opt in render exactly as before.
+tailscale:
+  enabled: false
+  image: ghcr.io/tailscale/tailscale:v1.78.1
+  hostname: ""   # renderer sets <workload>-<env> (the node's tailnet name)
 
 # ── certManager: optional in-cluster TLS Certificate (chart-only, default OFF) ─
 # OFF by default — Cloudflare Tunnel terminates TLS at the edge. For in-cluster

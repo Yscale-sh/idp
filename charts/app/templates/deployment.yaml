@@ -149,6 +149,13 @@ spec:
         {{- if .Values.tunnel.enabled }}
         {{- include "app.cloudflaredSidecar" . | nindent 8 }}
         {{- end }}
+        {{- /* Tailscale egress sidecar — rendered when the renderer set
+        tailscale.enabled (a non-local/prod app that declared tailscaleEgress) so
+        the app can reach out-of-cluster services with no in-cluster DNS, e.g. the
+        on-prem Loki for log shipping. Userspace tailscaled; no host privileges. */}}
+        {{- if .Values.tailscale.enabled }}
+        {{- include "app.tailscaleSidecar" . | nindent 8 }}
+        {{- end }}
         {{- /* General extension point for any other platform-injected containers;
         the Go renderer appends fully-formed specs here. Empty by default → no-op. */}}
         {{- with .Values.sidecars }}

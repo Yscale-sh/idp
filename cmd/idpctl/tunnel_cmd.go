@@ -85,16 +85,23 @@ func addTunnelFlags(cmd *cobra.Command, o *tunnelOpts) {
 // cfClientFor resolves the API token + account id (flag or env) and returns a
 // client plus the resolved account/zone ids.
 func cfClientFor(o tunnelOpts) (cl *clouddns.Client, accountID, zoneID string, err error) {
+	return resolveCFCreds(o.accountID, o.zoneID)
+}
+
+// resolveCFCreds turns the Cloudflare API token (env), account id (arg or env),
+// and optional zone id (arg or env) into a client. Shared by `tunnel`/`dns` and
+// the promote DNS-on-deploy step so every path reads credentials the same way.
+func resolveCFCreds(accountID, zoneID string) (cl *clouddns.Client, account, zone string, err error) {
 	apiToken := strings.TrimSpace(firstNonEmpty(os.Getenv("CLOUDFLARE_API_TOKEN"), os.Getenv("CF_API_TOKEN")))
 	if apiToken == "" {
 		return nil, "", "", fmt.Errorf("CLOUDFLARE_API_TOKEN (or CF_API_TOKEN) is not set")
 	}
-	accountID = strings.TrimSpace(firstNonEmpty(o.accountID, os.Getenv("CLOUDFLARE_ACCOUNT_ID"), os.Getenv("CF_ACCOUNT_ID")))
-	if accountID == "" {
+	account = strings.TrimSpace(firstNonEmpty(accountID, os.Getenv("CLOUDFLARE_ACCOUNT_ID"), os.Getenv("CF_ACCOUNT_ID")))
+	if account == "" {
 		return nil, "", "", fmt.Errorf("Cloudflare account id is not set (pass --account-id or CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID)")
 	}
-	zoneID = strings.TrimSpace(firstNonEmpty(o.zoneID, os.Getenv("CLOUDFLARE_ZONE_ID"), os.Getenv("CF_ZONE_ID")))
-	return clouddns.New(apiToken), accountID, zoneID, nil
+	zone = strings.TrimSpace(firstNonEmpty(zoneID, os.Getenv("CLOUDFLARE_ZONE_ID"), os.Getenv("CF_ZONE_ID")))
+	return clouddns.New(apiToken), account, zone, nil
 }
 
 func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {

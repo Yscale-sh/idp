@@ -344,3 +344,48 @@ modules:
       per-app logging.retention feature. 30d default retention; runtime
       overrides ConfigMap hook; credentials via env expansion from a Secret.
       Enable in every env that sets observability.lokiURL.
+
+  # ── velero — cluster backup & restore → R2 ───────────────────────────────────
+  velero:
+    source: chartRepo
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    version: 12.0.2
+    defaultNamespace: velero
+    description: >-
+      Velero: scheduled backups of PVCs + k8s resources to R2 with one-command
+      restore. Prod uses CSI volume snapshots (Linode block storage); dev/homelab
+      (no CSI) uses node-agent file-system backup (kopia). R2 creds come from the
+      velero-creds module (credentials.existingSecret=velero-r2). REPLACES the
+      per-engine DB operators — run plain Postgres/Mongo and let Velero snapshot them.
+
+  # ── velero-creds — the R2 `cloud` credentials Secret Velero reads ─────────────
+  velero-creds:
+    source: localChart
+    chart: charts/infra/velero-creds
+    defaultNamespace: velero
+    description: >-
+      Builds the velero-r2 Secret (AWS `cloud` INI file) from the shared SSM R2
+      keys via external-secrets, so Velero's existingSecret can point at it.
+
+  # ── cnpg-operator — the CloudNativePG operator ───────────────────────────────
+  cnpg-operator:
+    source: chartRepo
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    version: 0.28.3
+    defaultNamespace: cnpg-system
+    description: >-
+      The CloudNativePG operator (CNCF) — manages Postgres clusters as Pods+PVCs
+      directly (no StatefulSet, no Patroni/etcd). Pair with the cnpg-db module,
+      which declares the actual cluster + its WAL/base → R2 PITR backups.
+
+  # ── cnpg-db — a lean Postgres cluster + barman→R2 PITR backups ────────────────
+  cnpg-db:
+    source: localChart
+    chart: charts/infra/cnpg-db
+    defaultNamespace: cnpg
+    description: >-
+      A small HA CloudNativePG cluster (primary + 1 replica), lean resources +
+      low-memory tuning, continuous WAL + daily base backups to R2 (barman, no
+      CSI), per-app databases, and a backup-monitor tripwire. Needs cnpg-operator.

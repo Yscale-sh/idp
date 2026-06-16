@@ -37,6 +37,10 @@ type Values struct {
 	Probes    ProbesValues         `json:"probes"`
 	Routes    []RouteValues        `json:"routes"`
 	Tunnel    *TunnelValues        `json:"tunnel,omitempty"`
+	// Tailscale is the egress sidecar (userspace tailscaled) for reaching
+	// out-of-cluster services with no in-cluster DNS — e.g. the on-prem Loki for
+	// log shipping. Nil unless the app sets tailscaleEgress on a non-local env.
+	Tailscale *TailscaleValues `json:"tailscale,omitempty"`
 	// LanExpose is the on-prem MetalLB LoadBalancer (the on-prem twin of the
 	// tunnel). Nil unless the app opts in via expose.lan on a local backend.
 	LanExpose *LanExposeValues `json:"lanExpose,omitempty"`
@@ -342,6 +346,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		Probes:            buildProbes(app),
 		Routes:            buildRoutes(app),
 		Tunnel:            buildTunnel(app, c),
+		Tailscale:         buildTailscale(app, c),
 		LanExpose:         buildLanExpose(app, c),
 		Volumes:           vols,
 		VolumeMounts:      mounts,
@@ -431,6 +436,33 @@ func buildTunnel(app appconfig.App, c *clusterenv.Config) *TunnelValues {
 		}
 	}
 	return &TunnelValues{Enabled: true, Ingress: ingress}
+}
+
+// TailscaleValues renders the userspace Tailscale egress sidecar config (see
+// charts/app/templates/tailscale-sidecar.tpl). Hostname is the node's tailnet name.
+type TailscaleValues struct {
+	Enabled  bool   `json:"enabled"`
+	Image    string `json:"image,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// tailscaleEgressActive reports whether the app's Tailscale egress sidecar should
+// render: the app opted in (tailscaleEgress) AND the env is NON-LOCAL (managed/prod),
+// where out-of-cluster services (e.g. the on-prem Loki) aren't reachable by cluster
+// DNS. Dev (homelab) reaches them on the LAN directly, so no sidecar there — the same
+// "declare once, the env fulfills it differently" contract as the tunnel.
+func tailscaleEgressActive(app appconfig.App, c *clusterenv.Config) bool {
+	return app.TailscaleEgress && !isLocalBackend(c)
+}
+
+// buildTailscale returns the egress sidecar config, or nil when it does not apply (so
+// the values field is omitted and apps that didn't opt in render byte-identically).
+// The tailnet hostname is <workload>-<env> for cross-env uniqueness.
+func buildTailscale(app appconfig.App, c *clusterenv.Config) *TailscaleValues {
+	if !tailscaleEgressActive(app, c) {
+		return nil
+	}
+	return &TailscaleValues{Enabled: true, Hostname: app.Workload() + "-" + c.Env}
 }
 
 // reservedEnvKeys are platform-owned (Tier-A / data-store) names an app's env{}

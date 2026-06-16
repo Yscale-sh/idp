@@ -35,11 +35,28 @@ func hasKind(vs Violations, k Kind) bool {
 	return false
 }
 
-func TestSeams_DBRejectedWhenNoStatefulStores(t *testing.T) {
+func TestSeams_DBAllowedViaManagedBackend(t *testing.T) {
+	// A managed (ssm) prod env hosts no in-cluster stores, but supplies
+	// DATABASE_URL/REDIS_URL from the secrets backend — so a declared db is ALLOWED
+	// (the renderer wires the URL from SSM and skips the in-cluster chart).
 	app := appconfig.App{App: "x", DB: []appconfig.DataStore{{Name: "primary", Type: "postgres"}}}
 	vs := Check(Input{App: app, Env: "prod", Image: "x:prod-1", Cluster: prodNoStores()})
+	if hasKind(vs, KindUnprovidedSeam) {
+		t.Fatalf("db in a managed (ssm) env must be allowed (DATABASE_URL from SSM), got %v", vs)
+	}
+}
+
+func TestSeams_DBRejectedWhenNoStoreAndNoManagedBackend(t *testing.T) {
+	// No in-cluster stores AND a local backend (no managed store to supply the URL)
+	// -> the store can't be provided either way, so db is rejected.
+	no := false
+	c := devCluster() // local backend
+	c.Env = "prod"
+	c.Seams = &clusterenv.Seams{StatefulStores: &no}
+	app := appconfig.App{App: "x", DB: []appconfig.DataStore{{Name: "primary", Type: "postgres"}}}
+	vs := Check(Input{App: app, Env: "prod", Image: "x:prod-1", Cluster: c})
 	if !hasKind(vs, KindUnprovidedSeam) {
-		t.Fatalf("db in a no-store env must be rejected, got %v", vs)
+		t.Fatalf("db with no in-cluster store and no managed backend must be rejected, got %v", vs)
 	}
 	if !strings.Contains(vs.Error(), "statefulStores") {
 		t.Errorf("violation should name the statefulStores seam, got %q", vs.Error())

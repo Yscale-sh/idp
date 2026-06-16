@@ -23,7 +23,8 @@ import (
 // running git itself, so any CI shape can own the actual push.
 func newPromoteCmd() *cobra.Command {
 	var from, file, root, sourceRoot, deployTime string
-	var force bool
+	var cfAccountID, cfZoneID string
+	var force, skipDNS, dnsDryRun bool
 	cmd := &cobra.Command{
 		Use:   "promote <app-or-workload> <target-env>",
 		Short: "Promote a workload between envs, pinned to the image already running in the source env",
@@ -110,6 +111,25 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 				branch = "main"
 			}
 			fmt.Fprintf(out, "next: commit %s on branch %q (the branch %s's Flux tracks); rollback = git revert that commit.\n", path, branch, toEnv)
+
+			// DNS-on-deploy: when the TARGET env serves a real Cloudflare Tunnel
+			// (seams.tunnel) and the app has public routes, reconcile the tunnel
+			// ingress + the proxied DNS so the promoted app is actually reachable —
+			// no manual Cloudflare step. A no-op for non-tunnel envs (dev, or a prod
+			// stand-in with tunnel:false) and for private/route-less apps, so those
+			// promotes stay render-only exactly as before.
+			hosts := publicTunnelHosts(app, target)
+			if len(hosts) == 0 {
+				return nil
+			}
+			if skipDNS {
+				fmt.Fprintf(out, "dns-on-deploy: SKIPPED (--skip-dns) for %s — wire it by hand or run `idpctl tunnel up`\n", strings.Join(hosts, ", "))
+				return nil
+			}
+			fmt.Fprintf(out, "dns-on-deploy: reconciling Cloudflare tunnel + DNS for %s\n", strings.Join(hosts, ", "))
+			if err := ensureTunnelDNS(out, app, toEnv, hosts, cfAccountID, cfZoneID, dnsDryRun); err != nil {
+				return fmt.Errorf("%w\n(the render is written; set the Cloudflare creds and re-run promote or `idpctl tunnel up`, or pass --skip-dns to deploy without touching DNS)", err)
+			}
 			return nil
 		},
 	}
@@ -119,6 +139,10 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 	cmd.Flags().StringVar(&sourceRoot, "source-root", "", "repo root to READ the source env from (default: --root); set to a main checkout when promoting to a branch-isolated env like prod")
 	cmd.Flags().StringVar(&deployTime, "deploy-time", "", "CI deploy/build stamp for DEPLOY_TIME")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the target env's promotion.from gate")
+	cmd.Flags().BoolVar(&skipDNS, "skip-dns", false, "render only; skip the Cloudflare tunnel + DNS reconcile (which otherwise runs when the target env provides a tunnel)")
+	cmd.Flags().BoolVar(&dnsDryRun, "dns-dry-run", false, "preview the tunnel + DNS changes without writing to Cloudflare")
+	cmd.Flags().StringVar(&cfAccountID, "account-id", "", "Cloudflare account id for the DNS step (default: env CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID)")
+	cmd.Flags().StringVar(&cfZoneID, "zone-id", "", "Cloudflare zone id for the DNS step (default: env CLOUDFLARE_ZONE_ID / CF_ZONE_ID, else looked up)")
 	return cmd
 }
 

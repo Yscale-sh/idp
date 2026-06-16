@@ -29,6 +29,12 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	if envProvidesTunnel(c) && hasPublicRoute(app) {
 		needsSecret = true
 	}
+	// A non-local (prod) app with tailscaleEgress runs the tailscale sidecar, whose
+	// TS_AUTHKEY comes from the shared SSM key — so it needs the runtime Secret even
+	// with no db/cache/storage/route.
+	if tailscaleEgressActive(app, c) {
+		needsSecret = true
+	}
 
 	ev := ExternalSecretValues{
 		Enabled:         needsSecret,
@@ -67,8 +73,22 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 			RemoteRef: map[string]string{"key": spec.AppRoot + "/TUNNEL_TOKEN"},
 		})
 	}
+	// The tailscale egress sidecar reads TS_AUTHKEY from the SHARED auth key in SSM
+	// (not the per-app root) — pin it explicitly so the dependency + its SSM location
+	// are visible and a missing key fails loudly at the ExternalSecret.
+	if tailscaleEgressActive(app, c) {
+		ev.RemoteRefs = append(ev.RemoteRefs, RemoteRefValues{
+			SecretKey: "TS_AUTHKEY",
+			RemoteRef: map[string]string{"key": sharedTailscaleAuthKey},
+		})
+	}
 	return ev
 }
+
+// sharedTailscaleAuthKey is the SSM path of the shared Tailscale auth key every
+// tailscaleEgress app pulls into its runtime Secret as TS_AUTHKEY (the on-prem
+// homelab already provisions it; same /shared/<group>/* convention as stripe etc.).
+const sharedTailscaleAuthKey = "/shared/tailscale/auth-key"
 
 func hasServiceToken(app appconfig.App) bool {
 	for _, r := range app.Routes {

@@ -175,9 +175,18 @@ func checkSeams(app appconfig.App, c *clusterenv.Config) Violations {
 		vs = append(vs, &Violation{KindUnprovidedSeam,
 			fmt.Sprintf("requests %s but env %q does not provide the %q seam — %s", req, c.Env, seam, hint)})
 	}
-	if (len(app.DB) > 0 || len(app.Cache) > 0) && !s.StatefulStores {
+	// db/cache is satisfiable EITHER in-cluster (statefulStores) OR by a managed
+	// secrets backend (ssm) that supplies the connection URL: in a managed env the
+	// renderer skips the in-cluster chart (render.BuildStoreReleases returns nil)
+	// and leaves DATABASE_URL/REDIS_URL to come from the backend (render.buildStores
+	// leaves the connection nil) — the same "declare once, the env fulfills it
+	// differently" contract as routes (LAN in dev, tunnel in prod). Deny only when
+	// the env can provide the store NEITHER way: no in-cluster stores AND no managed
+	// backend (e.g. a local-backend env that opted out of statefulStores).
+	managedStores := c.Secrets.Backend == clusterenv.BackendSSM
+	if (len(app.DB) > 0 || len(app.Cache) > 0) && !s.StatefulStores && !managedStores {
 		deny("an in-cluster data store (db/cache)", "statefulStores",
-			"this env hosts no stores; wire DATABASE_URL/REDIS_URL from the secrets backend (managed/external) instead")
+			"this env hosts no stores and has no managed secrets backend to supply DATABASE_URL/REDIS_URL")
 	}
 	if app.Expose != nil && app.Expose.LAN && !s.LANExpose {
 		deny("expose.lan", "lanExpose", "no MetalLB here; apps are ClusterIP behind tunnels")

@@ -6,7 +6,9 @@
 //	  sha := github head(app.repo, app.branch)
 //	  if sha changed:
 //	    derive the build set from the shopping lists (dedup by image)
-//	    build each image via the homelab image-builder  (internal/builder)
+//	    diff sha against the last-shipped sha; build only images whose inputs
+//	      (context/dockerfile/submodules) changed — skipped images reuse the tag
+//	      already pinned in the umbrella (internal/builder)
 //	    render each component into the platform umbrella (internal/deploy)
 //	    git commit + push the platform repo             -> Flux reconciles
 //
@@ -136,7 +138,7 @@ func main() {
 				continue
 			}
 			logf("[%s] new commit %s on %s — shipping", app.Name, short(sha), app.Branch)
-			if err := shipApp(ctx, reg, app, sha, token, b); err != nil {
+			if err := shipApp(ctx, reg, app, sha, last[app.Name], token, b); err != nil {
 				logf("[%s] ship FAILED @ %s: %v", app.Name, short(sha), redact(err.Error()))
 				continue
 			}
@@ -147,9 +149,14 @@ func main() {
 	}
 }
 
-// shipApp fetches the app's shopping lists at sha, builds the derived image set,
-// then renders+commits+pushes.
-func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, token string, b *builder.Builder) error {
+// shipApp fetches the app's shopping lists at sha, builds only the images whose
+// build inputs actually changed since base, then renders+commits+pushes. An image
+// whose context/Dockerfile/submodules are untouched is NOT rebuilt — the render
+// reuses the tag already pinned in the umbrella, so a docs- or config-only commit
+// (and, in a multi-component repo, a change confined to one component's context)
+// no longer spins a build Job for every image. base is the last-shipped sha ("" on
+// first ship / after a restart with no seed → rebuild everything, the safe default).
+func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token string, b *builder.Builder) error {
 	tag := short(sha)
 	comps, err := fetchComponents(ctx, app, sha, token)
 	if err != nil {
@@ -159,8 +166,37 @@ func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, token string,
 	if len(targets) == 0 {
 		return fmt.Errorf("no buildable images in %s shopping lists", app.Name)
 	}
-	// 1. Build each image (expensive; do it once, outside the push-retry loop).
+
+	// Resolve the changed-path set once. buildAll fails safe to a full rebuild when
+	// we can't trust the diff: no base (first ship / unseeded restart), a compare
+	// error (force-push dropped base, API hiccup), or a truncated file list.
+	buildAll := base == ""
+	var changed []string
+	if !buildAll {
+		var truncated bool
+		changed, truncated, err = githubChangedFiles(ctx, app.Repo, base, sha, token)
+		if err != nil {
+			logf("[%s] diff %s..%s failed (%v) — rebuilding all images", app.Name, short(base), tag, redact(err.Error()))
+			buildAll = true
+		} else if truncated {
+			logf("[%s] diff %s..%s too large to inspect — rebuilding all images", app.Name, short(base), tag)
+			buildAll = true
+		}
+	}
+
+	// Build only affected images (expensive; once, outside the push-retry loop).
+	// tagByImage maps each image to the tag the render must pin: the new sha tag for
+	// rebuilt images, the existing umbrella tag for skipped ones.
+	tagByImage := make(map[string]string, len(targets))
 	for _, t := range targets {
+		if !buildAll && !buildAffected(changed, t, app.DeployFiles) {
+			if old, ok := umbrellaTagFor(reg, t.Image); ok {
+				tagByImage[t.Image] = old
+				logf("[%s] skip build %s — no change under %q; reuse %s", app.Name, t.Image, t.Context, old)
+				continue
+			}
+			// Never shipped (or umbrella unreadable): no tag to reuse → build it.
+		}
 		image := t.Image + ":" + tag
 		logf("[%s] building %s (context %q, submodules %v)", app.Name, image, t.Context, t.Submodules)
 		if err := b.Build(ctx, builder.Spec{
@@ -169,9 +205,11 @@ func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, token string,
 		}); err != nil {
 			return fmt.Errorf("build %s: %w", image, err)
 		}
+		tagByImage[t.Image] = tag
 	}
-	// 2. Render + commit + push, retrying on a concurrent-writer push rejection.
-	return renderCommitPush(ctx, reg, app, comps, tag)
+
+	// Render + commit + push, retrying on a concurrent-writer push rejection.
+	return renderCommitPush(ctx, reg, app, comps, tag, tagByImage)
 }
 
 // fetchComponents downloads and parses every shopping list for the app at sha.
@@ -238,13 +276,13 @@ func deriveBuildTargets(comps []component) []buildTarget {
 // origin (discarding any leftover writes from a prior partial failure or a local
 // commit a rejected push left behind), so there is no ff-only wedge and no stale
 // half-shipped umbrella swept into a later commit.
-func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []component, tag string) error {
+func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []component, tag string, tagByImage map[string]string) error {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := syncToRemote(ctx, reg); err != nil {
 			return fmt.Errorf("sync platform repo: %w", err)
 		}
-		if err := renderComponents(reg, comps, tag); err != nil {
+		if err := renderComponents(reg, comps, tag, tagByImage); err != nil {
 			return err
 		}
 		if err := git(ctx, reg.PlatformRoot, "add", "-A"); err != nil {
@@ -272,13 +310,20 @@ func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []c
 
 // renderComponents upserts each parsed component into the umbrella with image
 // repo:tag (a fresh DeployTime stamp forces a rollout even on a same-tag re-ship).
-func renderComponents(reg *Registry, comps []component, tag string) error {
+// Each component pins its image at tagByImage[image] — the freshly-built sha tag
+// for rebuilt images, or the reused existing tag for ones the build step skipped;
+// defaultTag covers any image not in the map (e.g. an imageless component).
+func renderComponents(reg *Registry, comps []component, defaultTag string, tagByImage map[string]string) error {
 	cluster, err := loadCluster(reg.PlatformRoot, reg.Env)
 	if err != nil {
 		return fmt.Errorf("load cluster: %w", err)
 	}
 	deployTime := time.Now().UTC().Format(time.RFC3339)
 	for _, c := range comps {
+		tag := tagByImage[c.cfg.Runtime.Image]
+		if tag == "" {
+			tag = defaultTag
+		}
 		image := c.cfg.Runtime.Image + ":" + tag
 		plan, err := deploy.Build(deploy.Request{
 			App: c.cfg, Env: reg.Env, Image: image, DeployTime: deployTime,
@@ -330,6 +375,76 @@ func imageAtTag(text, image, tag string) bool {
 	return false
 }
 
+// umbrellaTagFor reads the tag currently pinned for image in the committed
+// umbrella, so a skipped (unchanged) image can be re-rendered at the same tag
+// instead of a fresh sha tag that has no pushed artifact behind it. The match on
+// repository is exact (trimmed) so `foo` does not match `foo-bar`.
+func umbrellaTagFor(reg *Registry, image string) (string, bool) {
+	data, err := os.ReadFile(filepath.Join(reg.PlatformRoot, "clusters", reg.Env, "platform.yaml"))
+	if err != nil {
+		return "", false
+	}
+	lines := strings.Split(string(data), "\n")
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "repository: "+image {
+			for j := i + 1; j < len(lines) && j <= i+3; j++ {
+				s := strings.TrimSpace(lines[j])
+				if strings.HasPrefix(s, "tag: ") {
+					return strings.TrimSpace(strings.TrimPrefix(s, "tag:")), true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// buildAffected reports whether any changed file is a build input for target t:
+// a file under its build context or under one of its submodules. The app's own
+// deploy.yaml shopping lists are NOT build inputs (they drive the render, not the
+// image), so a config-only edit re-renders without a rebuild.
+func buildAffected(changed []string, t buildTarget, deployFiles []string) bool {
+	skip := make(map[string]bool, len(deployFiles))
+	for _, d := range deployFiles {
+		skip[d] = true
+	}
+	for _, f := range changed {
+		if skip[f] {
+			continue
+		}
+		if underDir(f, t.Context) || underAny(f, t.Submodules) {
+			return true
+		}
+	}
+	return false
+}
+
+// underDir reports whether file lives under dir. A root context (""/".") contains
+// everything, so any change is conservatively treated as a build input — the
+// Dockerfile there may COPY any path and we don't parse it.
+func underDir(file, dir string) bool {
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" || dir == "." {
+		return true
+	}
+	return file == dir || strings.HasPrefix(file, dir+"/")
+}
+
+// underAny reports whether file is, or lives under, any of dirs (used for
+// submodule paths, which may sit outside the build context — a submodule pointer
+// bump shows up as its gitlink path changing in the parent repo).
+func underAny(file string, dirs []string) bool {
+	for _, d := range dirs {
+		d = strings.TrimSuffix(d, "/")
+		if d == "" {
+			continue
+		}
+		if file == d || strings.HasPrefix(file, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- GitHub API ----
 
 func githubHeadSHA(ctx context.Context, repo, branch, token string) (string, error) {
@@ -344,6 +459,26 @@ func githubHeadSHA(ctx context.Context, repo, branch, token string) (string, err
 		return "", fmt.Errorf("empty sha for %s@%s", repo, branch)
 	}
 	return out.SHA, nil
+}
+
+// githubChangedFiles returns the file paths changed between base and head via the
+// compare API. truncated is true when GitHub caps the response (>300 files), in
+// which case the list is incomplete and the caller must rebuild conservatively.
+func githubChangedFiles(ctx context.Context, repo, base, head, token string) (files []string, truncated bool, err error) {
+	u := fmt.Sprintf("https://api.github.com/repos/%s/compare/%s...%s", repo, base, head)
+	var out struct {
+		Files []struct {
+			Filename string `json:"filename"`
+		} `json:"files"`
+	}
+	if err := githubJSON(ctx, u, token, &out); err != nil {
+		return nil, false, err
+	}
+	files = make([]string, 0, len(out.Files))
+	for _, f := range out.Files {
+		files = append(files, f.Filename)
+	}
+	return files, len(out.Files) >= 300, nil
 }
 
 func githubFile(ctx context.Context, repo, path, ref, token string) ([]byte, error) {
