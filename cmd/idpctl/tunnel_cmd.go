@@ -44,8 +44,8 @@ can source them from SSM:
 }
 
 type tunnelOpts struct {
-	file, env, name, accountID, zoneID, tokenOut string
-	deleteTunnel, printToken, dryRun             bool
+	file, env, root, name, accountID, zoneID, tokenOut string
+	deleteTunnel, printToken, dryRun                   bool
 }
 
 func newTunnelUpCmd() *cobra.Command {
@@ -76,6 +76,7 @@ func newTunnelDownCmd() *cobra.Command {
 func addTunnelFlags(cmd *cobra.Command, o *tunnelOpts) {
 	cmd.Flags().StringVarP(&o.file, "file", "f", "deploy.yaml", "path to deploy.yaml")
 	cmd.Flags().StringVarP(&o.env, "env", "e", appconfig.EnvProd, "target environment (dev|prod)")
+	cmd.Flags().StringVar(&o.root, "root", ".", "platform repo root (holds environments/) — for composing route hosts under the env's zone")
 	cmd.Flags().StringVar(&o.name, "name", "", "tunnel name (default: <app>-<env>)")
 	cmd.Flags().StringVar(&o.accountID, "account-id", "", "Cloudflare account id (default: env CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID)")
 	cmd.Flags().StringVar(&o.zoneID, "zone-id", "", "Cloudflare zone id (default: env CLOUDFLARE_ZONE_ID / CF_ZONE_ID, else looked up)")
@@ -110,9 +111,16 @@ func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
-	hosts := publicHosts(app)
+	// Compose the route hosts under the env's zone (bare "api" -> "api.<zone>") —
+	// the SAME helper the promote DNS-on-deploy uses, so the bootstrap ingress +
+	// DNS match what every deploy re-asserts (a bare label here 404s at cloudflared).
+	c, err := loadCluster(o.root, o.env)
+	if err != nil {
+		return fmt.Errorf("load %s cluster env: %w", o.env, err)
+	}
+	hosts := publicTunnelHosts(app, c)
 	if len(hosts) == 0 {
-		fmt.Fprintf(out, "tunnel: %s declares no public routes (routes[].public: true) — nothing to do\n", app.App)
+		fmt.Fprintf(out, "tunnel: %s declares no public routes (routes[].public: true) on a tunnel env — nothing to do\n", app.App)
 		return nil
 	}
 	cl, accountID, zoneID, err := cfClientFor(o)
@@ -189,7 +197,11 @@ func runTunnelDown(cmd *cobra.Command, o tunnelOpts) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
-	hosts := publicHosts(app)
+	c, err := loadCluster(o.root, o.env)
+	if err != nil {
+		return fmt.Errorf("load %s cluster env: %w", o.env, err)
+	}
+	hosts := publicTunnelHosts(app, c)
 	cl, accountID, zoneID, err := cfClientFor(o)
 	if err != nil {
 		return err

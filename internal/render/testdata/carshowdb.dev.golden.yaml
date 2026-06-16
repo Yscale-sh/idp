@@ -70,9 +70,7 @@ spec:
         PORT: "8080"
     externalSecret:
       backend: local
-      dataFrom:
-      - extract:
-          key: /apps/carshowdb/dev
+      dataFrom: []
       enabled: true
       refreshInterval: 1h
       remoteRefs: []

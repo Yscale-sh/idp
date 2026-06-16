@@ -64,9 +64,7 @@ spec:
         PORT: "3000"
     externalSecret:
       backend: local
-      dataFrom:
-      - extract:
-          key: /apps/dummy-ui/dev
+      dataFrom: []
       enabled: true
       refreshInterval: 1h
       remoteRefs: []

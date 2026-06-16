@@ -1,0 +1,11 @@
+apiVersion: v2
+name: loki-proxy
+description: >-
+  Centralized Loki egress for a hyperscaler env. A single tailscale node (kernel
+  mode) joins the tailnet and socat-forwards a ClusterIP :8090 to the on-prem
+  loki-ingest tailnet endpoint, so every app in the env ships logs to the on-prem
+  Loki via http://loki-proxy.<ns>.svc:8090 — no per-app tailscale sidecar, no Loki
+  in this cluster. The egress twin of onprem/logging/loki-ingest.
+type: application
+version: 0.1.0
+appVersion: "1.0"

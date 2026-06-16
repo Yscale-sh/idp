@@ -1,0 +1,64 @@
+{{- /* tailscale (kernel mode, NET_ADMIN + /dev/net/tun) joins the tailnet; socat
+   forwards the in-cluster :8090 to the on-prem loki-ingest tailnet endpoint.
+   NET_ADMIN/TUN are permitted on hardened jaK3s nodes for exactly this egress. */}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+    app: loki-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki-proxy
+  template:
+    metadata:
+      labels:
+        app: loki-proxy
+    spec:
+      containers:
+        - name: tailscale
+          image: {{ .Values.tailscale.image }}
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: loki-proxy-ts
+                  key: TS_AUTHKEY
+            - name: TS_HOSTNAME
+              value: {{ .Values.tailscale.hostname | quote }}
+            - name: TS_KUBE_SECRET   # "" = don't persist state to a kube Secret (no RBAC)
+              value: ""
+            - name: TS_USERSPACE
+              value: "false"         # kernel mode (TUN) — faster, real tailnet routing
+            - name: TS_ACCEPT_DNS
+              value: "false"
+            - name: TS_AUTH_ONCE
+              value: "true"
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - name: tun
+              mountPath: /dev/net/tun
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        - name: socat
+          image: {{ .Values.socat.image }}
+          args:
+            - "TCP-LISTEN:{{ .Values.service.port }},fork,reuseaddr"
+            - "TCP:{{ .Values.ingest.host }}:{{ .Values.ingest.port }}"
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

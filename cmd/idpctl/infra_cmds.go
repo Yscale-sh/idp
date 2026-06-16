@@ -44,8 +44,12 @@ func warnMissingLoki(c *clusterenv.Config) {
 	if c.Observability.LokiURL == "" {
 		return
 	}
-	if m, ok := c.Modules["loki"]; ok && m.Enabled {
-		return
+	// An in-cluster `loki` OR a `loki-proxy` egress (forwards over the tailnet to an
+	// out-of-cluster Loki, e.g. prod -> on-prem) both legitimately back LOKI_URL.
+	for _, name := range []string{"loki", "loki-proxy"} {
+		if m, ok := c.Modules[name]; ok && m.Enabled {
+			return
+		}
 	}
 	fmt.Fprintln(os.Stderr, "WARNING: observability.lokiURL is set but no enabled `loki` module backs it —")
 	fmt.Fprintln(os.Stderr, "  every app gets LOKI_URL injected and logging.retention renders overrides for")

@@ -46,18 +46,14 @@ spec:
     initdb:
       database: app
       owner: app
-      {{- /* Extensions created in template1 are inherited by every per-app database
-         created below (and run as the initdb superuser — app roles can't CREATE
-         EXTENSION for untrusted ones like postgis/pgcrypto). Needs an image that
-         ships them, e.g. ghcr.io/cloudnative-pg/postgis. */}}
-      {{- with .Values.templateExtensions }}
-      postInitTemplateSQL:
-        {{- range . }}
-        - {{ printf "CREATE EXTENSION IF NOT EXISTS %s" . | quote }}
-        {{- end }}
-      {{- end }}
+      {{- /* Only the login ROLES are created at initdb. The per-app DATABASES and
+         their (untrusted: postgis/pgcrypto) EXTENSIONS are managed declaratively by
+         the CNPG Database CRD in databases.yaml — the operator reconciles those AFTER
+         the cluster is healthy, which fixes the old ordering bug: postInitSQL ran
+         CREATE DATABASE *before* postInitTemplateSQL seeded template1, so per-app DBs
+         never inherited the extensions. Roles must pre-exist here so the Database CRD
+         can set ownership; their passwords are set by hand at cutover. */}}
       postInitSQL:
       {{- range .Values.databases }}
         - {{ printf "CREATE ROLE %s LOGIN" (.owner | default .name) | quote }}
-        - {{ printf "CREATE DATABASE %s OWNER %s" .name (.owner | default .name) | quote }}
       {{- end }}

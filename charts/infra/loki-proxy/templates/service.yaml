@@ -1,0 +1,18 @@
+{{- /* The in-cluster endpoint apps point LOKI_URL at:
+   http://loki-proxy.<ns>.svc.cluster.local:<port> -> socat -> on-prem Loki. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+    app: loki-proxy
+spec:
+  selector:
+    app: loki-proxy
+  ports:
+    - name: loki
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+      protocol: TCP
