@@ -79,6 +79,9 @@ components:
       - APP_BASE_URL
       - UI_BASE_URL
       - API_BASE_URL
+      # API_ENDPOINT / UI_ENDPOINT are SCHEME-LESS host:port (the app prepends http://
+      # itself). With a scheme they become http://http//... → DNS fail → 502 on every
+      # UI-proxied route (/auth/google, /legal/*). Values live in SSM, not here.
       - API_ENDPOINT
       - UI_ENDPOINT
       - DAYS_TO_BILL
