@@ -59,7 +59,7 @@ secrets:
   - NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY
 
 sizing:
-  profile: minimal
+  profile: medium            # Next.js/Prisma OOMs on minimal's 256Mi (exit 137); 1Gi fits
   replicas: 1
   autoscale:
     enabled: false
