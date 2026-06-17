@@ -32,6 +32,8 @@ components:
       - name: primary           # DATABASE_URL + PRIMARY_DATABASE_URL from SSM (CNPG `cartogopher`)
         type: postgres
     secrets:
+      - DATABASE_URL            # db: primary injects these env vars as secretKeyRefs,
+      - PRIMARY_DATABASE_URL    # so they must be pulled into the ExternalSecret too
       - REDIS_URL               # shared family redis (constructed in SSM)
       - SENDGRID_API_KEY
       - STRIPE_PUBLIC_KEY

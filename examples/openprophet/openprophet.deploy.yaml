@@ -28,6 +28,8 @@ components:
     env:
       POSTHOG_HOST: https://us.i.posthog.com
     secrets:
+      - DATABASE_URL            # db: primary injects these env vars as secretKeyRefs,
+      - PRIMARY_DATABASE_URL    # so they must be pulled into the ExternalSecret too
       - REDIS_URL               # shared family redis
       - SENDGRID_API_KEY
       - STRIPE_SECRET_KEY
