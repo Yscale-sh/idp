@@ -1,0 +1,46 @@
+# unbelievable (unbelievablesite.com) — Gin marketing site. Cut over from LKE.
+#
+# STATELESS on the platform: its database is external MongoDB Atlas
+# (mongodb+srv://...@unbelievablesite.vktsm.mongodb.net, hardcoded in db/mongo.go),
+# so there is NO CNPG database — the app just keeps connecting to Atlas with
+# MONGO_USERNAME/MONGO_PASSWORD. ⚠️ Atlas Network Access must allow the jaK3s node
+# egress IPs (172.238.175.181 / 172.236.96.50 / 172.236.96.80) or be 0.0.0.0/0.
+#
+# Render: idpctl render --env prod -f unbelievable.deploy.yaml --image ghcr.io/jakenesler/unbelievablesite:db73b9c5
+app: unbelievable
+component: site
+
+runtime:
+  image: ghcr.io/jakenesler/unbelievablesite   # tag from --image
+  port: 8080
+
+routes:
+  - host: unbelievablesite.com
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+  - host: www.unbelievablesite.com
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+
+sizing:
+  profile: minimal
+  replicas: 2
+  autoscale:
+    enabled: false
+
+probes:
+  type: tcp                  # gin app, no HTTP health route
+
+secrets:                     # the ONLY env it reads (Atlas user/pass + Sendgrid)
+  - MONGO_USERNAME
+  - MONGO_PASSWORD
+  - SENDGRID_API_KEY
+
+logging:
+  enabled: true
+metrics:
+  enabled: false
