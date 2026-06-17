@@ -15,6 +15,13 @@ runtime:
 probes:
   type: tcp
 
+# db block ENABLES the externalSecret (a bare secrets list alone is dropped). The
+# signing app DOES read DATABASE_URL (injected here); PRIMARY_DATABASE_URL is the
+# unused replica alias the db:primary store also emits.
+db:
+  - name: primary
+    type: postgres
+
 env:
   NODE_ENV: production
   PORT: "3002"
@@ -23,6 +30,7 @@ env:
 
 secrets:
   - DATABASE_URL
+  - PRIMARY_DATABASE_URL
   - SESSION_SECRET
   - STRIPE_SECRET_KEY
   - STRIPE_WEBHOOK_SECRET

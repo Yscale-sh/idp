@@ -18,6 +18,13 @@ runtime:
 probes:
   type: tcp
 
+# db block ENABLES the externalSecret (a bare secrets list alone is dropped by the
+# renderer). documenso reads NEXT_PRIVATE_DATABASE_URL (below); the injected
+# DATABASE_URL/PRIMARY_DATABASE_URL are unused but make the secret render.
+db:
+  - name: primary
+    type: postgres
+
 env:
   PORT: "3000"
   NEXTAUTH_URL: https://sign.anyrentcloud.com
@@ -37,6 +44,8 @@ env:
   NEXT_PRIVATE_SIGNING_TRANSPORT: local
 
 secrets:
+  - DATABASE_URL              # injected by db:primary (unused by documenso) — enables the secret
+  - PRIMARY_DATABASE_URL
   - NEXTAUTH_SECRET
   - NEXT_PRIVATE_ENCRYPTION_KEY
   - NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY

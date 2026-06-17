@@ -29,6 +29,13 @@ components:
   - component: api
     probes:
       type: tcp
+    # db block is what ENABLES the externalSecret (a bare `secrets:` list alone is
+    # dropped — idp only wires secrets for components with a store or public routes).
+    # The app actually reads split POSTGRES_* (below); DATABASE_URL is injected too
+    # but unused — harmless, and it makes the secret render.
+    db:
+      - name: primary
+        type: postgres
     env:
       POSTGRES_HOST: prod-pg-rw.cnpg.svc.cluster.local
       POSTGRES_PORT: "5432"
@@ -37,6 +44,8 @@ components:
       ALLOW_UNSIGNED_WEBHOOKS: "false"
       DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
     secrets: &anyrent_secrets
+      - DATABASE_URL
+      - PRIMARY_DATABASE_URL
       - POSTGRES_DB
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -96,6 +105,9 @@ components:
       port: 3000
     probes:
       type: tcp
+    db:                                        # enables the externalSecret (see api note)
+      - name: primary
+        type: postgres
     env:
       POSTGRES_HOST: prod-pg-rw.cnpg.svc.cluster.local
       POSTGRES_PORT: "5432"
