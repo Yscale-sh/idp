@@ -21,12 +21,32 @@ func publicTunnelHosts(app appconfig.App, c *clusterenv.Config) []string {
 		return nil
 	}
 	var hosts []string
-	for _, r := range app.Routes {
-		if r.Public && strings.TrimSpace(r.Host) != "" {
-			hosts = append(hosts, c.ComposeHost(r.Host))
+	// Expand so a MULTI-COMPONENT app's routes (which live on a component, e.g. the
+	// nginx `router`, not the top level) are found. Expand() returns the app itself
+	// for a single-component app, so this stays correct for the simple case.
+	for _, comp := range app.Expand() {
+		for _, r := range comp.Routes {
+			if r.Public && strings.TrimSpace(r.Host) != "" {
+				hosts = append(hosts, c.ComposeHost(r.Host))
+			}
 		}
 	}
 	return hosts
+}
+
+// tunnelOriginPort is the container port the tunnel ingress should target: the port
+// of the component that carries the public routes (e.g. a multi-component app's
+// nginx `router`, where the cloudflared sidecar is injected and proxies to
+// localhost:<that port>). Falls back to the base app port for a single-component app.
+func tunnelOriginPort(app appconfig.App) int {
+	for _, comp := range app.Expand() {
+		for _, r := range comp.Routes {
+			if r.Public && strings.TrimSpace(r.Host) != "" {
+				return comp.Runtime.Port
+			}
+		}
+	}
+	return app.Runtime.Port
 }
 
 // ensureTunnelDNS makes the app reachable through its Cloudflare Tunnel: ensure the
@@ -65,8 +85,8 @@ func ensureTunnelDNS(out io.Writer, app appconfig.App, env string, hosts []strin
 	}
 	target := clouddns.TunnelTarget(tunnelID)
 
-	// 2. Push the ingress (each host -> the app's local port) + the catch-all.
-	svc := fmt.Sprintf("http://localhost:%d", app.Runtime.Port)
+	// 2. Push the ingress (each host -> the routed component's local port) + catch-all.
+	svc := fmt.Sprintf("http://localhost:%d", tunnelOriginPort(app))
 	rules := make([]clouddns.IngressRule, 0, len(hosts)+1)
 	for _, h := range hosts {
 		rules = append(rules, clouddns.IngressRule{Hostname: h, Service: svc})

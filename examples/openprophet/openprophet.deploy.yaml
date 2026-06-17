@@ -1,0 +1,86 @@
+# openprophet — multi-component prod cutover from the legacy LKE prod_cluster.
+#
+# Three components: api (the app, port 3738) + datastream (the data-feed worker,
+# port 2222) + router (PUBLIC nginx: openprophet.io / -> api, /data/* -> datastream
+# prefix-stripped, /data/v1/{admin,webhooks} -> 404). api + datastream stay internal.
+# Separate CNPG database `openprophet` (own role) + the SHARED family redis. Was
+# coupled to cartogopher on LKE (same PG instance + redis); here it's its own DB/role.
+#
+# Render: idpctl render --env prod -f openprophet.deploy.yaml --image ghcr.io/jakenesler/openprophet-api:7368aadc
+app: openprophet
+
+runtime:
+  image: ghcr.io/jakenesler/openprophet-api    # tag supplied by `idpctl render --image`
+  port: 3738
+
+logging:
+  enabled: true
+metrics:
+  enabled: false
+
+components:
+  - component: api
+    probes:
+      type: tcp                 # cutover-safe (empty DB pre-restore); verify via tunnel
+    db:
+      - name: primary           # DATABASE_URL from SSM (CNPG `openprophet`, openprophet role)
+        type: postgres
+    env:
+      POSTHOG_HOST: https://us.i.posthog.com
+    secrets:
+      - REDIS_URL               # shared family redis
+      - SENDGRID_API_KEY
+      - STRIPE_SECRET_KEY
+      - STRIPE_WEBHOOK_SECRET
+      - STRIPE_SUB_PRICE_ID
+      - STRIPE_SUB_PRICE_MONTHLY_ID
+      - SLACK_WEBHOOK_URL
+      - POSTHOG_PROJECT_TOKEN
+      - DOMAIN
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+
+  - component: datastream
+    runtime:
+      image: ghcr.io/jakenesler/openprophet-datastream   # tag = shared --image (7368aadc)
+      port: 2222
+    probes:
+      type: tcp
+    db: []                      # datastream has no DB on LKE — redis + external feeds only
+    secrets:
+      - REDIS_URL
+      - OPS_ADMIN_TOKEN
+      - FRED_API_KEY
+    sizing:
+      profile: minimal
+      replicas: 1
+      autoscale:
+        enabled: false
+
+  - component: router
+    runtime:
+      image: ghcr.io/jakenesler/openprophet-router   # tag = shared --image (7368aadc)
+      port: 80
+    probes:
+      type: tcp
+    routes:
+      - host: openprophet.io
+        public: true
+        access:
+          humans: false
+          serviceToken: false
+      - host: www.openprophet.io
+        public: true
+        access:
+          humans: false
+          serviceToken: false
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+    db: []
+    secrets: []

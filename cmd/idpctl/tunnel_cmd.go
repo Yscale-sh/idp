@@ -45,7 +45,7 @@ can source them from SSM:
 
 type tunnelOpts struct {
 	file, env, root, name, accountID, zoneID, tokenOut string
-	deleteTunnel, printToken, dryRun                   bool
+	deleteTunnel, printToken, dryRun, skipDNS          bool
 }
 
 func newTunnelUpCmd() *cobra.Command {
@@ -56,6 +56,7 @@ func newTunnelUpCmd() *cobra.Command {
 		RunE:  func(cmd *cobra.Command, _ []string) error { return runTunnelUp(cmd, o) },
 	}
 	addTunnelFlags(cmd, &o)
+	cmd.Flags().BoolVar(&o.skipDNS, "skip-dns", false, "create the tunnel + token + ingress but DON'T upsert the public DNS CNAME — for staging an app live on its tunnel before the production cutover (flip DNS later)")
 	cmd.Flags().StringVar(&o.tokenOut, "token-out", "", "write the minted TUNNEL_TOKEN to this file (mode 0600) for the pipeline to stash in SSM")
 	cmd.Flags().BoolVar(&o.printToken, "print-token", false, "also print TUNNEL_TOKEN=<token> to stdout (mask it in CI)")
 	return cmd
@@ -168,8 +169,10 @@ func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {
 		fmt.Fprintf(out, "TUNNEL_TOKEN=%s\n", token)
 	}
 
-	// 3. Push the ingress (host -> the app's local port) + the required catch-all.
-	svc := fmt.Sprintf("http://localhost:%d", app.Runtime.Port)
+	// 3. Push the ingress (host -> the routed component's local port) + catch-all.
+	// For a multi-component app the cloudflared sidecar lives in the component that
+	// owns the public routes (the nginx router), so target ITS port, not the base.
+	svc := fmt.Sprintf("http://localhost:%d", tunnelOriginPort(app))
 	rules := make([]clouddns.IngressRule, 0, len(hosts)+1)
 	for _, h := range hosts {
 		rules = append(rules, clouddns.IngressRule{Hostname: h, Service: svc})
@@ -183,6 +186,13 @@ func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {
 	}
 
 	// 4. Upsert the proxied CNAME per host -> <tunnelID>.cfargotunnel.com.
+	// --skip-dns stages the tunnel live (connected + routable by ingress) WITHOUT
+	// repointing public DNS — so an app can be verified on its tunnel before the
+	// production cutover. Flip DNS later with a plain `tunnel up` (or promote).
+	if o.skipDNS {
+		fmt.Fprintf(out, "%sdns: SKIPPED (--skip-dns) for %s — public CNAME(s) not touched; tunnel target is %s\n", prefix, strings.Join(hosts, ", "), target)
+		return nil
+	}
 	comment := fmt.Sprintf("idp: %s/%s (managed by idpctl tunnel)", app.App, o.env)
 	results, err := cl.SyncHosts(hosts, zoneID, target, true /* proxied */, comment, false, o.dryRun)
 	if err != nil {

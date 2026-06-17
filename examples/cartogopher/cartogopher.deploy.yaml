@@ -1,0 +1,93 @@
+# cartogopher — multi-component prod cutover from the legacy LKE prod_cluster.
+#
+# Three components: api (the app, port 3001) + landing (static marketing nginx,
+# port 80) + router (the PUBLIC entrypoint: nginx that fans cartogopher.com paths to
+# api/landing — idp routing is host->one-service, so the legacy path-fanout lives in
+# this router). api + landing stay internal (no public route). DB = shared CNPG
+# (prod-pg, database `cartogopher`, DATABASE_URL in SSM). Redis = shared family redis
+# (REDIS_URL in SSM). See examples/cartogopher/router/nginx.conf for the upstreams.
+#
+# Render: idpctl render --env prod -f cartogopher.deploy.yaml --image ghcr.io/jakenesler/cartogopher-api:26757289
+app: cartogopher
+
+# ── shared base (api inherits; landing/router override runtime) ───────────────
+runtime:
+  image: ghcr.io/jakenesler/cartogopher-api   # tag supplied by `idpctl render --image`
+  port: 3001
+
+logging:
+  enabled: true
+metrics:
+  enabled: false                # prod has no Prometheus/ServiceMonitor CRD
+
+components:
+  - component: api
+    # TCP probe (not HTTP) for the cutover: the app boots against an EMPTY DB before
+    # the pg_restore, and an HTTP health route that checks the DB would CrashLoop it.
+    # Port-open is enough to keep it up; serving is verified via the tunnel. Refine
+    # to an HTTP health path post-cutover.
+    probes:
+      type: tcp
+    db:
+      - name: primary           # DATABASE_URL + PRIMARY_DATABASE_URL from SSM (CNPG `cartogopher`)
+        type: postgres
+    secrets:
+      - REDIS_URL               # shared family redis (constructed in SSM)
+      - SENDGRID_API_KEY
+      - STRIPE_PUBLIC_KEY
+      - STRIPE_SECRET_KEY
+      - STRIPE_WEBHOOK_SECRET
+      - STRIPE_MONTHLY_PRICE_ID
+      - STRIPE_ANNUAL_PRICE_ID
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_REGION
+      - AWS_S3_BUCKET
+      - DOMAIN
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+
+  - component: landing
+    runtime:
+      image: ghcr.io/jakenesler/cartogopher-landing   # tag = shared --image (26757289)
+      port: 80
+    probes:
+      type: tcp                 # static nginx, no HTTP health route
+    sizing:
+      profile: minimal
+      replicas: 1
+      autoscale:
+        enabled: false
+    db: []                      # static site: opt out of the app stores/secrets
+    secrets: []
+
+  - component: router
+    runtime:
+      image: ghcr.io/jakenesler/cartogopher-router   # tag = shared --image (26757289)
+      port: 80
+    probes:
+      type: tcp
+    # The PUBLIC routes live here (the router is the only public component). The
+    # cloudflared sidecar fronts cartogopher.com + www and forwards to localhost:80
+    # (this nginx), which path-fans to the api/landing ClusterIP services.
+    routes:
+      - host: cartogopher.com
+        public: true
+        access:
+          humans: false
+          serviceToken: false
+      - host: www.cartogopher.com
+        public: true
+        access:
+          humans: false
+          serviceToken: false
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+    db: []
+    secrets: []
