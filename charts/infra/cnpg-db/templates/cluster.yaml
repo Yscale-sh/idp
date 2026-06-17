@@ -12,6 +12,15 @@ metadata:
 spec:
   instances: {{ .Values.instances }}
   imageName: {{ .Values.postgresImage }}
+  {{- /* Pull secret for a PRIVATE operand image (e.g. our ghcr postgis+pgvector bake).
+     The default CNPG operands are public so this is empty; set imagePullSecrets when
+     postgresImage points at a private registry (ghcr-pull.yaml syncs the Secret here). */}}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- range . }}
+    - name: {{ . }}
+    {{- end }}
+  {{- end }}
   primaryUpdateStrategy: unsupervised
   resources:
     {{- toYaml .Values.resources | nindent 4 }}

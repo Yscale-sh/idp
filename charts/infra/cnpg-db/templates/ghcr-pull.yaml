@@ -1,0 +1,27 @@
+{{- /* ghcr pull secret in the cnpg namespace, so CNPG can pull a PRIVATE operand
+   image (our postgis+pgvector bake). Mirrors the per-app-namespace ghcr-pull the
+   cluster chart renders: a dockerconfigjson Secret sourced from the SAME SSM param
+   (/homelab/ghcr/pull-dockerconfigjson). Only rendered when ghcrPull.enabled. */}}
+{{- if .Values.ghcrPull.enabled }}
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.ghcrPull.secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  refreshInterval: {{ .Values.externalSecrets.refreshInterval }}
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.storeRef.name }}
+    kind: {{ .Values.externalSecrets.storeRef.kind }}
+  target:
+    name: {{ .Values.ghcrPull.secretName }}
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/dockerconfigjson
+  data:
+    - secretKey: .dockerconfigjson
+      remoteRef:
+        key: {{ .Values.ghcrPull.remoteKey }}
+{{- end }}

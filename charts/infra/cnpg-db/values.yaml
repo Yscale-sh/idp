@@ -6,6 +6,17 @@ instances: 2                        # primary + 1 replica (HA). Minimal; bump on
 
 postgresImage: ghcr.io/cloudnative-pg/postgresql:16.4
 
+# Pull secret(s) for a private operand image. Empty for the public CNPG operands;
+# prod sets [ghcr-pull] because postgresImage is our private ghcr postgis+pgvector bake.
+imagePullSecrets: []
+
+# ghcr pull-secret sync into THIS namespace (for a private postgresImage). Disabled by
+# default (public operands need none); prod enables it + names the SSM dockerconfigjson.
+ghcrPull:
+  enabled: false
+  secretName: ghcr-pull
+  remoteKey: /homelab/ghcr/pull-dockerconfigjson
+
 # ── lean footprint (small DBs) ────────────────────────────────────────────────
 resources:
   requests:
