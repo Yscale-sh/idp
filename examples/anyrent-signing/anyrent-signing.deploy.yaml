@@ -1,0 +1,42 @@
+# anyrent-signing — the bridge service between anyrent and documenso
+# (esign.anyrentcloud.com). Separate idp app: own DB (CNPG `anyrent-signing`, 6 tables)
+# and own secret namespace (its SESSION_SECRET + STRIPE_WEBHOOK_SECRET diverge from the
+# main anyrent app). Internal-only: the anyrent router proxies esign.* here. Talks to
+# documenso over the in-cluster service (no public hairpin) + handles its webhooks.
+#
+# Render: idpctl render --env prod -f anyrent-signing.deploy.yaml --image ghcr.io/jakenesler/anyrent-signing:prod-0df8c47468f7ec90ef89ce8e7e48476186be7299
+app: anyrent-signing
+component: app
+
+runtime:
+  image: ghcr.io/jakenesler/anyrent-signing   # full repo:tag from --image
+  port: 3002
+
+probes:
+  type: tcp
+
+env:
+  NODE_ENV: production
+  PORT: "3002"
+  FRONTEND_URL: https://esign.anyrentcloud.com
+  DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
+
+secrets:
+  - DATABASE_URL
+  - SESSION_SECRET
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - SENDGRID_API_KEY
+  - DOCUMENSO_API_KEY
+  - DOCUMENSO_WEBHOOK_SECRET
+
+sizing:
+  profile: minimal
+  replicas: 1
+  autoscale:
+    enabled: false
+
+logging:
+  enabled: true
+metrics:
+  enabled: false

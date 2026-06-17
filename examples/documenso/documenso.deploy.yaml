@@ -1,0 +1,61 @@
+# documenso — self-hosted e-signature (sign.anyrentcloud.com), part of the anyrent
+# family but a SEPARATE idp app: own DB (CNPG `documenso`, 48 tables migrated intact)
+# and own secret namespace (its encryption keys + signing cert are carried VERBATIM
+# from LKE — change them and existing signed documents break). Public image
+# documenso/documenso:v2.7.0 (same version as LKE, so the restored schema matches and
+# Prisma runs no migration). Internal-only: the anyrent router proxies sign.* here.
+# Uploads + storage stay on R2 (bucket anyrent-documenso). The signing cert is passed
+# as base64 contents (NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS) — no file mount needed.
+#
+# Render: idpctl render --env prod -f documenso.deploy.yaml --image documenso/documenso:v2.7.0
+app: documenso
+component: app
+
+runtime:
+  image: documenso/documenso          # full repo:tag from --image
+  port: 3000
+
+probes:
+  type: tcp
+
+env:
+  PORT: "3000"
+  NEXTAUTH_URL: https://sign.anyrentcloud.com
+  NEXT_PUBLIC_WEBAPP_URL: https://sign.anyrentcloud.com
+  NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+  NEXT_PUBLIC_DISABLE_SIGNUP: "true"
+  NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
+  NEXT_PRIVATE_SMTP_HOST: smtp.sendgrid.net
+  NEXT_PRIVATE_SMTP_PORT: "2525"
+  NEXT_PRIVATE_SMTP_USERNAME: apikey
+  NEXT_PRIVATE_SMTP_FROM_ADDRESS: noreply@anyrentcloud.com
+  NEXT_PRIVATE_SMTP_FROM_NAME: AnyRent Signing
+  NEXT_PRIVATE_UPLOAD_TRANSPORT: s3
+  NEXT_PRIVATE_UPLOAD_BUCKET: anyrent-documenso
+  NEXT_PRIVATE_UPLOAD_REGION: auto
+  NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE: "true"
+  NEXT_PRIVATE_SIGNING_TRANSPORT: local
+
+secrets:
+  - NEXTAUTH_SECRET
+  - NEXT_PRIVATE_ENCRYPTION_KEY
+  - NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY
+  - NEXT_PRIVATE_SIGNING_PASSPHRASE
+  - NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS
+  - NEXT_PRIVATE_DATABASE_URL
+  - NEXT_PRIVATE_DIRECT_DATABASE_URL
+  - NEXT_PRIVATE_SMTP_PASSWORD
+  - NEXT_PRIVATE_UPLOAD_ENDPOINT
+  - NEXT_PRIVATE_UPLOAD_ACCESS_KEY_ID
+  - NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY
+
+sizing:
+  profile: minimal
+  replicas: 1
+  autoscale:
+    enabled: false
+
+logging:
+  enabled: true
+metrics:
+  enabled: false

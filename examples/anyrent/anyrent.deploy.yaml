@@ -1,0 +1,145 @@
+# anyrent — multi-component prod cutover from the SEPARATE anyrent-production LKE
+# cluster (550390) + its Aiven managed PG (406649, migrated wholesale into CNPG).
+#
+# Components: api (Go API, anyrentcloud.io, :8080) + ui (frontend, anyrentcloud.com,
+# :3000) + router (PUBLIC entrypoint: nginx host-fanout — .com->ui, .io->api,
+# sign->documenso, esign->signing). api+ui stay internal (ClusterIP, no public route).
+# documenso + anyrent-signing are SEPARATE idp apps (own DB/secret namespaces); the
+# router reaches them cross-namespace. See examples/anyrent/router/nginx.conf.
+#
+# DB: shared CNPG prod-pg, database `anyrent` (pgvector for embeddings), split
+# POSTGRES_* env (no DATABASE_URL). Redis: dedicated redis.anyrent-data (fresh cache).
+# R2 storage (bucket anyrentcloudprod) stays external — creds carried in SSM. The
+# legacy per-pod tailscale sidecars + KEDA-http documenso routing are dropped.
+#
+# Render: idpctl render --env prod -f anyrent.deploy.yaml --image ghcr.io/jakenesler/anyrent-api:lke-20260617
+app: anyrent
+
+runtime:
+  image: ghcr.io/jakenesler/anyrent-api      # tag supplied by `idpctl render --image`
+  port: 8080
+
+logging:
+  enabled: true
+metrics:
+  enabled: false
+
+components:
+  # ── api: Go backend, public host anyrentcloud.io (via router) ───────────────
+  - component: api
+    probes:
+      type: tcp
+    env:
+      POSTGRES_HOST: prod-pg-rw.cnpg.svc.cluster.local
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      ENABLE_DEBUG_ENDPOINTS: "false"
+      ALLOW_UNSIGNED_WEBHOOKS: "false"
+      DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
+    secrets: &anyrent_secrets
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - REDIS_ADDR
+      - REDIS_ENDPOINT
+      - REDIS_PASSWORD
+      - SECURE_COOKIES
+      - SESSION_SECRET
+      - ENVIRONMENT
+      - env
+      - STRIPE_PUBLIC_KEY
+      - STRIPE_SECRET_KEY
+      - STRIPE_WEBHOOK_SECRET
+      - STRIPE_ACCOUNT_ID
+      - STRIPE_PUBLIC_KEY_TEST
+      - STRIPE_SECRET_KEY_TEST
+      - ANYRENT_ACCOUNT_ID
+      - SENDGRID_API_KEY
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_REGION
+      - AWS_S3_BUCKET
+      - R2_ENDPOINT
+      - R2_ACCESS_KEY_ID
+      - R2_SECRET_ACCESS_KEY
+      - R2_BUCKET
+      - SUCCESS_URL
+      - CANCEL_URL
+      - APP_BASE_URL
+      - UI_BASE_URL
+      - API_BASE_URL
+      - API_ENDPOINT
+      - UI_ENDPOINT
+      - DAYS_TO_BILL
+      - NOTIFICATIONS
+      - TRUSTED_AUTH_PROXIES
+      - CORS_ALLOWED_PATTERN
+      - GOOGLE_CLIENT_ID
+      - GOOGLE_CLIENT_SECRET
+      - GOOGLE_REDIRECT_URL
+      - INTERNAL_API_TOKEN
+      - DOCUMENSO_API_KEY
+      - GEMINI_API_KEY
+      - LLM_API_KEY
+      - LLM_MODEL
+      - LLM_ADDRESS
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+
+  # ── ui: frontend, public host anyrentcloud.com (via router) ─────────────────
+  - component: ui
+    runtime:
+      image: ghcr.io/jakenesler/anyrent-ui    # tag = shared --image (lke-20260617)
+      port: 3000
+    probes:
+      type: tcp
+    env:
+      POSTGRES_HOST: prod-pg-rw.cnpg.svc.cluster.local
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      COOKIE_DOMAIN: .anyrentcloud.com
+      DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
+      SIGNING_APP_URL: http://anyrent-signing-app.anyrent-signing-prod-app.svc.cluster.local:3002
+    secrets: *anyrent_secrets
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+
+  # ── router: PUBLIC nginx host-fanout (the only public component) ────────────
+  - component: router
+    runtime:
+      image: ghcr.io/jakenesler/anyrent-router  # tag = shared --image (lke-20260617)
+      port: 80
+    probes:
+      type: tcp
+    routes:
+      - host: anyrentcloud.com
+        public: true
+        access: {humans: false, serviceToken: false}
+      - host: www.anyrentcloud.com
+        public: true
+        access: {humans: false, serviceToken: false}
+      - host: anyrentcloud.io
+        public: true
+        access: {humans: false, serviceToken: false}
+      - host: www.anyrentcloud.io
+        public: true
+        access: {humans: false, serviceToken: false}
+      - host: sign.anyrentcloud.com
+        public: true
+        access: {humans: false, serviceToken: false}
+      - host: esign.anyrentcloud.com
+        public: true
+        access: {humans: false, serviceToken: false}
+    sizing:
+      profile: minimal
+      replicas: 2
+      autoscale:
+        enabled: false
+    db: []
+    secrets: []
