@@ -43,9 +43,11 @@ components:
       ENABLE_DEBUG_ENDPOINTS: "false"
       ALLOW_UNSIGNED_WEBHOOKS: "false"
       DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
+      TAILSCALE_HOSTNAME: anyrentapi
     secrets: &anyrent_secrets
       - DATABASE_URL
       - PRIMARY_DATABASE_URL
+      - TAILSCALE_AUTH_KEY      # the Go app embeds a tsnet client + log.Fatals if unset
       - POSTGRES_DB
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -94,7 +96,7 @@ components:
       - LLM_ADDRESS
     sizing:
       profile: minimal
-      replicas: 2
+      replicas: 1                # tsnet node per pod — keep 1 (matches LKE; avoids hostname clash)
       autoscale:
         enabled: false
 
@@ -115,10 +117,11 @@ components:
       COOKIE_DOMAIN: .anyrentcloud.com
       DOCUMENSO_URL: http://documenso-app.documenso-prod-app.svc.cluster.local:3000
       SIGNING_APP_URL: http://anyrent-signing-app.anyrent-signing-prod-app.svc.cluster.local:3002
+      TAILSCALE_HOSTNAME: anyrentui
     secrets: *anyrent_secrets
     sizing:
       profile: minimal
-      replicas: 2
+      replicas: 1                # tsnet node per pod — keep 1 (matches LKE; avoids hostname clash)
       autoscale:
         enabled: false
 
