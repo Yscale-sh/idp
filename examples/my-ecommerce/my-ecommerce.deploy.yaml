@@ -1,0 +1,71 @@
+# my-ecommerce — Main Street Music Store. Single Gin component (Vue frontend baked
+# in), :8080. Cut over from the legacy LKE prod_cluster.
+#
+# DB: its own isolated CNPG database `my-ecommerce` (on LKE it lived in a SHARED
+# 300-table `postgres` box with AnyRent/Nextcloud/Metabase — only its ~21 tables
+# migrated). The app reads SPLIT `POSTGRES_*` env (NOT a DATABASE_URL), so there is
+# no `db:` block — POSTGRES_HOST/PORT/DB/USER/SSLMODE are plain env, POSTGRES_PASSWORD
+# is a secret; the CNPG DB+role are provisioned at the cluster level (cnpg-db.databases
+# + managedRoles). Object storage = Linode Object Storage (bucket `ecommerce`,
+# endpoint hardcoded in Go) — R2 is a code-change fast-follow, not an env swap.
+#
+# Render: idpctl render --env prod -f my-ecommerce.deploy.yaml --image ghcr.io/jakenesler/my-ecommerce:76a9880e
+app: my-ecommerce
+component: site            # namespace my-ecommerce-prod-site
+
+runtime:
+  image: ghcr.io/jakenesler/my-ecommerce   # tag from --image
+  port: 8080
+
+routes:
+  - host: mainstreetmusicstore.com         # apex (CF CNAME-flattening), served by this one service
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+  - host: www.mainstreetmusicstore.com
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+
+sizing:
+  profile: minimal
+  replicas: 2                # fixed: scaleToZero ✗ with the cloudflared sidecar (tunnel'd)
+  autoscale:
+    enabled: false
+
+probes:
+  type: tcp                  # cutover-safe: live deployment had no probe + health route unverified
+
+# Non-secret config (plain env). DB connection is split POSTGRES_* (the app reads these
+# directly, db.go) pointed at the isolated CNPG database.
+env:
+  POSTGRES_HOST: prod-pg-rw.cnpg.svc.cluster.local
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: my-ecommerce
+  POSTGRES_USER: my-ecommerce
+  POSTGRES_SSLMODE: require
+  env: prod                  # the app reads a literal `env` var (not just ENVIRONMENT)
+  SUCCESS_URL: https://mainstreetmusicstore.com/success
+  CANCEL_URL: https://mainstreetmusicstore.com/cancel
+  CORS_ALLOWED_ORIGINS: ""
+  SHIPENGINE_CARRIER_IDS: "se-4881985,se-4881978"
+
+secrets:
+  - POSTGRES_PASSWORD        # the CNPG my-ecommerce role password (= PG_AUTH password)
+  - STRIPE_PUBLIC_KEY
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - STRIPE_PUBLIC_KEY_TEST
+  - STRIPE_SECRET_KEY_TEST
+  - SENDGRID_API_KEY
+  - SESSION_KEY
+  - SHIPENGINE_API_KEY
+  - LINODE_ACCESS_KEY        # Linode Object Storage (bucket `ecommerce`); R2 fast-follow
+  - LINODE_SECRET_KEY
+
+logging:
+  enabled: true
+metrics:
+  enabled: false             # no Prometheus in prod
