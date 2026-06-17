@@ -47,6 +47,11 @@ env:
   POSTGRES_USER: my-ecommerce
   POSTGRES_SSLMODE: require
   env: prod                  # the app reads a literal `env` var (not just ENVIRONMENT)
+  # The app embeds a tsnet Tailscale client (logging/tailscale.go) for the OLD tailnet
+  # log path and log.Fatals if the key is empty. On jaK3s logs ship via loki-proxy
+  # (LOKI_URL), so disable the embedded tailscale with this magic value — the code
+  # explicitly skips the Tailscale connection when the key == this string.
+  TAILSCALE_AUTH_KEY: dummy-auth-key-for-testing
   SUCCESS_URL: https://mainstreetmusicstore.com/success
   CANCEL_URL: https://mainstreetmusicstore.com/cancel
   CORS_ALLOWED_ORIGINS: ""
