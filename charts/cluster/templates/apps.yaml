@@ -14,7 +14,7 @@ spec:
   releaseName: {{ .releaseName }}
   targetNamespace: {{ .namespace }}
   storageNamespace: {{ .namespace }}
-  {{- include "cluster.remediation" . | nindent 2 }}
+  {{- include "cluster.appRemediation" (dict "env" $env) | nindent 2 }}
   chart:
     spec:
       chart: ./charts/app
