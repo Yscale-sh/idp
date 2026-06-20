@@ -47,6 +47,8 @@ resource limits, autoscaling and observability wiring from that. The developer n
 
 **Deploying is a git commit, never `kubectl apply`/`helm upgrade`. Flux is the only writer.**
 
+For day-to-day commands and failure runbooks, start with [`docs/USAGE.md`](docs/USAGE.md).
+
 - **Operator, once:** install the **Flux Operator** and apply one `FluxInstance`
   (`clusters/<env>/flux-instance.yaml`). Its `spec.sync` points Flux at `clusters/<env>`, which holds
   the **umbrella HelmRelease** (`platform.yaml`). Flux installs the `charts/cluster` umbrella, and that
@@ -186,7 +188,7 @@ idpctl catalog  --all --out-dir public             # whole-platform site (every 
 idpctl doctor   --env <env> [--context <ctx>]      # probe the live cluster for the seams this env declares
 idpctl dns    sync|prune  --env prod               # reconcile Cloudflare DNS for public routes
 idpctl tunnel up|down     --env prod               # manage the Cloudflare Tunnel
-idpctl new app <name>                              # scaffold an app repo (deploy.yaml; registry from idp.yaml)
+idpctl new app --name <name> [--dir <path>]        # scaffold a starter deploy.yaml (registry from idp.yaml)
 ```
 
 ### Seeing it: the catalog viewer
@@ -260,7 +262,7 @@ defaulted in Go code or charts — `idpctl` fails closed if it's missing. To run
    module matrix, or registry orgs carried over). Repeat for `stage`/`prod`; then edit each to
    toggle the modules you run and point the secret store at yours.
 3. Re-render the state as your own: `./idpctl infra render --env dev`, then onboard your first app
-   with `idpctl new app <name>` (or start from `examples/`).
+   with `idpctl new app --name <name>` (or start from `examples/`).
 4. Bootstrap a cluster: install the Flux Operator and apply `clusters/<env>/flux-instance.yaml`.
    From then on, deploying is a git commit.
 
