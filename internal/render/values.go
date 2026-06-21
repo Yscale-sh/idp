@@ -125,6 +125,15 @@ type LanExposeValues struct {
 	IP      string `json:"ip,omitempty"`
 	Pool    string `json:"pool,omitempty"`
 	Port    int    `json:"port"`
+	// ExtraPorts are additional LB ports on the same VIP (beyond Port).
+	ExtraPorts []LanExtraPort `json:"extraPorts,omitempty"`
+}
+
+// LanExtraPort is one extra LoadBalancer port rendered by the lan-service chart.
+type LanExtraPort struct {
+	Name       string `json:"name"`
+	Port       int    `json:"port"`
+	TargetPort int    `json:"targetPort"`
 }
 
 type ServiceValues struct {
@@ -559,6 +568,13 @@ func buildLanExpose(app appconfig.App, c *clusterenv.Config) *LanExposeValues {
 	lan := &LanExposeValues{Enabled: true}
 	if app.Expose != nil {
 		lan.Host, lan.IP, lan.Pool, lan.Port = app.Expose.Host, app.Expose.IP, app.Expose.Pool, app.Expose.Port
+		for _, ep := range app.Expose.ExtraPorts {
+			tp := ep.TargetPort
+			if tp == 0 {
+				tp = ep.Port
+			}
+			lan.ExtraPorts = append(lan.ExtraPorts, LanExtraPort{Name: ep.Name, Port: ep.Port, TargetPort: tp})
+		}
 	}
 	if derived {
 		if lan.Host == "" {

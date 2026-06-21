@@ -441,6 +441,19 @@ type Expose struct {
 
 	// Port is the LoadBalancer port (defaults to runtime.port).
 	Port int `json:"port,omitempty" yaml:"port,omitempty"`
+
+	// ExtraPorts exposes ADDITIONAL ports on the SAME LoadBalancer VIP beyond
+	// expose.port — e.g. a second in-pod listener (litewindow's cross-origin preview
+	// origin on port+1). One IP, multiple ports.
+	ExtraPorts []ExposePort `json:"extraPorts,omitempty" yaml:"extraPorts,omitempty"`
+}
+
+// ExposePort is one extra LoadBalancer port (beyond expose.port) on the app's VIP.
+type ExposePort struct {
+	Name string `json:"name" yaml:"name"`
+	Port int    `json:"port" yaml:"port"`
+	// TargetPort is the container port; defaults to Port when omitted.
+	TargetPort int `json:"targetPort,omitempty" yaml:"targetPort,omitempty"`
 }
 
 // Logging toggles platform logging wiring (Loki endpoint + app labels).
