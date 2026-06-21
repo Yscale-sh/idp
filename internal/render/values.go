@@ -502,6 +502,8 @@ func buildVolumes(app appconfig.App) (vols, mounts, claims []map[string]any) {
 			vol["nfs"] = nfs
 		case "emptyDir":
 			vol["emptyDir"] = map[string]any{}
+		case "secret":
+			vol["secret"] = map[string]any{"secretName": v.Secret}
 		case "pvc":
 			claimName := v.Claim
 			if claimName == "" {

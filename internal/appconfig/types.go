@@ -386,6 +386,11 @@ type Volume struct {
 	// StorageClass overrides the default storage class for a PROVISIONED pvc
 	// (homelab default: the cluster default / local-path). Ignored when referencing.
 	StorageClass string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
+
+	// Secret mounts an existing Kubernetes Secret as read-only files (type: secret) —
+	// e.g. a cert-manager TLS cert. The named Secret must already exist in the app
+	// namespace. Pair with mountPath (and optionally readOnly/subPath).
+	Secret string `json:"secret,omitempty" yaml:"secret,omitempty"`
 }
 
 // ResolvedType returns the volume source kind, inferring it from the other fields
@@ -401,6 +406,8 @@ func (v Volume) ResolvedType() string {
 		return "pvc"
 	case v.Server != "" || v.Path != "":
 		return "nfs"
+	case v.Secret != "":
+		return "secret"
 	default:
 		return "emptyDir"
 	}

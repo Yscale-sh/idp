@@ -151,8 +151,12 @@ func (a *App) Validate() error {
 			}
 		case "emptyDir":
 			// no source fields
+		case "secret":
+			if v.Secret == "" {
+				add(field, "secret volume requires secret (the Kubernetes Secret name)")
+			}
 		default:
-			add(field+".type", "must be one of nfs|emptyDir|pvc")
+			add(field+".type", "must be one of nfs|emptyDir|pvc|secret")
 		}
 	}
 
