@@ -43,3 +43,6 @@ node_modules/
 bakes/
 fast.yaml
 migration/captures/
+
+# Claude Code: keep the bundled skill, ignore personal local settings
+.claude/settings.local.json

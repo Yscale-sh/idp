@@ -9,6 +9,10 @@ refs, env vars, probes, resource limits, autoscaling, and observability. **You n
 Deployment, Service, or LoadBalancer.** This file is the fast path. Deeper docs are linked at
 the end.
 
+> **Bundled agent skill.** This repo ships `.claude/skills/idp/SKILL.md`, which Claude Code
+> auto-loads in any session here. It covers the idpctl command surface, the shopping-list
+> contract, the dev and prod lifecycle, and the fail-closed rails. Read it before running idpctl.
+
 ## The model in one breath
 
 `deploy.yaml` (a declaration of what your app needs) -> `idpctl render` (expands it into the
