@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for taking a look. This is a small, opinionated project — issues and PRs are welcome,
-but read [`CONVENTIONS.md`](CONVENTIONS.md) first: it's the platform contract, and changes that
+Thanks for taking a look. This is a small, opinionated project. Issues and PRs are welcome,
+but read [`CONVENTIONS.md`](CONVENTIONS.md) first: it is the platform contract, and changes that
 fight it will be declined even if the code is good.
 
 ## Dev setup
@@ -16,7 +16,7 @@ make e2e         # ephemeral k3d cluster end-to-end (skips cleanly if k3d is abs
 ```
 
 The render pipeline is covered by golden tests in `internal/render/testdata/`. If you change
-rendering output on purpose, update the golden files and say so in the PR — golden diffs are the
+rendering output on purpose, update the golden files and say so in the PR. Golden diffs are the
 review surface.
 
 ## Before you open a PR
@@ -27,15 +27,19 @@ review surface.
   (`internal/appconfig`), rendering (`internal/render`), and a row in the app-contract table in
   `README.md` / `CONVENTIONS.md`.
 - Commit messages follow the existing style: short, imperative, `area: what changed`
-  (e.g. `feat(expose): pool — MetalLB auto-assign from a named IPAddressPool`).
+  (e.g. `feat(expose): pool, MetalLB auto-assign from a named IPAddressPool`).
 
 ## Design boundaries (the short version)
 
-- **Flux is the only writer.** Nothing in this repo may `kubectl apply` outside of tests.
-- **The contract is a shopping list, not Kubernetes.** New fields describe *what the app needs*,
-  never raw k8s objects. If a field only makes sense to someone who knows k8s, it's wrong.
-- **Fail closed on identity.** Nothing may default to a specific registry, repo, or account —
-  identity lives in `idp.yaml` only (`internal/tenant` enforces this; there's a test asserting
+- **Flux is the only writer.** Deploying is a git commit; Flux reconciles it. Nothing in this
+  repo may `kubectl apply` or `helm upgrade` outside of tests.
+- **The contract is a shopping list, not Kubernetes.** The per-app `deploy.yaml` is the product:
+  a developer declares what the app needs (runtime, routes, sizing, db, cache, volumes,
+  connectsTo) and the platform derives every Kubernetes object from it. New fields describe
+  *what the app needs*, never raw k8s objects. If a field only makes sense to someone who knows
+  k8s, it is wrong.
+- **Fail closed on identity.** Nothing may default to a specific registry, repo, or account.
+  Identity lives in `idp.yaml` only (`internal/tenant` enforces this, and a test asserts that
   scaffolds contain no hardcoded identity).
 - **No LoadBalancers** except the labeled MetalLB LAN escape hatch (`internal/policy`).
 

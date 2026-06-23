@@ -4,6 +4,16 @@ Day-to-day runbooks for this platform instance. For the command design, read
 [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md); for the target production shape, read
 [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
+The unit of work everywhere below is the per-app `deploy.yaml` shopping list. A
+developer declares a small app contract (app, runtime, routes, sizing, db, cache,
+volumes, `connectsTo`), and the platform derives every Kubernetes object from it:
+namespaces, Deployment, ClusterIP Service, secret refs, env vars (`DATABASE_URL`,
+`REDIS_URL`), probes, resource limits, autoscaling, and observability. You never
+write a Deployment, a Service, or a LoadBalancer. Deploying is a Git commit, and
+Flux is the only writer: `idpctl render` upserts the app into
+`clusters/<env>/platform.yaml` (one umbrella HelmRelease), you commit on the env's
+Flux branch, and Flux reconciles it. Never `kubectl apply` or `helm upgrade`.
+
 ## 1. Deploy a brand-new app
 
 1. Scaffold the shopping list. The CLI takes the app name as a flag:
@@ -42,6 +52,12 @@ the `idp-shipper` registry in `environments/dev/cluster.yaml`, run
 
 ## 2. Ship the normal daily change
 
+This is the continuous dev path: push to your branch and it deploys. The in-cluster
+`idp-shipper` realizes it. The shipper registry (which apps to ship, with repo, branch,
+and deploy file paths) is infra-owned config, a ConfigMap declared in
+`environments/dev/cluster.yaml` and applied with `idpctl infra render`. A developer never
+touches the registry or the platform repo; they only edit their own `deploy.yaml`.
+
 1. Push the application commit to the branch registered with the shipper. For an app
    registered on `master`:
 
@@ -49,8 +65,9 @@ the `idp-shipper` registry in `environments/dev/cluster.yaml`, run
    git push origin master
    ```
 
-2. The in-cluster `idp-shipper` polls that branch, fetches the registered `deploy.yaml`
-   at the new commit, and derives unique image builds from each component's `runtime.image`.
+2. The in-cluster `idp-shipper` reads the GitHub head SHA for the registered repo and
+   branch. When it changes, it fetches the registered `deploy.yaml` at that commit and
+   derives the build set from the shopping lists, deduped by `runtime.image`.
 3. The image-builder clones that commit, builds with rootless BuildKit, and pushes
    `<runtime.image>:<short-sha>` to GHCR. Build inputs are self-declared by the app:
 
@@ -75,12 +92,21 @@ the `idp-shipper` registry in `environments/dev/cluster.yaml`, run
    idpctl promote myapp prod --from dev --file deploy.yaml
    ```
 
-2. Review the rendered `clusters/prod/platform.yaml`. Promotion reads the image already
-   pinned in dev and carries that digest forward; it never rebuilds the artifact.
+2. Review the rendered `clusters/prod/platform.yaml`. Promotion reads the image digest
+   already pinned in dev's umbrella and carries that digest forward; it never rebuilds the
+   artifact. Prod's policy, secrets backend, and namespaces are applied during the
+   re-render. The promotion gate is data: `environments/prod/cluster.yaml` declares
+   `promotion.from: dev`, so `--from dev` is the only accepted source until stage is wired.
 3. Commit the result on the branch printed by the command. That branch comes from prod's
-   `flux.branch`; in this instance it is currently `prod`. Prod also has
-   `allowMutableTags: false`, so mutable tags such as `latest` are rejected.
+   `flux.branch`; in this instance it is `prod`, and the prod cluster syncs `refs/heads/prod`.
+   Prod also has `allowMutableTags: false`, and prod is hard-rejected in code regardless, so
+   mutable tags such as `latest` cannot reach it.
 4. Push and watch prod Flux reconcile.
+
+The dev and prod umbrellas live on different branches: dev's on `main`, prod's on `prod`.
+When you run `promote` from a `prod`-branch checkout, point `--source-root` at a `main`
+checkout so it reads dev's pinned image from there while writing the prod render into the
+current tree. The command defaults the source read to `--root` for same-tree promotes.
 
 Rollback is a Git revert of the promotion commit:
 
@@ -110,7 +136,16 @@ git push
    make catalog ENV=dev
    ```
 
-The catalog does not contact the cluster. It projects `clusters/<env>/platform.yaml`.
+4. Build the whole-platform site (per-env pages plus an `index.html`) with `--all`:
+
+   ```bash
+   idpctl catalog --all --out-dir public
+   ```
+
+   `.github/workflows/catalog.yml` publishes this site to Cloudflare Pages.
+
+The catalog does not contact the cluster. It projects `clusters/<env>/platform.yaml`,
+so it is a read-only view of committed git state, never a writer.
 
 ## 5. Check the live cluster seams
 
@@ -120,9 +155,11 @@ The catalog does not contact the cluster. It projects `clusters/<env>/platform.y
    idpctl doctor --env dev
    ```
 
-2. Treat failures as contract violations. Doctor checks the live cluster against
-   `environments/dev/cluster.yaml`: API reachability, Flux source and umbrella,
-   external-secrets store, observability, KEDA ownership, and ingress or tunnel seams.
+2. Treat failures as contract violations. Doctor resolves the seams the env declares in
+   `environments/dev/cluster.yaml` and probes the live cluster for each: API reachability,
+   the FluxInstance plus the Git source and the env umbrella, the external-secrets store,
+   observability (Loki), the KEDA operator when autoscale is declared, and the ingress or
+   tunnel and LAN seams.
 3. Use an explicit context when the current one is ambiguous:
 
    ```bash

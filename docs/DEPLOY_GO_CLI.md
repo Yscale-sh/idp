@@ -1,27 +1,35 @@
-# Go-first deployment module — design sketch
+# Go-first deployment: idpctl design
 
-Status: research/design. No production action taken.
+Status: design note, now implemented. This file is the design rationale behind `idpctl`. The shipped
+command surface, package layout, and app contract are described against the real code in `cmd/idpctl`,
+`internal/`, and `schemas/deploy.schema.json`.
 
 ## Goal
 
-Build deployment around a versioned Go CLI instead of shell scripts. App repos submit a small
-`deploy.yaml`; CI builds an image; the platform CLI validates the contract, deploys the shared app
-chart, updates Cloudflare Tunnel routing/DNS, and provisions any requested platform identity or
-secret wiring.
+Build deployment around a versioned Go CLI instead of shell scripts. The product is the per-app
+`deploy.yaml` shopping list. A developer declares a small app contract (app, runtime, routes, sizing,
+db, cache, storage, connectsTo, ...) and the platform derives every Kubernetes object from it:
+namespaces, Deployment, ClusterIP Service, secret refs, env vars (`DATABASE_URL`, `REDIS_URL`, ...),
+probes, resource limits, autoscaling, and observability. The developer never writes a Deployment, a
+Service, or (by policy) a LoadBalancer.
 
-The same contract should deploy to both environments:
+CI builds an image; the CLI validates the contract, renders the app into the env umbrella, and (for
+public routes) wires Cloudflare Tunnel routing and DNS plus any requested secret refs. Deploying is a
+git commit. Flux is the only writer.
 
-- `prod`: the larger Linode k3s production cluster.
-- `dev`: the local k3s cluster for development/testing.
+The same contract deploys to both active environments:
 
-The current `DEPLOY_MODULE.md` shape is still right:
+- `prod`: the self-provisioned Linode k3s production cluster (jaK3s).
+- `dev`: the homelab k3s cluster for development and testing.
 
-- app repo owns code, Dockerfile, and `deploy.yaml`
-- a reusable workflow runs on the self-hosted in-cluster GitHub Actions runner
-- the platform module is versioned and cloned by the runner
-- every app deploys as `ClusterIP` only; public exposure goes through Cloudflare Tunnel
+The `DEPLOY_MODULE.md` shape still holds:
 
-The change is replacing `bin/deploy.sh` and `ensure-*.sh` with one Go binary.
+- the app repo owns code, Dockerfile, and `deploy.yaml`
+- the platform module is versioned and rendered by `idpctl`
+- every app deploys as `ClusterIP` only; public exposure goes through Cloudflare Tunnel (prod) or a
+  labeled MetalLB LAN LoadBalancer (dev)
+
+The change is replacing `bin/deploy.sh` and `ensure-*.sh` with one Go binary, `idpctl`.
 
 ## Why Go
 
@@ -29,7 +37,7 @@ Shell is acceptable for one or two commands, but this platform needs real state 
 
 - YAML parsing and schema/default validation
 - Kubernetes object reads/writes with idempotency
-- Helm install/upgrade/rollback boundaries
+- Helm release boundaries rendered as Flux `HelmRelease`s
 - Cloudflare DNS, Tunnel routes, and Access service-token provisioning
 - AWS SSM/external-secrets integration
 - structured logs and clear failure modes in CI
@@ -40,19 +48,24 @@ Kubernetes, Helm, Cloudflare, and AWS.
 
 ## Repository shape
 
+The real layout lives in this repo. The sketch below shows the seams; `internal/` package names map
+to the actual packages (`appconfig`, `render`, `clusterenv`, `policy`, `secrets`, `scaffold`,
+`builder`, `clouddns`, `catalog`, `modules`, `tenant`, ...).
+
 ```text
-platform/
-  cmd/platformctl/
+idp/
+  cmd/idpctl/
     main.go
   internal/
     appconfig/       # deploy.yaml types, defaults, validation
-    deploy/          # high-level deploy orchestration
+    render/          # high-level render orchestration (the render core)
+    clusterenv/      # per-env policy: cluster.yaml types, seams, validation
     helmrunner/      # Helm SDK or command wrapper
     kube/            # Kubernetes clients, namespace/RBAC helpers
-    cloudflare/      # DNS, Tunnel config, Access apps/tokens
+    clouddns/        # Cloudflare DNS + Tunnel config
     secrets/         # SSM + ExternalSecret generation
     scaffold/        # new app/repo/config generation
-    policy/          # guardrails: no LoadBalancer, resource limits, naming
+    policy/          # guardrails: no LoadBalancer, resource limits, naming, seams
   charts/
     app/
     infra/
@@ -64,6 +77,8 @@ platform/
       cluster.yaml   # module matrix + flux source for prod
     dev/
       cluster.yaml   # module matrix + flux source for dev
+    stage/
+      cluster.yaml   # scaffolded, deferred (see ENVIRONMENTS.md)
   clusters/          # the rendered, deployed desired state (what Flux syncs)
     prod/
       platform.yaml       # the ONE umbrella HelmRelease (spec.values.apps + .modules)
@@ -74,60 +89,70 @@ platform/
   apps/
     metabase.yaml    # optional central catalog entries
   .github/workflows/
-    deploy.yml
+    catalog.yml      # publishes the read-only catalog site to Cloudflare Pages
 ```
 
 `charts/app` is for developer apps. `charts/infra` is for platform-owned infrastructure inside the
-cluster: cloudflared, external-secrets, KEDA, monitoring hooks, shared Redis/Postgres operators,
-and later anything yscale-specific. Infra deploys through the same upgradeable path as apps.
+cluster: cloudflared, external-secrets, KEDA, monitoring hooks, image-builder, idp-shipper, the
+per-app dev stores, and anything yscale-specific. Infra deploys through the same Flux path as apps.
 
 ## CLI surface
 
-Start small, but make the command model extensible:
+The command model is small but extensible. Reads (`validate`, `plan`, `catalog`, `doctor`) never
+touch real state. Writes (`render`, `promote`, `remove`, `build`, `infra render/apply`, `dns`,
+`tunnel`) mutate git or cloud state.
 
 ```text
-platformctl deploy --app cartogopher --file deploy.yaml --image stackmaster/cartogopher:prod-abc123
-platformctl plan   --env prod --app cartogopher --file deploy.yaml --image stackmaster/cartogopher:prod-abc123
-platformctl validate --file deploy.yaml
-platformctl new app --name dummy-api --host api.dummyproducts.com --port 8080
-platformctl infra plan --env prod
-platformctl infra apply --env dev
-platformctl route sync --file deploy.yaml
-platformctl access ensure --file deploy.yaml
+idpctl init --env dev                                          # scaffold environments/<env>/cluster.yaml from idp.yaml
+idpctl new app --name dummy-api --host api.dummyproducts.com --port 8080   # scaffold a starter deploy.yaml
+idpctl validate -f deploy.yaml                                 # structural, env-agnostic
+idpctl plan --env prod -f deploy.yaml --image <ref>            # validate + policy + render to stdout, no writes
+idpctl render --env dev --root <idp clone> -f deploy.yaml --image <ref>    # upsert app into the env umbrella
+idpctl promote <app> prod --from dev -f deploy.yaml            # digest-forward; never rebuilds
+idpctl remove --app dummy-api --env dev                        # drop a workload/component; Flux prunes
+idpctl build --repo JakeNesler/idp --ref <sha> --image <ref>  # in-cluster image-builder -> GHCR
+idpctl catalog --env prod --format html                       # read-only view of clusters/<env>/platform.yaml
+idpctl doctor --env dev                                        # probe the live cluster for declared seams
+idpctl dns sync -f deploy.yaml                                 # Cloudflare CNAMEs for public routes
+idpctl tunnel up -f deploy.yaml                                # Cloudflare Tunnel wiring
+idpctl infra plan --env prod                                  # enabled modules in the umbrella
+idpctl infra render --env dev                                 # write enabled modules into the umbrella
 ```
 
-`deploy` is not the primary production path when Flux is installed. Flux is the constant
-writer for both dev and prod. The normal path is:
+`render` is the default deploy verb, but it is a git operation, not a cluster operation. Flux is the
+constant writer for both dev and prod. The normal path is:
 
 1. Load `deploy.yaml`.
-2. Apply environment defaults.
-3. Validate schema and platform policy.
+2. Apply environment defaults (from `environments/<env>/cluster.yaml`).
+3. Validate schema and platform policy (including the seam contract).
 4. Upsert the app's desired state into the umbrella at `clusters/<env>/platform.yaml`
    (`spec.values.apps`; `infra render` sets `spec.values.modules`).
-5. Commit or apply that desired state through the platform repo.
-6. Flux installs the umbrella (`charts/cluster`), which fans out to an inner HelmRelease
+5. Commit that desired state on the env's `flux.branch` and push.
+6. Flux installs the umbrella (`charts/cluster`), which fans out to one inner `HelmRelease`
    per app, store, and module, reconciling them into the target cluster.
-7. Emit a concise plan/deploy summary and URLs.
+7. Emit a concise render summary and URLs.
 
-`plan` should do every read/validation/render step without mutating cluster or Cloudflare state.
-That gives CI a useful preflight and makes local debugging less risky.
+`plan` does every read/validation/render step without mutating cluster, git, or Cloudflare state.
+That gives CI a useful preflight and makes local debugging lower-risk. `disableWait` on a module or
+app isolates a failing release so it cannot wedge its siblings.
 
 ## Flux model
 
-Use Flux (the Flux Operator + `HelmRelease`/`GitRepository`) for steady-state reconciliation and
+Use Flux (the Flux Operator plus `HelmRelease`/`GitRepository`) for steady-state reconciliation and
 upgrades in every environment. This is the fixed deployment boundary:
 
 ```text
-developer intent -> platformctl render -> clusters/<env>/platform.yaml (the umbrella HelmRelease)
+developer intent -> idpctl render -> clusters/<env>/platform.yaml (the umbrella HelmRelease)
                  -> Flux installs charts/cluster -> one inner HelmRelease per app/store/module -> cluster
 ```
 
-`platformctl` generates or updates desired state — ONE umbrella `HelmRelease` per environment at
+`idpctl` generates or updates desired state: ONE umbrella `HelmRelease` per environment at
 `clusters/<env>/platform.yaml`, whose values list every app, store, and module. `render` upserts an
 app into `spec.values.apps`; `infra render` sets `spec.values.modules`. Flux installs the umbrella
-(`charts/cluster`), which templates an isolated inner `HelmRelease` per workload. Avoid direct
-cluster mutation for normal app deploys so there is one source of truth. The Flux Operator's embedded
-Web UI (operator Service `:9080`) shows reconciliation state — no separate dashboard.
+(`charts/cluster`), which templates an isolated inner `HelmRelease` per workload. Never run
+`kubectl apply` or `helm upgrade` for a normal app deploy, so there is one source of truth. The Flux
+Operator's embedded Web UI (operator Service `:9080`) shows reconciliation state, so there is no
+separate dashboard.
 
 ```text
 platform repo
@@ -138,59 +163,94 @@ platform repo
   charts/cluster/                    # the umbrella chart that fans out to inner HelmReleases
 ```
 
-Each environment has one `FluxInstance` (`clusters/<env>/flux-instance.yaml`) whose `spec.sync`
-creates the shared `GitRepository` source plus a Kustomization that applies `clusters/<env>` — the
-umbrella `HelmRelease` (`platform.yaml`) and the FluxInstance itself. Installing the umbrella, and
-its fan-out into one inner `HelmRelease` per app / store / module, is the GitOps replacement for the
-old Argo CD app-of-apps. Prod and dev use the same charts and app contract, with environment-specific
+Each cluster has one `FluxInstance` (`clusters/<env>/flux-instance.yaml`) whose `spec.sync` creates
+the shared `GitRepository` source plus a Kustomization that applies `clusters/<env>`: the umbrella
+`HelmRelease` (`platform.yaml`) and the FluxInstance itself. Installing the umbrella, and its fan-out
+into one inner `HelmRelease` per app / store / module, is the GitOps replacement for the old Argo CD
+app-of-apps. Dev and prod use the same charts and app contract, with environment-specific
 implementations:
 
-| Concern | dev local k3s | prod Linode k3s |
+| Concern | dev homelab k3s | prod Linode k3s (jaK3s) |
 |---|---|---|
 | replicas | usually 1 | profile driven, usually 2+ |
-| storage | local MinIO/R2-dev/S3-dev as declared | R2/S3 as declared |
-| routes | local hostnames or tunnel-disabled | Cloudflare Tunnel + DNS |
-| secrets | dev SSM path or local external-secrets backend | prod SSM path |
-| observability | lightweight | full logging/metrics/tracing |
+| storage | per-app dev Postgres/Redis; R2/S3 as declared | shared CNPG `prod-pg` + Redis; R2/S3 as declared |
+| routes | LAN via expose.lan / MetalLB (no tunnel) | Cloudflare Tunnel + DNS |
+| secrets | local external-secrets backend | SSM secrets backend |
+| observability | in-cluster Loki | logs shipped over the tailnet to homelab Loki |
 
-The production deploy path can be:
+### Dev lifecycle: continuous and automatic
+
+Dev realizes "push to your branch, it deploys." The in-cluster `idp-shipper` (`cmd/idp-shipper`) is
+infra-owned, in-cluster, and DEV-ONLY (`registry.env=dev`). Per registered app, every interval it:
+
+1. reads the GitHub head SHA for the app's repo and branch;
+2. if the SHA changed, derives the build set from the shopping lists (dedup by image);
+3. builds ONLY images whose inputs (`build.context` / `build.dockerfile` / `build.submodules`)
+   changed, via the in-cluster image-builder (rootless BuildKit to GHCR, tag `<image>:<short-sha>`);
+   unchanged images reuse the tag already pinned in the umbrella;
+4. renders each component into `clusters/dev/platform.yaml` using `idpctl`'s render core;
+5. git commits and pushes to the platform branch;
+6. Flux reconciles.
+
+The developer only ever touches their `deploy.yaml`. The shipper registry (which apps to ship: repo,
+branch, deploy.yaml paths) is infra-owned config: a ConfigMap declared in
+`environments/dev/cluster.yaml` and applied via `idpctl infra render`.
+
+Manual dev deploy (a new or unregistered app, or a deploy from the cockpit):
 
 ```text
-app repo push
-  -> CI builds image
-  -> platformctl render --env prod --file deploy.yaml --image <tag>
-     (upserts the app into clusters/prod/platform.yaml)
-  -> commit/PR generated artifact into platform repo
-  -> Flux syncs prod
+idpctl render --env dev --root <idp clone> -f deploy.yaml --image <ref>
+# then commit + push clusters/dev/platform.yaml on main
 ```
 
-For the first implementation, manual commits of the rendered `clusters/*/platform.yaml` are fine.
-Automating that comes after the chart and YAML contract settle.
+### Prod lifecycle: deliberate and digest-forward
 
-### Local developer services
+Prod promotes FROM DEV directly. Stage is deferred. `environments/prod/cluster.yaml` declares
+`promotion.from: dev` (the comment reads "stage is deferred for now, promote dev -> prod directly").
 
-Local dev is not a fake environment. If the app declares services, the platform should deploy the
-dev implementations needed to make the app run:
+```text
+idpctl promote <app> prod --from dev -f deploy.yaml
+```
 
-- `db: postgres` -> local/dev Postgres release, database/user/secret wiring
-- `cache: redis` -> local/dev Redis release and `REDIS_URL`
-- `storage: r2` or `storage: s3` -> local/dev S3-compatible endpoint or dev cloud bucket wiring
-- `routes` -> local route/ingress/tunnel configuration
-- `logging` -> lightweight Loki or stdout-first config, depending on environment settings
-- `metrics` -> lightweight scrape config or disabled by env policy
+`promote` reads the image digest already running in dev's umbrella and re-renders the app into
+`clusters/prod/platform.yaml` with prod's policy, secrets backend, and namespaces. It NEVER rebuilds
+the artifact. Prod refuses mutable tags: `allowMutableTags: false`, and prod is hard-rejected in code
+regardless of that flag. Prod's `flux.branch` is `prod`; the prod cluster syncs `refs/heads/prod`.
+Commit the promote on the prod branch (the command prints the branch). Rollback is a `git revert` of
+that one commit.
 
-The app contract is stable. The environment decides which implementation backs each capability.
+For the first cut, manual commits of the rendered `clusters/*/platform.yaml` are fine. The shipper
+automates the dev side; prod stays a deliberate promote.
+
+### Per-env implementations of declared services
+
+Dev is not a fake environment. When the app declares services, the platform deploys the dev
+implementation needed to make the app run:
+
+- `db: postgres` -> a dedicated per-app dev Postgres release plus database/user/secret wiring and
+  `DATABASE_URL`
+- `cache: redis` -> a dedicated per-app dev Redis release and `REDIS_URL`
+- `storage: r2` or `storage: s3` -> a dev S3-compatible endpoint or dev cloud bucket wiring
+- `routes` -> LAN route handling via `expose.lan` / MetalLB (dev has no Cloudflare Tunnel)
+- `logging` -> the in-cluster Loki endpoint
+- `metrics` -> a scrape config or disabled by env policy
+
+The app contract is stable. The environment decides which implementation backs each capability. In
+prod the same `db: postgres` declaration is backed by the shared CloudNativePG `prod-pg` cluster, and
+`DATABASE_URL` comes from the SSM secrets backend (prod is PVC-free by contract: `statefulStores:
+false`).
 
 ## App contract
 
-The app contract should feel like a developer shopping list, not like Kubernetes. A developer says
-what the app needs; the platform decides how to wire it.
+The app contract is the product. It reads like a developer shopping list, not like Kubernetes. A
+developer says what the app needs; the platform decides how to wire it. The schema lives at
+`schemas/deploy.schema.json`; `app` and `runtime` are the only required fields.
 
 ```yaml
 app: dummy-api
 
 runtime:
-  image: stackmaster/dummy-api
+  image: ghcr.io/jakenesler/dummy-api
   port: 8080
 
 routes:
@@ -239,15 +299,15 @@ runtime behavior, not Kubernetes resources and not a mutable build artifact.
 
 ### Multi-component apps (one file, many parts)
 
-A product that ships several workloads (api + scanner + ui …) declares them in ONE shopping list
+A product that ships several workloads (api + scanner + ui ...) declares them in ONE shopping list
 via `components:`, instead of one file per part. The top level is the shared **base**; each
 component carries only its deltas:
 
 ```yaml
 app: media
-runtime: { image: ghcr.io/you/media-api, port: 8000 }   # base image
-build:   { submodules: [vendor/transcoder] }             # declared once
-db:      [{ name: primary, type: postgres }]             # app-level store
+runtime: { image: ghcr.io/jakenesler/media-api, port: 8000 }   # base image
+build:   { submodules: [vendor/transcoder] }                   # declared once
+db:      [{ name: primary, type: postgres }]                   # app-level store
 cache:   [{ name: events,  type: redis }]
 
 components:
@@ -257,25 +317,26 @@ components:
     port: 0
     env:  { ROLE: scanner }
   - component: ui                        # its own image; opts out of the stores
-    runtime: { image: ghcr.io/you/media-ui, port: 80 }
+    runtime: { image: ghcr.io/jakenesler/media-ui, port: 80 }
     db: []
     cache: []
     expose: { lan: true }
 ```
 
 Merge rules (`App.Expand`): pointer fields (`runtime`/`build`/`probes`/`sizing`/`expose`) override
-the base; `port:` overrides just the port (keeps the base image — the common worker case); `env`
-merges (component wins per key); `secrets` union; slice fields (`volumes`/`routes`/`connectsTo`/
-`db`/`cache`/`storage`) are inherit-or-replace — omit to inherit, set (incl. an explicit `[]`) to
+the base. `port:` overrides just the port (it keeps the base image, the common worker case). `env`
+merges (component wins per key). `secrets` union. Slice fields (`volumes`/`routes`/`connectsTo`/
+`db`/`cache`/`storage`) are inherit-or-replace: omit to inherit, set (including an explicit `[]`) to
 override. **App-level stores provision once**: the first component to use a store provisions it and
-later components auto-share it (no hand-written `provision: false`). Each component renders to its
-own `<app>-<component>` HelmRelease, identical to separate files. A file with no `components:` is a
+later components auto-share it (no hand-written `provision: false`). A component with `port: 0` is a
+worker: Deployment only, no Service and no probes. Each component renders to its own
+`<app>-<component>` HelmRelease, identical to separate files. A file with no `components:` is a
 plain single-component app. The shipper lists ONE deployFile per app and builds each unique image
 once.
 
 ### Stackable capabilities
 
-Capabilities are always lists because real apps often need more than one of the same type:
+Capabilities are lists because real apps often need more than one of the same type:
 
 - `storage`: multiple R2/S3-compatible buckets for uploads, public assets, exports, backups, etc.
 - `db`: one or more databases, usually Postgres first, with room for Mongo or external databases.
@@ -349,13 +410,14 @@ SESSIONS_REDIS_URL
 JOBS_REDIS_URL
 ```
 
-Only well-known default aliases like `DATABASE_URL` and `REDIS_URL` are optional conveniences. The
-canonical names are always prefixed by capability name so multiple resources never collide.
+Only well-known default aliases like `DATABASE_URL` and `REDIS_URL` are optional conveniences (the
+first `db` yields `DATABASE_URL`, the first `cache` yields `REDIS_URL`). The canonical names are
+always prefixed by capability name so multiple resources never collide.
 
 ### Platform-derived naming
 
-Developers should not manually choose SSM paths, Kubernetes Secret names, bucket credentials, or
-standard env var names. `platformctl` derives them from app, environment, and capability name.
+Developers do not manually choose SSM paths, Kubernetes Secret names, bucket credentials, or standard
+env var names. `idpctl` derives them from app, environment, and capability name.
 
 Default conventions:
 
@@ -379,7 +441,7 @@ Example derived SSM paths for the YAML above:
 /apps/dummy-api/prod/storage/uploads/R2_SECRET_ACCESS_KEY
 ```
 
-For app code, the platform should inject predictable env vars:
+For app code, the platform injects predictable env vars:
 
 ```text
 PORT
@@ -398,7 +460,7 @@ LOKI_URL
 OTEL_EXPORTER_OTLP_ENDPOINT
 ```
 
-For multiple resources of the same class, the first/default resource can get the plain conventional
+For multiple resources of the same class, the first/default resource gets the plain conventional
 name (`DATABASE_URL`, `REDIS_URL`). Named resources also get prefixed names.
 
 Naming rule: convert the capability name to screaming snake case and prepend it to provider-specific
@@ -406,22 +468,23 @@ vars. `publicAssets` becomes `PUBLIC_ASSETS_*`; `private-uploads` becomes `PRIVA
 
 ### Built-in platform wiring
 
-Some things should be automatic unless explicitly disabled:
+Some things are automatic unless explicitly disabled:
 
 - logging: Loki endpoint and app labels
 - metrics: ServiceMonitor or OpenTelemetry endpoint
 - traces: OTEL endpoint when tracing is enabled
 - deploy metadata: commit SHA, image tag, deploy time
-- sane probes: generated from `runtime.port` unless the app overrides paths
+- probes: generated from `runtime.port` unless the app overrides paths (`probes.type: http|tcp|none`)
 - resource defaults: selected from `sizing.profile`
 - secrets: ExternalSecret generated from the derived SSM paths
 
-The app YAML stays small because the platform owns the defaults.
+The app YAML stays small because the platform owns the defaults. Reserved `env` keys are dropped;
+extra secret env keys go in `secrets[]` (a dev placeholder, the prod backend value).
 
 ## API/UI app pairs
 
-Some products are naturally a pair: a frontend UI plus a backend API. Dummy UI and dummy API should
-follow the same convention as AnyRent UI/API instead of becoming unrelated deploys.
+Some products are a pair: a frontend UI plus a backend API. Dummy UI and dummy API follow the same
+convention as AnyRent UI/API instead of becoming unrelated deploys.
 
 Use either two deploy files:
 
@@ -438,7 +501,7 @@ product: dummy
 components:
   api:
     runtime:
-      image: stackmaster/dummy-api
+      image: ghcr.io/jakenesler/dummy-api
       port: 8080
     routes:
       - host: api.dummyproducts.com
@@ -452,7 +515,7 @@ components:
 
   ui:
     runtime:
-      image: stackmaster/dummy-ui
+      image: ghcr.io/jakenesler/dummy-ui
       port: 3000
     routes:
       - host: dummyproducts.com
@@ -484,13 +547,13 @@ connectsTo:
 ```
 
 `connectsTo` is declarative. The developer does not hardcode `API_BASE_URL` differently for dev and
-prod. `platformctl` resolves it from the target app and environment.
+prod. `idpctl` resolves it from the target app and environment.
 
 Example resolution:
 
 | Environment | `API_BASE_URL` |
 |---|---|
-| dev | `http://dummy-api.dummy-api.svc.cluster.local:8080` or the configured local route |
+| dev | `http://dummy-api.dummy-api.svc.cluster.local:8080` or the configured LAN route |
 | prod | `https://api.dummyproducts.com` when browser-facing, or internal service DNS for service-to-service |
 
 The connection needs a mode so the platform can choose the correct address:
@@ -507,8 +570,9 @@ Supported modes:
 - `publicRoute`: inject the target app's external route for browser-facing UI-to-API calls.
 - `clusterService`: inject the target app's internal Kubernetes service DNS for server-to-server calls.
 - `serviceToken`: inject route plus Cloudflare Access service-token refs when the caller must authenticate.
+- `scheme: none`: inject a bare `host:port`.
 
-The generated env vars should come from the deployment, not app-owned config. For the UI, the chart
+The generated env vars come from the deployment, not from app-owned config. For the UI, the chart
 renders:
 
 ```text
@@ -546,33 +610,32 @@ Upgradeability requirements:
 - environment-specific overrides live under `environments/<env>/`
 - no app hand-writes Kubernetes resources that bypass the chart
 
-Cleanup later should be possible because all generated resources share ownership metadata:
+Cleanup is possible because all generated resources share ownership metadata:
 
 ```text
 platform/app=<app>
 platform/product=<product>
 platform/component=<component>
 platform/env=<env>
-platform/managed-by=platformctl
+platform/managed-by=idpctl
 ```
 
-Future `platformctl destroy --env dev --app dummy-api` can use those labels to preview and remove
-resources deliberately. Do not make destroy the first milestone, but do label everything from day
-one so cleanup is not painful later.
+`idpctl remove --app dummy-api --env dev` drops a workload or component from the umbrella and Flux
+prunes it. Label everything from day one so cleanup is not painful later.
 
 ## Developer experience posture
 
-This is developer experience, not button-clicker experience. The primary interface should be files,
-CLI commands, Git history, and Flux status (CLI or the Flux Operator Web UI). A portal can exist
-later as an inventory/read-only view, but it should not become the source of truth or hide the
-platform contract from developers.
+This is developer experience, not button-clicker experience. The primary interface is files, CLI
+commands, Git history, and Flux status (CLI or the Flux Operator Web UI). The `idpctl catalog`
+viewer can exist as a read-only inventory, but it never becomes the source of truth and never hides
+the platform contract from developers.
 
 The good developer path is:
 
 ```text
 edit deploy.yaml
-run platformctl validate/plan/render
-open PR
+run idpctl validate / plan / render
+open PR (or, for a registered dev app, just push your branch and let idp-shipper render)
 watch Flux reconcile (flux CLI or the operator Web UI on :9080)
 debug with normal Kubernetes/GitOps tools
 ```
@@ -596,24 +659,26 @@ Source: https://docs.crossplane.io/latest/composition/composite-resources/
 
 ### Flux roots
 
-Use one `FluxInstance` per environment:
+Use one `FluxInstance` per cluster:
 
 ```text
 clusters/dev/flux-instance.yaml   (sync.path = clusters/dev)
 clusters/prod/flux-instance.yaml  (sync.path = clusters/prod)
 ```
 
-The FluxInstance's sync Kustomization applies `clusters/<env>` — the umbrella
-`HelmRelease` (`platform.yaml`) plus the FluxInstance itself. Installing the umbrella
-(`charts/cluster`) fans out, from `spec.values`, into one inner `HelmRelease` per:
+The FluxInstance's sync Kustomization applies `clusters/<env>`: the umbrella `HelmRelease`
+(`platform.yaml`) plus the FluxInstance itself. Installing the umbrella (`charts/cluster`) fans out,
+from `spec.values`, into one inner `HelmRelease` per:
 
-- platform infra module (the module `HelmRelease`s + `HelmRepository`s)
-- shared services
-- app workload (the per-app + per-store `HelmRelease`s)
-- product groups such as `dummy-api` and `dummy-ui`
+- platform infra module (the module `HelmRelease`s plus `HelmRepository`s)
+- shared service
+- app workload (the per-app and per-store `HelmRelease`s)
+- product group such as `dummy-api` and `dummy-ui`
 
 This umbrella fan-out is the GitOps replacement for App-of-Apps/ApplicationSet. The point is
-inventory and clear sync boundaries, not a portal.
+inventory and clear sync boundaries, not a portal. Dev and stage share the homelab FluxInstance
+(stage is a second Flux Kustomization on the same main source); prod is its own cluster with its own
+FluxInstance syncing the prod branch.
 
 ### Preview environments
 
@@ -667,12 +732,12 @@ rollout:
 ```
 
 Future values could include canary weights, analysis checks, manual promotion, or blue/green. This
-should remain an optional app capability, not the default complexity.
+stays an optional app capability, not the default complexity.
 
 ### Other Kubernetes-native pieces to keep in mind
 
 - External Secrets Operator for SSM-backed runtime secrets.
-- CloudNativePG for Postgres clusters and backups.
+- CloudNativePG for Postgres clusters and backups (the prod `prod-pg` cluster runs on it today).
 - KEDA for event-driven scaling and scale-to-zero where appropriate.
 - cert-manager only where cluster-issued certs are actually needed; Cloudflare handles public edge TLS.
 - NetworkPolicies once namespace boundaries stabilize.
@@ -682,7 +747,8 @@ should remain an optional app capability, not the default complexity.
 
 ## GitHub Actions path
 
-The workflow stays thin:
+For apps that are not in the dev shipper registry, the workflow stays thin: build the image, then
+render against an idp checkout.
 
 ```yaml
 name: Ship
@@ -701,22 +767,22 @@ jobs:
       - name: Build and push image
         run: |
           TAG=prod-${GITHUB_SHA::8}
-          IMG=stackmaster/${{ github.event.repository.name }}:$TAG
+          IMG=ghcr.io/jakenesler/${{ github.event.repository.name }}:$TAG
           docker buildx build --platform linux/amd64 -t "$IMG" --push .
           echo "IMG=$IMG" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
-          repository: JakeNesler/platform
+          repository: JakeNesler/idp
           ref: v1
-          path: .platform
+          path: .idp
           token: ${{ secrets.PLATFORM_REPO_TOKEN }}
-      - name: Deploy
-        run: .platform/bin/platformctl render --env prod --file deploy.yaml --image "$IMG"
+      - name: Render
+        run: .idp/idpctl render --env prod --root .idp --file deploy.yaml --image "$IMG"
 ```
 
-The CI job should then commit or open a PR against the platform repo environment path. Flux
-syncs from there. For early development, running `platformctl render --env dev` locally and
-committing the generated files manually is acceptable.
+The CI job then commits or opens a PR against the platform repo on the env's `flux.branch`. Flux
+syncs from there. For registered dev apps, the in-cluster `idp-shipper` does all of this on its own;
+the only developer action is pushing to the app's branch.
 
 ## Helm boundary
 
@@ -725,11 +791,12 @@ Use Helm for the app chart, but keep ownership clear:
 - Go owns validation, defaults, policy, cloud provider side effects, and orchestration.
 - Helm owns Kubernetes YAML templating for Deployment, Service, PDB, HPA/KEDA, ServiceMonitor, and
   ExternalSecret resources.
-- The chart must never expose `Service type=LoadBalancer`.
+- The chart never exposes `Service type=LoadBalancer`, with one labeled exemption: `expose.lan`
+  (a MetalLB LAN LoadBalancer carrying `platform/expose: lan`), the only sanctioned LoadBalancer.
 
-Implementation should start by rendering Helm/Flux desired state (a `HelmRelease`), not by running
-`helm upgrade --install` directly. Direct Helm apply can remain an emergency/debug command later,
-but it must not be the default path once Flux is the source of truth.
+The implementation renders Helm/Flux desired state (a `HelmRelease`); it does not run
+`helm upgrade --install` directly. A direct Helm apply can remain an emergency/debug command later,
+but it is never the default path once Flux is the source of truth.
 
 ## Extensibility model
 
@@ -755,33 +822,41 @@ Initial steps:
 - `RenderAccess`
 - `EmitSummary`
 
-Later additions can be steps without changing the app contract: database provisioning,
-scheduled jobs, static asset buckets, preview environments, or yscale-specific scheduling.
+Later additions can be steps without changing the app contract: database provisioning, scheduled
+jobs, static asset buckets, preview environments, or yscale-specific scheduling.
 
 ## Guardrails
 
-The CLI should fail before mutating anything if:
+The CLI fails before mutating anything if:
 
-- a rendered Service is `LoadBalancer`
-- requested hostnames are not in approved zones
-- resources are missing or outside allowed bounds
+- a rendered Service is `LoadBalancer` and is not the labeled `expose.lan` exemption
+- requested hostnames are not in the env's approved `zones`
+- resources are missing or outside the env's `resourceBounds`
 - an app tries to deploy into another app's namespace
-- an image tag is mutable like `latest` for production
+- an image tag is mutable like `latest` and the env sets `allowMutableTags: false` (always true in prod)
 - required SSM paths or external secret references are missing
+- an app requests a seam the env does not provide (`policy.checkSeams`), e.g. a stateful store or a
+  public route in dev (which has no Cloudflare Tunnel)
 
-These should be explicit policy errors, not buried Helm failures.
+These are explicit policy errors, not buried Helm failures. The seam contract is data: each env's
+`cluster.yaml` declares which seams it backs (`statefulStores`, `lanExpose`, `publicRoutes`,
+`autoscale`, `volumes`), `clusterenv.Validate` rejects an env that claims a seam it cannot back, and
+`idpctl doctor` probes the live cluster for the declared seams.
 
 ## First implementation slice
 
-1. Create `platformctl validate`, `platformctl plan`, and `platformctl render`.
+1. Build `idpctl validate`, `idpctl plan`, and `idpctl render`.
 2. Port the shared chart skeleton from the existing IDP docs.
 3. Upsert one app into the dev umbrella (`clusters/dev/platform.yaml`), which Flux fans out into a per-app Flux HelmRelease.
-4. Render declared dev services for that app, starting with Postgres and Redis.
+4. Render declared dev services for that app, starting with the per-app dev Postgres and Redis.
 5. Add S3-compatible local/dev storage wiring.
-6. Add Cloudflare Tunnel route sync for prod and local route handling for dev.
+6. Add Cloudflare Tunnel route sync for prod and LAN route handling for dev.
 7. Add SSM/ExternalSecret generation for dev and prod paths.
 8. Add Cloudflare Access service-token minting.
-9. Use `platformctl new app` to make onboarding repeatable.
+9. Use `idpctl new app` to make onboarding repeatable.
 
-The first useful milestone is: one app can deploy from `deploy.yaml` through Flux into local k3s,
+The first useful milestone: one app deploys from `deploy.yaml` through Flux into the homelab k3s,
 including the services it declared, with no handwritten Kubernetes YAML and no NodeBalancer.
+
+> Note: the pre-built `./idpctl` binary committed in the repo may be wrong-arch. Build from source
+> with `make build` if you need to run it.

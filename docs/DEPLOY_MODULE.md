@@ -1,9 +1,9 @@
-# The deployment module — submit a YAML, runner clones the module, it deploys — DESIGN / NO ACTION
+# The deployment module: submit a YAML, runner clones the module, it deploys (DESIGN / NO ACTION)
 
 What you described: a developer **submits a `deploy.yaml`**, that **kicks off an action**, and the
-action uses a **shared module** (which the **self-hosted runner clones**) to do the deploy. Here's
-the concrete shape, grounded in your stack (self-hosted in-cluster runner, `stackmaster/*` images,
-Helm, Cloudflare Tunnel, SSM).
+action uses a **shared module** (which the **self-hosted runner clones**) to do the deploy. Here is
+the concrete shape, grounded in the stack of the time (self-hosted in-cluster runner, `stackmaster/*`
+images, Helm, Cloudflare Tunnel, SSM).
 
 ## Mental model
 ```
@@ -16,12 +16,12 @@ Helm, Cloudflare Tunnel, SSM).
         3. deploy.sh: validate deploy.yaml,
            helm upgrade app-chart, ensure tunnel route + Access token
 ```
-The **module is versioned** (`@v1` git tag). Apps pin to a version, so a bad module change can't
-silently break everyone — you bump `@v1`→`@v2` deliberately.
+The **module is versioned** (`@v1` git tag). Apps pin to a version, so a bad module change cannot
+silently break everyone: you bump `@v1`→`@v2` deliberately.
 
 ---
 
-## What the developer writes — `deploy.yaml` (the whole contract)
+## What the developer writes: `deploy.yaml` (the whole contract)
 ```yaml
 app: dummy-api
 port: 8080
@@ -33,13 +33,13 @@ secrets:  { ssmPath: /dummy-api/prod }   # external-secrets syncs these in
 access:   { humans: false, serviceToken: true }   # Cloudflare Access
 tailscaleEgress: false                   # true only if it must reach GoUS DB etc (my-ecommerce)
 ```
-That's it. No Deployment, Service, Ingress, TLS, or NodeBalancer — the chart renders all of it,
+That is it. No Deployment, Service, Ingress, TLS, or NodeBalancer: the chart renders all of it,
 ClusterIP-only, exposed via the tunnel.
 
 ---
 
-## Pattern A — values live in the app repo (default, for apps that build an image)
-**App repo `.github/workflows/ship.yml` (thin — the only platform-specific file in the app):**
+## Pattern A: values live in the app repo (default, for apps that build an image)
+**App repo `.github/workflows/ship.yml` (thin, the only platform-specific file in the app):**
 ```yaml
 name: Ship
 on:
@@ -82,7 +82,7 @@ jobs:
 set -euo pipefail
 # 1. validate the submitted yaml against the schema (reject bad/unsafe configs early)
 check-jsonschema --schemafile .platform/schema/app.schema.json "$VALUES"
-# 2. deploy via the shared chart — ClusterIP only; chart FORBIDS type: LoadBalancer
+# 2. deploy via the shared chart (ClusterIP only); chart FORBIDS type: LoadBalancer
 helm upgrade --install "$APP" .platform/app-chart \
   -f "$VALUES" --set image="$IMG" \
   --namespace "$APP" --create-namespace --wait --timeout 5m
@@ -90,14 +90,14 @@ helm upgrade --install "$APP" .platform/app-chart \
 .platform/bin/ensure-tunnel-route.sh "$APP" "$VALUES"   # hostname→svc route + DNS via Cloudflare API
 .platform/bin/ensure-access.sh       "$APP" "$VALUES"   # mint CF Access service token → SSM if requested
 ```
-Deploys via the runner's **in-cluster ServiceAccount** (RBAC scoped to the app's namespace) — no
-kubeconfig shipped, no `--insecure-skip-tls-verify` (unlike today's gin template).
+Deploys via the runner's **in-cluster ServiceAccount** (RBAC scoped to the app's namespace), with no
+kubeconfig shipped and no `--insecure-skip-tls-verify` (unlike the gin template of the time).
 
 ---
 
-## Pattern B — central submit (for stock images / no-build, e.g. metabase)
-Put the YAML in the **module repo** and dispatch there — the "submit a yaml to the module" reading,
-and it doubles as a **catalog of everything deployed**:
+## Pattern B: central submit (for stock images / no-build, e.g. metabase)
+Put the YAML in the **module repo** and dispatch there. This is the "submit a yaml to the module"
+reading, and it doubles as a **catalog of everything deployed**:
 ```
 platform/apps/metabase.yaml        # image: metabase/metabase:latest, hostnames: [bi.internal...], access.humans: true
 platform/.github/workflows/deploy-app.yml   # workflow_dispatch(app) → deploy.sh --app $app --values apps/$app.yaml
@@ -110,13 +110,13 @@ A PR into `platform/apps/` (reviewed) or a manual dispatch deploys it. No app re
 ---
 
 ## Build vs resolve: how the module reaches the runner
-- **Reusable workflow (`uses: …@v1`)** — GitHub resolves the workflow; you still `actions/checkout`
-  the module to get the **chart + scripts** onto the runner (the explicit clone you described).
+- **Reusable workflow (`uses: …@v1`)**: GitHub resolves the workflow; you still `actions/checkout`
+  the module to get the **chart + scripts** onto the runner (the explicit clone described above).
 - Alternative: **bake the module into the runner image** (chart + scripts at `/opt/platform`) so no
-  clone per deploy — faster, but you rebuild the runner to ship a module change. Start with clone
-  (simpler, versioned per-ref); bake later if clone latency matters.
+  clone per deploy. That is faster, but you rebuild the runner to ship a module change. Start with
+  clone (simpler, versioned per-ref); bake later if clone latency matters.
 - The chart could also be pushed as a **Helm OCI artifact** and `helm upgrade oci://…/app-chart:1.2`
-  instead of checked out — cleanest versioning, optional later.
+  instead of checked out, the cleanest versioning, optional later.
 
 ## Guardrails baked into the module
 - **Schema validation** rejects bad `deploy.yaml` before any cluster change.
@@ -126,6 +126,6 @@ A PR into `platform/apps/` (reviewed) or a manual dispatch deploys it. No app re
 - Module is **versioned (`@v1`)** + the app pins it → controlled rollout of platform changes.
 
 ## Effort
-The module is ~the `app-chart` (1–2 days) + `deploy.sh`/`ensure-*` scripts (~1 day) + the reusable
+The module is ~the `app-chart` (1-2 days) + `deploy.sh`/`ensure-*` scripts (~1 day) + the reusable
 workflow (~0.5 day) + schema (~0.5 day). After that, onboarding an app = write `deploy.yaml` + add
-the 6-line `ship.yml` → `git push`. That's the "submit a yaml and it deploys" experience, end to end.
+the 6-line `ship.yml` → `git push`. That is the "submit a yaml and it deploys" experience, end to end.

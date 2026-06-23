@@ -13,14 +13,14 @@ This chart deploys **only the pools**. It assumes the ARC **controller + CRDs**
 - Cataloged in `modules/registry.yaml` (`github-runners`, `source: localChart`).
 - Enabled + given its per-org pools in `environments/dev/cluster.yaml`
   (`modules.github-runners.values.runners`).
-- `make infra-render ENV=dev` (→ `idpctl infra render`) writes the module's
-  HelmRelease into `clusters/dev/platform.yaml`; Flux reconciles it.
+- `make infra-render ENV=dev` (which runs `idpctl infra render`) writes the module's
+  HelmRelease into `clusters/dev/platform.yaml`; you commit it, and Flux reconciles it.
 
 ## Per-org auth (out-of-band, never templated)
 
 The controller's default credentials are pinned to one org, and we do **not** make
-any GitHub App public — so each pool authenticates with its **own** fine-grained
-PAT scoped to just that org, via `githubAPICredentialsFrom` → Secret
+any GitHub App public, so each pool authenticates with its **own** fine-grained
+PAT scoped to just that org, via `githubAPICredentialsFrom` referencing Secret
 `github-token-<org>`. Both the RunnerDeployment **and** the HRA reference it (the
 HRA's queued-runs metric query needs its own creds, or it 404s on private repos).
 
