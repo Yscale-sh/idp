@@ -121,7 +121,8 @@ reconciles it. `disableWait` isolates a failing app so it cannot wedge its sibli
 ### dev (continuous and automatic)
 
 The in-cluster **idp-shipper** realizes "push to your branch, it deploys." It is
-infra-owned, in-cluster, and dev-only. Per registered app, every interval it reads the GitHub
+infra-owned, in-cluster, and enabled per environment (dev and prod each run their own instance;
+prod commits the `prod` branch). Per registered app, every interval it reads the GitHub
 head SHA for the app's repo and branch; if it changed, it derives the build set from the
 shopping lists (deduped by image), builds only the images whose inputs
 (`build.context`/`dockerfile`/`submodules`) changed via the in-cluster image-builder, renders

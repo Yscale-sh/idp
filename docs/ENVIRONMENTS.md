@@ -93,7 +93,7 @@ string. Until then, "prod" is a reserved name; document it as such.
 | cluster | homelab | homelab | Linode jaK3s |
 | branch | main | main | **prod** |
 | namespaces | `<app>-dev-*` | `<app>-stage-*` | `<app>-prod-*` |
-| deploys | **auto** (idp-shipper on app push) | scaffolded, not in the promote path | `idpctl promote <app> prod --from dev` |
+| deploys | **auto** (idp-shipper on app push) | scaffolded, not in the promote path | **auto** (prod shipper, `prod` branch) + deliberate `idpctl promote <app> prod --from dev` |
 | image tags | mutable OK | immutable only | immutable only |
 | secrets | local store | local store | SSM (`platform-ssm`) |
 | modules | full shared set | **none** (dev umbrella owns the cluster) | keda + ESO + CNPG (+ yscale, deferred) |
@@ -125,7 +125,7 @@ The artifact never rebuilds after dev. Promotion re-renders the SAME image
 digest with the target env's policy and values:
 
 1. **dev (continuous, automatic):** push to your app repo. The in-cluster
-   `idp-shipper` (DEV-ONLY, `registry.env: dev`) reads the GitHub head SHA for
+   `idp-shipper` (dev's instance, `registry.env: dev`) reads the GitHub head SHA for
    each registered app, builds only the images whose inputs changed via the
    in-cluster image-builder (rootless BuildKit -> GHCR, tag `<image>:<short-sha>`),
    re-renders each component into `clusters/dev/platform.yaml` with idpctl's
@@ -186,8 +186,11 @@ decouple their **change streams**:
    commit step (CI-agnostic). Live gate today: `environments/prod/cluster.yaml`
    declares `promotion.from: dev`, so prod accepts a dev digest. TODO:
    deploy.yaml-at-built-SHA auto-fetch.
-4. **Shipper stays dev-only** (`registry.env: dev`). Promotion to prod is
-   human-driven by design.
+4. **Shipper runs per environment.** Dev's instance (`registry.env: dev`) commits
+   `main`; prod runs its own (`registry.env: prod`, `platformBranch: prod`), brought
+   online app by app, committing the `prod` branch. The digest-forward `idpctl promote
+   <app> prod --from dev` is the deliberate alternative that pins an exact dev digest
+   with no rebuild; it and the prod shipper coexist during bring-up.
 5. **Prod bring-up order** (rehearsed): jaK3s cluster -> flux-operator +
    `clusters/prod/flux-instance.yaml` (branch prod) -> `platform-ssm` store ->
    promote apps one by one, flip the CF Tunnel route at cutover (rollback = flip

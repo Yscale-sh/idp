@@ -181,7 +181,7 @@ implementations:
 ### Dev lifecycle: continuous and automatic
 
 Dev realizes "push to your branch, it deploys." The in-cluster `idp-shipper` (`cmd/idp-shipper`) is
-infra-owned, in-cluster, and DEV-ONLY (`registry.env=dev`). Per registered app, every interval it:
+infra-owned, in-cluster, and enabled per environment (dev's instance uses `registry.env=dev`). Per registered app, every interval it:
 
 1. reads the GitHub head SHA for the app's repo and branch;
 2. if the SHA changed, derives the build set from the shopping lists (dedup by image);
@@ -219,8 +219,11 @@ regardless of that flag. Prod's `flux.branch` is `prod`; the prod cluster syncs 
 Commit the promote on the prod branch (the command prints the branch). Rollback is a `git revert` of
 that one commit.
 
-For the first cut, manual commits of the rendered `clusters/*/platform.yaml` are fine. The shipper
-automates the dev side; prod stays a deliberate promote.
+Prod also runs its own shipper instance (`registry.env=prod`, `platformBranch: prod`) that builds
+from each registered app's branch and commits the `prod` branch, brought online app by app as prod
+comes up. The deliberate promote above and the prod shipper coexist: promote pins an exact
+dev-tested digest with no rebuild, while the shipper builds fresh from the app branch. For a first
+cut, manual commits of the rendered `clusters/*/platform.yaml` are also fine.
 
 ### Per-env implementations of declared services
 

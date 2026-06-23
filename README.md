@@ -77,7 +77,7 @@ dashboard install, for watching reconciliations.
 
 ### How dev ships automatically
 
-The **idp-shipper** (`cmd/idp-shipper`) is infra-owned, in-cluster, and dev-only. It realizes "push to
+The **idp-shipper** (`cmd/idp-shipper`) is infra-owned, in-cluster, and runs one instance per environment. In dev it realizes "push to
 your branch, it deploys." Per registered app, every interval, it:
 
 1. reads the GitHub head SHA for the app's repo+branch;
@@ -94,8 +94,9 @@ developer's repo holds none of this; the developer only ever touches their `depl
 
 ## Promoting across environments (dev to prod)
 
-The shipper auto-deploys **dev** on every push. Moving to **prod** is deliberate and
-**digest-forward**: the artifact never rebuilds. `idpctl promote <app> prod --from dev` reads the
+Each environment runs its own shipper: dev commits `main`, and prod runs its own instance that
+commits the `prod` branch, brought online app by app as prod comes up. Prod also has a deliberate,
+**digest-forward** path that never rebuilds the artifact. `idpctl promote <app> prod --from dev` reads the
 image digest already running in dev's umbrella and re-renders the app with prod's policy, secrets
 backend, and namespaces:
 
@@ -263,7 +264,7 @@ writer**. All writes stay in git, and the site exposes nothing that is not alrea
 | Path | What |
 |---|---|
 | `cmd/idpctl`, `internal/*` | the Go CLI (`appconfig`, `render`, `policy`, `modules`, `clouddns`, `clusterenv`, `helmrunner`, `kube`, `secrets`, `scaffold`, `deploy`, `catalog`) |
-| `cmd/idp-shipper` | the in-cluster, dev-only CD orchestrator (poll repos -> build -> render -> commit -> Flux) |
+| `cmd/idp-shipper` | the in-cluster CD orchestrator, one instance per env (poll repos -> build -> render -> commit -> Flux) |
 | `charts/app` | the shared app chart (Deployment + ClusterIP Service + optional KEDA / ServiceMonitor / ExternalSecret / PDB / LAN LoadBalancer / volumes) |
 | `charts/infra`, `modules/` | infra module charts (`dev-postgres`, `dev-redis`) + the module registry |
 | `charts/cluster` | the **umbrella** chart: templates a HelmRelease per app / store / module from the env values |

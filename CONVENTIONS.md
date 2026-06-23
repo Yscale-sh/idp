@@ -47,7 +47,7 @@ failing app so it cannot wedge its siblings.
 **Lifecycle.** Two paths exist, and both end in a git commit that Flux reconciles.
 
 - **dev (continuous, automatic).** The in-cluster `idp-shipper` (`cmd/idp-shipper`)
-  is infra-owned and DEV-only. It realizes "push to your branch, it deploys." Per
+  is infra-owned and enabled per environment. It realizes "push to your branch, it deploys." Per
   registered app, every interval it reads the GitHub head SHA for the app's
   repo+branch; if the SHA changed, it derives the build set from the shopping lists
   (dedup by image), builds ONLY images whose inputs (`build.context`/`dockerfile`/
@@ -68,7 +68,10 @@ failing app so it cannot wedge its siblings.
   It NEVER rebuilds the artifact. Prod refuses mutable tags (`allowMutableTags:false`,
   and prod is hard-rejected in code regardless). The prod cluster syncs
   `refs/heads/prod`, so you commit the promote on the `prod` branch (the command
-  prints the branch). Rollback is a `git revert` of that one commit.
+  prints the branch). Rollback is a `git revert` of that one commit. Prod also runs its own shipper
+  instance (`registry.env: prod`, `platformBranch: prod`) that commits the `prod` branch, brought
+  online app by app. Promote pins an exact dev digest with no rebuild; the prod shipper builds fresh
+  from the app branch. Both coexist during bring-up.
 
 ---
 
