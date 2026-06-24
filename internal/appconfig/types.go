@@ -529,7 +529,7 @@ const (
 )
 
 // ValidProfiles is the closed set of resource presets the renderer understands.
-var ValidProfiles = []string{"minimal", "small", "medium", "large", "xlarge"}
+var ValidProfiles = []string{"minimal", "small", "medium", "large", "xlarge", "huge"}
 
 // Defaults returns a fresh App pre-populated with the conventional defaults.
 // Useful for scaffolding (`platformctl new app`).

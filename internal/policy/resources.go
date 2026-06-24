@@ -44,6 +44,17 @@ var profileResources = map[string]ResourceEnvelope{
 		Requests: ResourceSpec{CPU: "1", Memory: "1Gi"},
 		Limits:   ResourceSpec{CPU: "4", Memory: "4Gi"},
 	},
+	// Whole-node dev workloads — the litewindow cockpit runs cargo builds + multiple
+	// LLM agents + chromium + cartogopher in-pod and OOMs xlarge's 4Gi cap. Requests
+	// stay tiny so it always schedules, incl. the always-on optiplex fallback (~14Gi)
+	// when the r730 drains nightly. The 16Gi limit is a CEILING the pod only fully
+	// realizes on a >=16Gi node (node4/5/6); on optiplex it bursts to ~node capacity.
+	// NOTE: a limit above a node's RAM means node-level OOM (can hit neighbors), not a
+	// contained cgroup kill — size the always-on node accordingly. ("allow huge sizing")
+	"huge": {
+		Requests: ResourceSpec{CPU: "1", Memory: "2Gi"},
+		Limits:   ResourceSpec{CPU: "8", Memory: "16Gi"},
+	},
 }
 
 // ProfileResources returns the resource envelope for a profile.

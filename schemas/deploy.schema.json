@@ -96,7 +96,8 @@
             "small",
             "medium",
             "large",
-            "xlarge"
+            "xlarge",
+            "huge"
           ],
           "default": "minimal"
         },
