@@ -202,7 +202,7 @@ resourceProfiles:
     requests: { cpu: "1", memory: 1Gi }
     limits:   { cpu: "4", memory: 4Gi }
   huge:
-    requests: { cpu: "1", memory: 2Gi }
+    requests: { cpu: "1", memory: 8Gi }
     limits:   { cpu: "8", memory: 16Gi }
 
 # ── service (ClusterIP ONLY — no `type` key on purpose) ──────────────────────

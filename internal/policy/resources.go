@@ -45,14 +45,15 @@ var profileResources = map[string]ResourceEnvelope{
 		Limits:   ResourceSpec{CPU: "4", Memory: "4Gi"},
 	},
 	// Whole-node dev workloads — the litewindow cockpit runs cargo builds + multiple
-	// LLM agents + chromium + cartogopher in-pod and OOMs xlarge's 4Gi cap. Requests
-	// stay tiny so it always schedules, incl. the always-on optiplex fallback (~14Gi)
-	// when the r730 drains nightly. The 16Gi limit is a CEILING the pod only fully
-	// realizes on a >=16Gi node (node4/5/6); on optiplex it bursts to ~node capacity.
-	// NOTE: a limit above a node's RAM means node-level OOM (can hit neighbors), not a
-	// contained cgroup kill — size the always-on node accordingly. ("allow huge sizing")
+	// LLM agents + chromium + cartogopher in-pod and OOMs xlarge's 4Gi cap. The 8Gi
+	// REQUEST is deliberate scheduling pressure: it exceeds the free memory of the
+	// small 5–8Gi nodes (node0/1/2, incl. the control-plane masters) so the scheduler
+	// keeps the pod off them — a 16Gi-limit pod on a 7.7Gi master node-OOMs the whole
+	// node on a build. 8Gi fits only the always-on optiplex (~14Gi) and node3/burst,
+	// the nodes that can actually back a heavy dev workload. The 16Gi limit is still a
+	// CEILING fully realized only on a >=16Gi node; on optiplex it bursts to ~capacity.
 	"huge": {
-		Requests: ResourceSpec{CPU: "1", Memory: "2Gi"},
+		Requests: ResourceSpec{CPU: "1", Memory: "8Gi"},
 		Limits:   ResourceSpec{CPU: "8", Memory: "16Gi"},
 	},
 }
