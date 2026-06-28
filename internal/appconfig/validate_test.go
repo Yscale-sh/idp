@@ -57,7 +57,7 @@ func TestValidate_Table(t *testing.T) {
 		},
 		{
 			name:     "bad profile",
-			mutate:   func(a *App) { a.Sizing.Profile = "huge" },
+			mutate:   func(a *App) { a.Sizing.Profile = "gigantic" },
 			wantErr:  true,
 			wantPart: "sizing.profile",
 		},
