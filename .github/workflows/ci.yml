@@ -1,11 +1,21 @@
 name: ci
 
+# CI runs LOCALLY now, not on every push/PR. A pre-push git hook
+# (.githooks/pre-push -> scripts/ci-local.sh) runs this exact suite before code
+# leaves your machine — enable it once with `make hooks`.
+#
+# Why: ~2/3 of commits here are machine-generated GitOps pushes (idp-shipper /
+# deploy bots) that only touch clusters/<env>/platform.yaml. They carry no Go
+# change, yet each one used to fire this whole suite — pure wasted (free-plan)
+# Actions minutes, and every run was landing red anyway.
+#
+# This workflow is kept as a MANUAL clean-room escape hatch only: run it by hand
+# from Actions -> ci -> "Run workflow". To re-enable auto-runs, add back
+# `push:` / `pull_request:` triggers — and path-scope them (e.g. paths: ['**.go',
+# 'go.mod', 'go.sum', 'charts/**', 'examples/**', 'Dockerfile', '.github/**'])
+# so GitOps commits never trigger them.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['**.md', 'private/**']
-  pull_request:
-    paths-ignore: ['**.md', 'private/**']
+  workflow_dispatch:
 
 permissions:
   contents: read

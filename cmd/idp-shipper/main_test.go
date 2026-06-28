@@ -7,14 +7,14 @@ func TestUnderDir(t *testing.T) {
 		file, dir string
 		want      bool
 	}{
-		{"main.go", ".", true},        // root context contains everything
-		{"ui/app.tsx", "", true},      // empty dir == root
-		{"ui/app.tsx", "ui", true},    // direct child
-		{"ui/src/x.ts", "ui", true},   // nested child
-		{"ui/app.tsx", "ui/", true},   // trailing slash on dir tolerated
-		{"api/main.go", "ui", false},  // sibling dir is not under ui
-		{"uixyz/a", "ui", false},      // prefix-only, not a path boundary
-		{"ui", "ui", true},            // the dir itself
+		{"main.go", ".", true},       // root context contains everything
+		{"ui/app.tsx", "", true},     // empty dir == root
+		{"ui/app.tsx", "ui", true},   // direct child
+		{"ui/src/x.ts", "ui", true},  // nested child
+		{"ui/app.tsx", "ui/", true},  // trailing slash on dir tolerated
+		{"api/main.go", "ui", false}, // sibling dir is not under ui
+		{"uixyz/a", "ui", false},     // prefix-only, not a path boundary
+		{"ui", "ui", true},           // the dir itself
 	}
 	for _, c := range cases {
 		if got := underDir(c.file, c.dir); got != c.want {
@@ -29,7 +29,7 @@ func TestUnderAny(t *testing.T) {
 		file string
 		want bool
 	}{
-		{"vendor/yscale-transcode", true},          // gitlink pointer bump
+		{"vendor/yscale-transcode", true},            // gitlink pointer bump
 		{"vendor/yscale-transcode/src/lib.rs", true}, // file inside the submodule
 		{"third_party/x/go.mod", true},
 		{"vendor/other/y", false},

@@ -57,6 +57,16 @@ fmt: ## Format Go sources (gofmt -w).
 tidy: ## Sync go.mod/go.sum.
 	$(GO) mod tidy
 
+# ── local CI gate (replaces the auto GitHub ci.yml) ─────────────────────────────
+.PHONY: ci-local
+ci-local: ## Run the full local CI gate (build, gofmt, vet, race tests, lint, validate, smokes).
+	@./scripts/ci-local.sh
+
+.PHONY: hooks
+hooks: ## Wire .githooks as the repo hooks dir — enables the pre-push CI gate.
+	@git config core.hooksPath .githooks
+	@echo "core.hooksPath -> .githooks  (pre-push now runs 'make ci-local')"
+
 # ── lint ───────────────────────────────────────────────────────────────────────
 .PHONY: lint
 lint: vet helm-lint ## go vet + helm lint (charts/app, charts/infra/dev-postgres).
