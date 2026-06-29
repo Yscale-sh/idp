@@ -215,6 +215,18 @@ type Observability struct {
 	LokiURL        string `json:"lokiURL,omitempty"`
 	OTLPEndpoint   string `json:"otlpEndpoint,omitempty"`
 	ConsoleLogging *bool  `json:"consoleLogging,omitempty"`
+	// PostHogToken is one shared PostHog project token (a public client token)
+	// injected into every app — a single swap here rotates analytics everywhere.
+	PostHogToken string `json:"posthogProjectToken,omitempty"`
+	PostHogHost  string `json:"posthogHost,omitempty"`
+}
+
+// PostHogHostValue returns the configured PostHog host, defaulting to US cloud.
+func (o Observability) PostHogHostValue() string {
+	if o.PostHogHost == "" {
+		return "https://us.i.posthog.com"
+	}
+	return o.PostHogHost
 }
 
 // ResourceBounds caps requests/limits. Values are Kubernetes quantity strings.

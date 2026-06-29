@@ -33,6 +33,14 @@ func TierAEnv(app appconfig.App, env string, obs clusterenv.Observability, deplo
 	if obs.OTLPEndpoint != "" {
 		m["OTEL_EXPORTER_OTLP_ENDPOINT"] = obs.OTLPEndpoint
 	}
+	// PostHog: one shared (public) project token injected into every app so analytics
+	// is wired by default and rotates from a single swap in the cluster's observability
+	// config. Only inject when set, so non-analytics envs stay clean. Server apps read
+	// POSTHOG_PROJECT_TOKEN directly; frontends read it at runtime via their /config shim.
+	if obs.PostHogToken != "" {
+		m["POSTHOG_PROJECT_TOKEN"] = obs.PostHogToken
+		m["POSTHOG_HOST"] = obs.PostHogHostValue()
+	}
 	return m
 }
 
