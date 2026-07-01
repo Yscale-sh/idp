@@ -44,5 +44,8 @@ bakes/
 fast.yaml
 migration/captures/
 
+# lw mission scratch (bundles, prompts, worker logs)
+.mission/
+
 # Claude Code: keep the bundled skill, ignore personal local settings
 .claude/settings.local.json
