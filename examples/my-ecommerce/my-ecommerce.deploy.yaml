@@ -9,12 +9,12 @@
 # + managedRoles). Object storage = Linode Object Storage (bucket `ecommerce`,
 # endpoint hardcoded in Go) — R2 is a code-change fast-follow, not an env swap.
 #
-# Render: idpctl render --env prod -f my-ecommerce.deploy.yaml --image ghcr.io/jakenesler/my-ecommerce:76a9880e
+# Render: idpctl render --env prod -f my-ecommerce.deploy.yaml --image ghcr.io/yscale-sh/my-ecommerce:76a9880e
 app: my-ecommerce
 component: site            # namespace my-ecommerce-prod-site
 
 runtime:
-  image: ghcr.io/jakenesler/my-ecommerce   # tag from --image
+  image: ghcr.io/yscale-sh/my-ecommerce   # tag from --image
   port: 8080
 
 routes:

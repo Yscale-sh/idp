@@ -18,9 +18,9 @@ store names stay app-level (`dim`) so siblings share them.
 
 ```bash
 ./idpctl validate --file examples/dim/api.deploy.yaml
-./idpctl render --env dev --file examples/dim/api.deploy.yaml     --image ghcr.io/jakenesler/dim:dev-<sha>
-./idpctl render --env dev --file examples/dim/scanner.deploy.yaml --image ghcr.io/jakenesler/dim:dev-<sha>
-./idpctl render --env dev --file examples/dim/ui.deploy.yaml      --image ghcr.io/jakenesler/dim-ui:dev-<sha>
+./idpctl render --env dev --file examples/dim/api.deploy.yaml     --image ghcr.io/yscale-sh/dim:dev-<sha>
+./idpctl render --env dev --file examples/dim/scanner.deploy.yaml --image ghcr.io/yscale-sh/dim:dev-<sha>
+./idpctl render --env dev --file examples/dim/ui.deploy.yaml      --image ghcr.io/yscale-sh/dim-ui:dev-<sha>
 ```
 
 Each `render` upserts that component into `clusters/dev/platform.yaml`, the env's umbrella

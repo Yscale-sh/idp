@@ -30,7 +30,7 @@ Flux branch, and Flux reconciles it. Never `kubectl apply` or `helm upgrade`.
    TAG=abc1234
    idpctl validate --file myapp/deploy.yaml
    idpctl render --env dev --file myapp/deploy.yaml \
-     --image ghcr.io/jakenesler/myapp:$TAG
+     --image ghcr.io/yscale-sh/myapp:$TAG
    ```
 
 4. Review and commit `clusters/dev/platform.yaml`, then push the branch named by

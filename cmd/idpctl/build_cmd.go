@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jakenesler/idp/internal/builder"
-	"github.com/jakenesler/idp/internal/kube"
+	"github.com/yscale-sh/idp/internal/builder"
+	"github.com/yscale-sh/idp/internal/kube"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ import (
 // credentials. The platform thus builds its OWN image (idpctl) through its own
 // pipeline instead of a developer's laptop:
 //
-//	idpctl build --repo JakeNesler/idp --ref main --image ghcr.io/jakenesler/idpctl:v2
+//	idpctl build --repo Yscale-sh/idp --ref main --image ghcr.io/yscale-sh/idpctl:v2
 func newBuildCmd() *cobra.Command {
 	var repo, ref, image, buildContext, dockerfile, namespace, kctx string
 	var submodules []string
@@ -57,7 +57,7 @@ the builder's ghcr push credentials. Blocks until the build succeeds or fails.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&repo, "repo", "", "GitHub org/name to clone (e.g. JakeNesler/idp)")
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub org/name to clone (e.g. Yscale-sh/idp)")
 	cmd.Flags().StringVar(&ref, "ref", "", "git ref to build — a branch or, preferably, a commit SHA")
 	cmd.Flags().StringVar(&image, "image", "", "fully-qualified target image repo:tag to push")
 	cmd.Flags().StringVar(&buildContext, "build-context", ".", "build context subdir relative to repo root")

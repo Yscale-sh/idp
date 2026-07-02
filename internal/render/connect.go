@@ -3,8 +3,8 @@ package render
 import (
 	"fmt"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 // ResolvedConnection is a connectsTo entry resolved to a concrete address for the

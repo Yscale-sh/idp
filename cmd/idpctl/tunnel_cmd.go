@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clouddns"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clouddns"
 	"github.com/spf13/cobra"
 )
 

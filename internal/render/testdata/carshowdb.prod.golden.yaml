@@ -66,7 +66,7 @@ spec:
         name: platform-ssm
     image:
       pullPolicy: IfNotPresent
-      repository: ghcr.io/jakenesler/carshowdb-api
+      repository: ghcr.io/yscale-sh/carshowdb-api
       tag: prod-abc123
     imagePullSecrets:
     - name: ghcr-pull

@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 	"sigs.k8s.io/yaml"
 )
 

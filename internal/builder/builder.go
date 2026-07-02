@@ -20,7 +20,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/jakenesler/idp/internal/kube"
+	"github.com/yscale-sh/idp/internal/kube"
 )
 
 // jobDeadline must be >= the Job's activeDeadlineSeconds (3600s) so the Job's own

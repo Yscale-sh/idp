@@ -11,7 +11,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/jakenesler/idp/internal/render"
+	"github.com/yscale-sh/idp/internal/render"
 	"sigs.k8s.io/yaml"
 )
 

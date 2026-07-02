@@ -25,7 +25,7 @@ apps get a Cloudflare Tunnel in prod. DB, cache, and secret URLs are injected as
 ```yaml
 app: myapp                       # unique app name (lowercase)
 runtime:
-  image: ghcr.io/jakenesler/myapp   # repo ONLY, NO tag (CI/--image supplies it)
+  image: ghcr.io/yscale-sh/myapp   # repo ONLY, NO tag (CI/--image supplies it)
   port: 8080                     # the port your server listens on
 routes:
   - host: api                    # bare label -> api.<env-zone> (e.g. api.myapp.com in prod)
@@ -92,7 +92,7 @@ component:
 
 ```yaml
 app: myapp
-runtime: { image: ghcr.io/jakenesler/myapp-api, port: 8080 }   # base (api inherits)
+runtime: { image: ghcr.io/yscale-sh/myapp-api, port: 8080 }   # base (api inherits)
 components:
   - component: api
     db: [{ name: primary, type: postgres }]
@@ -101,7 +101,7 @@ components:
     port: 0                       # no HTTP server
     db: []                        # opt out of the base stores with []
   - component: ui
-    runtime: { image: ghcr.io/jakenesler/myapp-ui, port: 80 }
+    runtime: { image: ghcr.io/yscale-sh/myapp-ui, port: 80 }
     probes: { type: tcp }
     routes: [{ host: app, public: true }]   # routes live on the component that serves them
 ```
@@ -185,5 +185,4 @@ the SSM secrets backend.
 ## Go deeper
 
 `docs/IDP.md` (architecture) · `docs/ENV.md` + `docs/SECRETS.md` (env/secrets contract) ·
-`docs/PLATFORM_DX.md` (DX) · `docs/POC_CARSHOWDB.md` (a worked example) ·
-`agents/PROD_ROLLOUT.md` (prod cutover playbook plus landmines) · `examples/` (real deploy.yamls).
+`docs/PLATFORM_DX.md` (DX) · `examples/` (real deploy.yamls).

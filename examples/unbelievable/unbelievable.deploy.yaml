@@ -6,12 +6,12 @@
 # MONGO_USERNAME/MONGO_PASSWORD. ⚠️ Atlas Network Access must allow the jaK3s node
 # egress IPs (172.238.175.181 / 172.236.96.50 / 172.236.96.80) or be 0.0.0.0/0.
 #
-# Render: idpctl render --env prod -f unbelievable.deploy.yaml --image ghcr.io/jakenesler/unbelievablesite:db73b9c5
+# Render: idpctl render --env prod -f unbelievable.deploy.yaml --image ghcr.io/yscale-sh/unbelievablesite:db73b9c5
 app: unbelievable
 component: site
 
 runtime:
-  image: ghcr.io/jakenesler/unbelievablesite   # tag from --image
+  image: ghcr.io/yscale-sh/unbelievablesite   # tag from --image
   port: 8080
 
 routes:

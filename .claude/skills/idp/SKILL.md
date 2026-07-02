@@ -59,7 +59,7 @@ Authoritative detail lives in the repo. Read on demand, do not preload:
 
 ```yaml
 app: carshowdb
-runtime: { image: ghcr.io/jakenesler/carshowdb-api, port: 8080 }   # port 0 means a worker (no Service or probes)
+runtime: { image: ghcr.io/yscale-sh/carshowdb-api, port: 8080 }   # port 0 means a worker (no Service or probes)
 routes:  [{ host: carshowdb, public: true }]   # public route: Cloudflare Tunnel in prod, MetalLB LAN LoadBalancer in dev
 sizing:  { profile: minimal, replicas: 2, autoscale: { enabled: true, max: 5 } }
 db:      [{ name: primary, type: postgres, size: minimal }]   # platform provisions and wires DATABASE_URL

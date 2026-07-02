@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clouddns"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clouddns"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 // publicTunnelHosts returns an app's public route hosts COMPOSED under the target

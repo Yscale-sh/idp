@@ -1,8 +1,8 @@
 package render
 
 import (
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 // devPostgresChartPath / devRedisChartPath are the in-repo paths to the per-app

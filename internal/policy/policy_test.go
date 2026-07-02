@@ -4,14 +4,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 func baseApp() appconfig.App {
 	a := appconfig.App{
 		App:     "carshowdb",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 	}
 	a.ApplyDefaults()
 	return a
@@ -44,7 +44,7 @@ func strictDevCluster() *clusterenv.Config {
 
 func TestCheck_MutableTagProd(t *testing.T) {
 	app := baseApp()
-	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/jakenesler/carshowdb-api:latest"})
+	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/yscale-sh/carshowdb-api:latest"})
 	if err := vs.AsError(); err == nil {
 		t.Fatal("expected mutable-tag violation in prod")
 	}
@@ -55,7 +55,7 @@ func TestCheck_MutableTagProd(t *testing.T) {
 
 func TestCheck_EmptyTagProd(t *testing.T) {
 	app := baseApp()
-	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/jakenesler/carshowdb-api"})
+	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/yscale-sh/carshowdb-api"})
 	if !errors.Is(vs, ErrMutableTag) {
 		t.Errorf("empty prod tag should violate, got %v", vs)
 	}
@@ -63,7 +63,7 @@ func TestCheck_EmptyTagProd(t *testing.T) {
 
 func TestCheck_MutableTagAllowedInDev(t *testing.T) {
 	app := baseApp()
-	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/jakenesler/carshowdb-api:latest", Cluster: devCluster()})
+	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: devCluster()})
 	if err := vs.AsError(); err != nil {
 		t.Errorf("dev should tolerate :latest, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestCheck_ImmutableTagProdOK(t *testing.T) {
 		},
 	}
 	c.ApplyDefaults()
-	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/jakenesler/carshowdb-api:prod-abc", Cluster: c})
+	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/yscale-sh/carshowdb-api:prod-abc", Cluster: c})
 	if err := vs.AsError(); err != nil {
 		t.Errorf("immutable prod tag in zone should pass, got %v", err)
 	}
@@ -121,7 +121,7 @@ func TestCheck_ZoneOKInZone(t *testing.T) {
 // allowMutableTags=false in a NON-prod env must reject :latest (finding #5).
 func TestCheck_MutableTagRejectedWhenNotAllowed(t *testing.T) {
 	app := baseApp()
-	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/jakenesler/carshowdb-api:latest", Cluster: strictDevCluster()})
+	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: strictDevCluster()})
 	if !errors.Is(vs, ErrMutableTag) {
 		t.Errorf("strict dev (allowMutableTags=false) must reject :latest, got %v", vs)
 	}
@@ -130,7 +130,7 @@ func TestCheck_MutableTagRejectedWhenNotAllowed(t *testing.T) {
 // allowMutableTags=false also rejects an EMPTY tag in a non-prod env.
 func TestCheck_EmptyTagRejectedWhenNotAllowed(t *testing.T) {
 	app := baseApp()
-	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/jakenesler/carshowdb-api", Cluster: strictDevCluster()})
+	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api", Cluster: strictDevCluster()})
 	if !errors.Is(vs, ErrMutableTag) {
 		t.Errorf("strict dev (allowMutableTags=false) must reject empty tag, got %v", vs)
 	}
@@ -264,9 +264,9 @@ func TestCheckModuleValues_ClusterIPClean(t *testing.T) {
 
 func TestImageTag(t *testing.T) {
 	cases := map[string]string{
-		"ghcr.io/jakenesler/app:prod-abc": "prod-abc",
-		"ghcr.io/jakenesler/app:latest":   "latest",
-		"ghcr.io/jakenesler/app":          "",
+		"ghcr.io/yscale-sh/app:prod-abc": "prod-abc",
+		"ghcr.io/yscale-sh/app:latest":   "latest",
+		"ghcr.io/yscale-sh/app":          "",
 		"registry:5000/app:v1":            "v1",
 		"registry:5000/app":               "",
 		"app@sha256:deadbeef":             "sha256:deadbeef",

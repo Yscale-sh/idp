@@ -7,7 +7,7 @@
 
 The cheapest *and* most scalable shape on the table. Replaces the "one fat managed cluster" node
 layer from the earlier migration plan. Everything else from that plan (Cloudflare Tunnel ingress,
-self-hosted Postgres per `docs/POSTGRES_BACKUPS.md`, the IDP app-chart, namespace model) stays the same.
+self-hosted Postgres with CNPG barman→R2 backups, the IDP app-chart, namespace model) stays the same.
 
 ```
                  Cloudflare  (DNS + edge TLS + DDoS + free Tunnel)
@@ -65,7 +65,7 @@ stateless apps and jobs are free to schedule onto the mesh. KEDA drives the mesh
   the trade you want. (LKE's free managed control plane is the alternative if you'd rather not own
   this, but it pins you to one region and the CCM, which the mesh model is designed to escape.)
 - **Storage.** k3s doesn't bundle the Linode CSI; install it so Postgres PVCs survive node loss
-  (don't use local-path for the DB). Backups per `docs/POSTGRES_BACKUPS.md`.
+  (don't use local-path for the DB). Backups via CNPG barman→R2 (chart `charts/infra/cnpg-db`).
 
 ---
 

@@ -84,7 +84,7 @@ invalid placeholder that could never be pulled, surfacing the mistake loudly
 without breaking lint/template. The renderer always supplies both.
 */}}
 {{- define "app.image" -}}
-{{- $repo := .Values.image.repository | default "ghcr.io/jakenesler/UNSET" -}}
+{{- $repo := .Values.image.repository | default "ghcr.io/yscale-sh/UNSET" -}}
 {{- $tag := .Values.image.tag | default "UNSET" -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end }}

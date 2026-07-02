@@ -1,11 +1,11 @@
 # Dim UI — nginx serving the React SPA + reverse-proxying /api,/ws,/images to the
 # api component. The ONLY LAN-reachable service (MetalLB LoadBalancer on the LAN).
-#   idpctl render --env dev --file dim-ui.deploy.yaml --image ghcr.io/jakenesler/dim-ui:<tag>
+#   idpctl render --env dev --file dim-ui.deploy.yaml --image ghcr.io/yscale-sh/dim-ui:<tag>
 app: dim
 component: ui
 
 runtime:
-  image: ghcr.io/jakenesler/yscale-media-ui
+  image: ghcr.io/yscale-sh/yscale-media-ui
   port: 80
 
 sizing:

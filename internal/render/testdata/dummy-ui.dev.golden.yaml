@@ -73,7 +73,7 @@ spec:
         name: platform-local
     image:
       pullPolicy: IfNotPresent
-      repository: ghcr.io/jakenesler/dummy-ui
+      repository: ghcr.io/yscale-sh/dummy-ui
       tag: dev-1
     imagePullSecrets:
     - name: ghcr-pull

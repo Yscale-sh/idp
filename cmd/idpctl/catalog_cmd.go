@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jakenesler/idp/internal/catalog"
+	"github.com/yscale-sh/idp/internal/catalog"
 	"github.com/spf13/cobra"
 )
 

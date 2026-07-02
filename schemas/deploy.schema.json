@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jakenesler/idp/schemas/deploy.schema.json",
+  "$id": "https://github.com/yscale-sh/idp/schemas/deploy.schema.json",
   "title": "idpctl deploy.yaml",
   "description": "The developer 'shopping list' contract. Mirrors internal/appconfig/types.go (App). Authoritative validation is in Go (`idpctl validate`); this schema is for editors/docs.",
   "type": "object",
@@ -36,7 +36,7 @@
       "properties": {
         "image": {
           "type": "string",
-          "description": "Container repository WITHOUT tag (CI supplies --image). Convention: ghcr.io/jakenesler/<app>."
+          "description": "Container repository WITHOUT tag (CI supplies --image). Convention: ghcr.io/yscale-sh/<app>."
         },
         "port": {
           "type": "integer",

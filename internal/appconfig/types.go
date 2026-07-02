@@ -176,7 +176,7 @@ type ProbeConfig struct {
 
 // Runtime is the container image (without tag — CI supplies --image) and port.
 type Runtime struct {
-	// Image is the container repository, e.g. ghcr.io/jakenesler/<app>. The
+	// Image is the container repository, e.g. ghcr.io/yscale-sh/<app>. The
 	// concrete tag is injected by CI via --image, not stored in deploy.yaml.
 	Image string `json:"image" yaml:"image"`
 

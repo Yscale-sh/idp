@@ -6,7 +6,7 @@ app: carshowdb
 component: api
 
 runtime:
-  image: ghcr.io/jakenesler/carshowdb-api
+  image: ghcr.io/yscale-sh/carshowdb-api
   port: 8080
 
 routes:

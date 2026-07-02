@@ -210,13 +210,13 @@ modules:
       Enable for in-cluster certs (webhooks, mTLS) or cloud envs that need ACME.
 
   # ── yscale — ephemeral cloud-node burst autoscaler (DEFERRED, disabled) ──────
-  # Real chart (image ghcr.io/jakenesler/yscale-controller); it bursts EPHEMERAL
+  # Real chart (image ghcr.io/yscale-sh/yscale-controller); it bursts EPHEMERAL
   # cloud nodes (Fly.io) joined over Tailscale in k3s mode. On a LAN cluster there
   # is nothing to burst into, so it ships enabled:false everywhere. chartRepo so it
   # is pinned; do NOT deploy.
   yscale:
     source: chartRepo
-    repoURL: oci://ghcr.io/jakenesler/charts
+    repoURL: oci://ghcr.io/yscale-sh/charts
     chart: yscale
     version: 0.1.0
     defaultNamespace: yscale-system

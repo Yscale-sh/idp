@@ -11,10 +11,11 @@ on a best-effort basis, prioritized by whether the issue affects rendered cluste
 
 ## Scope notes
 
-- This repo intentionally contains the author's live rendered state (`clusters/`,
-  `environments/`). Secret *names* and RFC1918 LAN addresses appearing there are by design and
-  are not vulnerabilities. Real credential **values** anywhere in the repo absolutely are.
+- Rendered desired state lands in `clusters/<env>/` in your fork. Secret *names* and RFC1918
+  LAN addresses appearing there are by design and are not vulnerabilities — the design rule is
+  that everything rendered into `clusters/` must be secret-free (references only: ExternalSecrets
+  paths, SSM parameter names). Real credential **values** anywhere in the repo absolutely are.
   Report those.
 - The platform's stance: secrets are never committed; they live in the configured secrets backend
-  (e.g. SSM) and reach pods via External Secrets. A change that causes a real secret value to be
-  rendered into `clusters/` is a critical bug.
+  (e.g. SSM) and reach pods via External Secrets. Any real credential rendered into `clusters/`
+  is a critical bug.

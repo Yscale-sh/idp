@@ -17,15 +17,15 @@
 # ── config ───────────────────────────────────────────────────────────────────
 BINARY      := idpctl
 CMD_PKG     := ./cmd/idpctl
-IMAGE_REPO  ?= ghcr.io/jakenesler/idpctl
+IMAGE_REPO  ?= ghcr.io/yscale-sh/idpctl
 TAG         ?= dev
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
 EXAMPLE     := examples/carshowdb/deploy.yaml
 ENV         ?= dev
 # Image must be an immutable tag (never :latest in prod). Override on the CLI:
-#   make render IMAGE=ghcr.io/jakenesler/carshowdb-api:dev-abc123
-IMAGE       ?= ghcr.io/jakenesler/carshowdb-api:dev-local
+#   make render IMAGE=ghcr.io/yscale-sh/carshowdb-api:dev-abc123
+IMAGE       ?= ghcr.io/yscale-sh/carshowdb-api:dev-local
 
 GO          ?= go
 HELM        ?= helm

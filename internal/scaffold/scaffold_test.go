@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/appconfig"
 	"sigs.k8s.io/yaml"
 )
 

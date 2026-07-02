@@ -9,7 +9,7 @@ import (
 func validApp() App {
 	return App{
 		App:     "carshowdb",
-		Runtime: Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 	}
 }
 
@@ -45,7 +45,7 @@ func TestValidate_Table(t *testing.T) {
 		},
 		{
 			name:     "image carries a tag",
-			mutate:   func(a *App) { a.Runtime.Image = "ghcr.io/jakenesler/carshowdb-api:latest" },
+			mutate:   func(a *App) { a.Runtime.Image = "ghcr.io/yscale-sh/carshowdb-api:latest" },
 			wantErr:  true,
 			wantPart: "repository only",
 		},

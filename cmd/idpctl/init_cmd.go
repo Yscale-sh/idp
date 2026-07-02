@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jakenesler/idp/internal/scaffold"
-	"github.com/jakenesler/idp/internal/tenant"
+	"github.com/yscale-sh/idp/internal/scaffold"
+	"github.com/yscale-sh/idp/internal/tenant"
 	"github.com/spf13/cobra"
 )
 

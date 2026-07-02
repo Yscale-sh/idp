@@ -3,15 +3,15 @@ package render
 import (
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 func TestResolveConnections_Modes(t *testing.T) {
 	app := appconfig.App{
 		App:     "dummy-ui",
 		Product: "dummy",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/dummy-ui", Port: 3000},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/dummy-ui", Port: 3000},
 		ConnectsTo: []appconfig.Connection{
 			{App: "dummy-api", Env: "API_BASE_URL", Mode: "clusterService"},
 			{Component: "api", Env: "PUBLIC_API_URL", Mode: "publicRoute"},

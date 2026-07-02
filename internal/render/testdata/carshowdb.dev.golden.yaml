@@ -37,7 +37,7 @@ spec:
     cache: []
     db:
     - connection:
-        url: postgres://app:CHANGEME@dev-postgres:5432/app/carshowdb?sslmode=disable
+        url: postgresql://app:dev-postgres-placeholder@carshowdb-postgres-dev-postgres.carshowdb-dev-postgres.svc.cluster.local:5432/carshowdb?sslmode=disable
       default: true
       name: primary
       type: postgres
@@ -79,7 +79,7 @@ spec:
         name: platform-local
     image:
       pullPolicy: IfNotPresent
-      repository: ghcr.io/jakenesler/carshowdb-api
+      repository: ghcr.io/yscale-sh/carshowdb-api
       tag: dev-abc123
     imagePullSecrets:
     - name: ghcr-pull

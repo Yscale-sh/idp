@@ -11,7 +11,7 @@
 #     DATABASE_URL points at the in-cluster dev Postgres; app keys are dev placeholders.
 
 image:
-  repository: ghcr.io/jakenesler/carshowdb-api
+  repository: ghcr.io/yscale-sh/carshowdb-api
   tag: dev-abc1234            # CI --image injects the immutable tag
   pullPolicy: IfNotPresent
 

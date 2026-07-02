@@ -62,7 +62,7 @@ ok "examples valid"
 
 step "render smoke (non-destructive --stdout)"
 ./idpctl render --env dev --file examples/carshowdb/deploy.yaml \
-  --image ghcr.io/jakenesler/carshowdb-api:dev-ci0000 --stdout >/dev/null \
+  --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000 --stdout >/dev/null \
   || fail "render smoke failed"
 ok "render ok"
 

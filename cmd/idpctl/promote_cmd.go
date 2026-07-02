@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jakenesler/idp/internal/clusterenv"
-	"github.com/jakenesler/idp/internal/deploy"
-	"github.com/jakenesler/idp/internal/render"
+	"github.com/yscale-sh/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/deploy"
+	"github.com/yscale-sh/idp/internal/render"
 	"github.com/spf13/cobra"
 )
 

@@ -1,4 +1,4 @@
-module github.com/jakenesler/idp
+module github.com/yscale-sh/idp
 
 go 1.25.11
 

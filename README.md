@@ -7,13 +7,24 @@
 
 **Status:** work-in-progress, running real workloads. `dev` is a live homelab k3s cluster, and the
 active promotion path is **dev to prod** (digest-forward via `idpctl promote --from dev`). A **stage**
-tier is scaffolded in-repo but deferred for now. `prod` is a self-provisioned k3s cluster on Linode;
-the LKE-to-jaK3s migration is gated (see [`docs/PROD_MIGRATION.md`](docs/PROD_MIGRATION.md)). The CLI
-is **`idpctl`** (Go module `github.com/jakenesler/idp`). Apache-2.0.
+tier is scaffolded in-repo but deferred for now. `prod` is a self-provisioned k3s cluster on Linode.
+The CLI is **`idpctl`** (Go module `github.com/yscale-sh/idp`). Apache-2.0.
 
-This repo is **both the platform and a live instance of it**: `clusters/` and `environments/`
-hold the author's real rendered state. That is the model. You do not install idp, you
-**fork it and make it yours** (see [Make it yours](#make-it-yours)).
+This repo is **the platform plus reference instance files**: `environments/` holds skeleton env
+definitions a fork edits, `clusters/` holds the per-env `FluxInstance` skeletons, and `idpctl
+render` writes the rendered umbrella into `clusters/<env>/` in your fork. You do not install idp,
+you **fork it and make it yours** (see [Make it yours](#make-it-yours)).
+
+---
+
+## Fork model
+
+Fork the repo → edit `idp.yaml` (registry prefix, repo URL/branch) → edit
+`environments/<env>/cluster.yaml` (zones, secrets backend, modules) and
+`clusters/<env>/flux-instance.yaml` (point `spec.sync.url` at your fork) →
+install the Flux Operator and apply the `FluxInstance`. From then on, deploy
+apps by writing a `deploy.yaml`, running `idpctl render` to upsert into the
+umbrella, and committing — Flux is the only writer.
 
 ---
 
@@ -33,7 +44,7 @@ The contract is a **shopping list**, not Kubernetes:
 
 ```yaml
 app: carshowdb
-runtime: { image: ghcr.io/jakenesler/carshowdb-api, port: 8080 }
+runtime: { image: ghcr.io/yscale-sh/carshowdb-api, port: 8080 }
 routes:  [{ host: carshowdb, public: true }]   # bare label: carshowdb.local in dev, carshowdb.<domain> over a tunnel in prod
 sizing:  { profile: minimal, replicas: 2, autoscale: { enabled: true, max: 5 } }
 db:      [{ name: primary, type: postgres, size: minimal }]   # platform provisions + wires DATABASE_URL
@@ -127,10 +138,8 @@ prod self-heals with zero dependency on dev. Full rationale: [`docs/ENVIRONMENTS
 The prod target is a self-provisioned k3s cluster on Linode built from the **jaK3s** golden image
 (hardened Debian + Cilium + embedded etcd + kube-vip, etcd snapshots to R2). prod exposure is
 Cloudflare Tunnel only (no MetalLB), and `statefulStores` is false, so apps get `DATABASE_URL` from
-the SSM secrets backend and stay PVC-free by contract. The LKE-to-jaK3s migration is gated; LKE stays
-untouched until cutover: [`docs/PROD_MIGRATION.md`](docs/PROD_MIGRATION.md). A runbook for retiring the
-`prod` branch and tracking `main` instead is sketched in [`docs/PROD_ON_MAIN.md`](docs/PROD_ON_MAIN.md),
-not yet executed.
+the SSM secrets backend and stay PVC-free by contract. prod Flux tracks the dedicated `prod` branch
+(see `environments/prod/cluster.yaml`); promotions are commits there.
 
 ## The app contract
 
@@ -272,7 +281,7 @@ writer**. All writes stay in git, and the site exposes nothing that is not alrea
 | `clusters/{dev,stage,prod}` | the per-env `FluxInstance` + `platform.yaml` (rendered umbrella); `clusters/dev/sync-stage.yaml` bootstraps stage on the dev cluster |
 | `examples/{carshowdb,dim}` | onboarded apps: a single service and a multi-component product |
 | `schemas/`, `test/` | the `deploy.yaml` JSON schema + unit/golden/e2e tests |
-| `docs/` | design notes & references: see [`ENVIRONMENTS.md`](docs/ENVIRONMENTS.md) (envs + promotion), [`PROD_MIGRATION.md`](docs/PROD_MIGRATION.md) (gated LKE-to-jaK3s plan), plus env tiers, secrets model, CLI design, backups, history |
+| `docs/` | design notes & references: see [`ENVIRONMENTS.md`](docs/ENVIRONMENTS.md) (envs + promotion), plus env tiers, secrets model, CLI design, backups, history |
 
 ## Quickstart (dev)
 
@@ -281,7 +290,7 @@ No cluster, cloud account, or credentials needed: render is local.
 ```bash
 make build && make test                            # compiles ./idpctl, runs unit/golden tests
 ./idpctl validate --file examples/carshowdb/deploy.yaml
-./idpctl render   --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:dev-<sha>
+./idpctl render   --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:dev-<sha>
 ./idpctl infra render --env dev
 make e2e          # spins an ephemeral k3d cluster, applies, asserts rollout, tears down (SKIPs if k3d absent)
 ```
@@ -301,8 +310,9 @@ defaulted in Go code or charts; `idpctl` fails closed if it is missing. To run y
 4. Bootstrap a cluster: install the Flux Operator and apply `clusters/<env>/flux-instance.yaml`.
    From then on, deploying is a git commit.
 
-The `clusters/` and `examples/` content you inherit from the fork is the author's instance;
-`idpctl remove` plus re-render replaces it with yours.
+`examples/` are the author's real app contracts kept as reference material; `clusters/` ships only
+the `FluxInstance` skeletons you point at your own fork. `idpctl remove` plus re-render replaces
+the umbrella with yours.
 
 Only the optional cloud features need accounts: `idpctl dns` / `idpctl tunnel` (Cloudflare) and the
 `ssm` secrets backend (AWS). The dev environment runs without any of them.
@@ -315,8 +325,8 @@ Only the optional cloud features need accounts: `idpctl dns` / `idpctl tunnel` (
 
 Design notes live in [`docs/`](docs/): the CLI design ([`DEPLOY_GO_CLI.md`](docs/DEPLOY_GO_CLI.md)),
 the secrets trust model ([`SECRETS.md`](docs/SECRETS.md)), env-var tiers ([`ENV.md`](docs/ENV.md)),
-Postgres backups ([`POSTGRES_BACKUPS.md`](docs/POSTGRES_BACKUPS.md)), and design history
-([`IDP.md`](docs/IDP.md)). The platform contract is [`CONVENTIONS.md`](CONVENTIONS.md); the target
+and design history ([`IDP.md`](docs/IDP.md)). Postgres backups are CNPG barman→R2 (chart
+`charts/infra/cnpg-db`). The platform contract is [`CONVENTIONS.md`](CONVENTIONS.md); the target
 production shape is [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 The project grew out of a cloud cost review: seven $10/mo load balancers, a $32/mo managed

@@ -7,12 +7,12 @@
 # (prod-pg, database `cartogopher`, DATABASE_URL in SSM). Redis = shared family redis
 # (REDIS_URL in SSM). See examples/cartogopher/router/nginx.conf for the upstreams.
 #
-# Render: idpctl render --env prod -f cartogopher.deploy.yaml --image ghcr.io/jakenesler/cartogopher-api:26757289
+# Render: idpctl render --env prod -f cartogopher.deploy.yaml --image ghcr.io/yscale-sh/cartogopher-api:26757289
 app: cartogopher
 
 # ── shared base (api inherits; landing/router override runtime) ───────────────
 runtime:
-  image: ghcr.io/jakenesler/cartogopher-api   # tag supplied by `idpctl render --image`
+  image: ghcr.io/yscale-sh/cartogopher-api   # tag supplied by `idpctl render --image`
   port: 3001
 
 logging:
@@ -54,7 +54,7 @@ components:
 
   - component: landing
     runtime:
-      image: ghcr.io/jakenesler/cartogopher-landing   # tag = shared --image (26757289)
+      image: ghcr.io/yscale-sh/cartogopher-landing   # tag = shared --image (26757289)
       port: 80
     probes:
       type: tcp                 # static nginx, no HTTP health route
@@ -68,7 +68,7 @@ components:
 
   - component: router
     runtime:
-      image: ghcr.io/jakenesler/cartogopher-router   # tag = shared --image (26757289)
+      image: ghcr.io/yscale-sh/cartogopher-router   # tag = shared --image (26757289)
       port: 80
     probes:
       type: tcp

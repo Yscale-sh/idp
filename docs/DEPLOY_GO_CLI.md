@@ -110,7 +110,7 @@ idpctl plan --env prod -f deploy.yaml --image <ref>            # validate + poli
 idpctl render --env dev --root <idp clone> -f deploy.yaml --image <ref>    # upsert app into the env umbrella
 idpctl promote <app> prod --from dev -f deploy.yaml            # digest-forward; never rebuilds
 idpctl remove --app dummy-api --env dev                        # drop a workload/component; Flux prunes
-idpctl build --repo JakeNesler/idp --ref <sha> --image <ref>  # in-cluster image-builder -> GHCR
+idpctl build --repo Yscale-sh/idp --ref <sha> --image <ref>  # in-cluster image-builder -> GHCR
 idpctl catalog --env prod --format html                       # read-only view of clusters/<env>/platform.yaml
 idpctl doctor --env dev                                        # probe the live cluster for declared seams
 idpctl dns sync -f deploy.yaml                                 # Cloudflare CNAMEs for public routes
@@ -253,7 +253,7 @@ developer says what the app needs; the platform decides how to wire it. The sche
 app: dummy-api
 
 runtime:
-  image: ghcr.io/jakenesler/dummy-api
+  image: ghcr.io/yscale-sh/dummy-api
   port: 8080
 
 routes:
@@ -308,7 +308,7 @@ component carries only its deltas:
 
 ```yaml
 app: media
-runtime: { image: ghcr.io/jakenesler/media-api, port: 8000 }   # base image
+runtime: { image: ghcr.io/yscale-sh/media-api, port: 8000 }   # base image
 build:   { submodules: [vendor/transcoder] }                   # declared once
 db:      [{ name: primary, type: postgres }]                   # app-level store
 cache:   [{ name: events,  type: redis }]
@@ -320,7 +320,7 @@ components:
     port: 0
     env:  { ROLE: scanner }
   - component: ui                        # its own image; opts out of the stores
-    runtime: { image: ghcr.io/jakenesler/media-ui, port: 80 }
+    runtime: { image: ghcr.io/yscale-sh/media-ui, port: 80 }
     db: []
     cache: []
     expose: { lan: true }
@@ -504,7 +504,7 @@ product: dummy
 components:
   api:
     runtime:
-      image: ghcr.io/jakenesler/dummy-api
+      image: ghcr.io/yscale-sh/dummy-api
       port: 8080
     routes:
       - host: api.dummyproducts.com
@@ -518,7 +518,7 @@ components:
 
   ui:
     runtime:
-      image: ghcr.io/jakenesler/dummy-ui
+      image: ghcr.io/yscale-sh/dummy-ui
       port: 3000
     routes:
       - host: dummyproducts.com
@@ -770,12 +770,12 @@ jobs:
       - name: Build and push image
         run: |
           TAG=prod-${GITHUB_SHA::8}
-          IMG=ghcr.io/jakenesler/${{ github.event.repository.name }}:$TAG
+          IMG=ghcr.io/yscale-sh/${{ github.event.repository.name }}:$TAG
           docker buildx build --platform linux/amd64 -t "$IMG" --push .
           echo "IMG=$IMG" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
-          repository: JakeNesler/idp
+          repository: Yscale-sh/idp
           ref: v1
           path: .idp
           token: ${{ secrets.PLATFORM_REPO_TOKEN }}

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/appconfig"
 )
 
 // loadDimComponent loads one of the testdata/*.deploy.yaml component specs. These
@@ -33,15 +33,15 @@ func TestDim_MultiComponentIngest(t *testing.T) {
 	scanner := loadDimComponent(t, "dim-scanner.deploy.yaml")
 	ui := loadDimComponent(t, "dim-ui.deploy.yaml")
 
-	apiRes, err := Render(api, "dev", c, "ghcr.io/jakenesler/dim:dev-1", "")
+	apiRes, err := Render(api, "dev", c, "ghcr.io/yscale-sh/dim:dev-1", "")
 	if err != nil {
 		t.Fatalf("render api: %v", err)
 	}
-	scanRes, err := Render(scanner, "dev", c, "ghcr.io/jakenesler/dim:dev-1", "")
+	scanRes, err := Render(scanner, "dev", c, "ghcr.io/yscale-sh/dim:dev-1", "")
 	if err != nil {
 		t.Fatalf("render scanner: %v", err)
 	}
-	uiRes, err := Render(ui, "dev", c, "ghcr.io/jakenesler/dim-ui:dev-1", "")
+	uiRes, err := Render(ui, "dev", c, "ghcr.io/yscale-sh/dim-ui:dev-1", "")
 	if err != nil {
 		t.Fatalf("render ui: %v", err)
 	}

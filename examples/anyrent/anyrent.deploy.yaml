@@ -12,11 +12,11 @@
 # R2 storage (bucket anyrentcloudprod) stays external — creds carried in SSM. The
 # legacy per-pod tailscale sidecars + KEDA-http documenso routing are dropped.
 #
-# Render: idpctl render --env prod -f anyrent.deploy.yaml --image ghcr.io/jakenesler/anyrent-api:lke-20260617
+# Render: idpctl render --env prod -f anyrent.deploy.yaml --image ghcr.io/yscale-sh/anyrent-api:lke-20260617
 app: anyrent
 
 runtime:
-  image: ghcr.io/jakenesler/anyrent-api      # tag supplied by `idpctl render --image`
+  image: ghcr.io/yscale-sh/anyrent-api      # tag supplied by `idpctl render --image`
   port: 8080
 
 logging:
@@ -106,7 +106,7 @@ components:
   # ── ui: frontend, public host anyrentcloud.com (via router) ─────────────────
   - component: ui
     runtime:
-      image: ghcr.io/jakenesler/anyrent-ui    # tag = shared --image (lke-20260617)
+      image: ghcr.io/yscale-sh/anyrent-ui    # tag = shared --image (lke-20260617)
       port: 3000
     probes:
       type: tcp
@@ -131,7 +131,7 @@ components:
   # ── router: PUBLIC nginx host-fanout (the only public component) ────────────
   - component: router
     runtime:
-      image: ghcr.io/jakenesler/anyrent-router  # tag = shared --image (lke-20260617)
+      image: ghcr.io/yscale-sh/anyrent-router  # tag = shared --image (lke-20260617)
       port: 80
     probes:
       type: tcp

@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jakenesler/idp/internal/clusterenv"
-	"github.com/jakenesler/idp/internal/kube"
-	"github.com/jakenesler/idp/internal/modules"
-	"github.com/jakenesler/idp/internal/render"
+	"github.com/yscale-sh/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/kube"
+	"github.com/yscale-sh/idp/internal/modules"
+	"github.com/yscale-sh/idp/internal/render"
 	"github.com/spf13/cobra"
 )
 

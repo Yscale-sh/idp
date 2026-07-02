@@ -3,7 +3,7 @@ package render
 import (
 	"testing"
 
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 // TestTunnelSeam proves the seams.tunnel toggle: a prod env with a real tunnel
@@ -51,7 +51,7 @@ func TestSingleManifestRouting(t *testing.T) {
 	// DEV: web -> web.local, fulfilled by a LAN LoadBalancer (pool-assigned IP). No tunnel.
 	dev := loadTestApp(t, "web.deploy.yaml")
 	dev.Routes = selectInZone(dev.Routes, devCluster())
-	resDev, err := Render(dev, "dev", devCluster(), "ghcr.io/jakenesler/web:dev-1", "")
+	resDev, err := Render(dev, "dev", devCluster(), "ghcr.io/yscale-sh/web:dev-1", "")
 	if err != nil {
 		t.Fatalf("dev render: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSingleManifestRouting(t *testing.T) {
 	// PROD: the SAME route -> web.example.com, fulfilled by a Cloudflare Tunnel. No LAN LB.
 	prod := loadTestApp(t, "web.deploy.yaml")
 	prod.Routes = selectInZone(prod.Routes, prodCluster())
-	resProd, err := Render(prod, "prod", prodCluster(), "ghcr.io/jakenesler/web:prod-1", "")
+	resProd, err := Render(prod, "prod", prodCluster(), "ghcr.io/yscale-sh/web:prod-1", "")
 	if err != nil {
 		t.Fatalf("prod render: %v", err)
 	}

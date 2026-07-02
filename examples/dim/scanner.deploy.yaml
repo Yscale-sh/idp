@@ -1,11 +1,11 @@
 # Dim scanner worker — media scan + TMDB match. No web tier (a portless worker).
 # SHARES the api's Postgres + Redis (provision: false). Same image as the api.
-#   idpctl render --env dev --file examples/dim/scanner.deploy.yaml --image ghcr.io/jakenesler/dim:<tag>
+#   idpctl render --env dev --file examples/dim/scanner.deploy.yaml --image ghcr.io/yscale-sh/dim:<tag>
 app: dim
 component: scanner
 
 runtime:
-  image: ghcr.io/jakenesler/dim
+  image: ghcr.io/yscale-sh/dim
   port: 0            # worker: no inbound Service / probes / ServiceMonitor
 
 env:

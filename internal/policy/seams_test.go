@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 // prodNoStores is a prod-shaped env: PVC-free (no in-cluster stores), tunnel-only

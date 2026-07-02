@@ -27,7 +27,7 @@ func TestLoadCarshowdbExample(t *testing.T) {
 	if app.App != "carshowdb" {
 		t.Errorf("app = %q, want carshowdb", app.App)
 	}
-	if app.Runtime.Image != "ghcr.io/jakenesler/carshowdb-api" {
+	if app.Runtime.Image != "ghcr.io/yscale-sh/carshowdb-api" {
 		t.Errorf("image = %q", app.Runtime.Image)
 	}
 	if app.Runtime.Port != 8080 {
@@ -154,7 +154,7 @@ func TestLabels(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	a := App{App: "carshowdb", Runtime: Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080}}
+	a := App{App: "carshowdb", Runtime: Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080}}
 	r := a.Resolve("dev")
 	if r.Namespace != "carshowdb-dev-app" || r.Secret != "carshowdb-runtime" || r.SSMRoot != "/apps/carshowdb/dev" {
 		t.Errorf("resolved = %+v", r)

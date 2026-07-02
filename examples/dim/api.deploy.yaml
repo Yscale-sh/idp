@@ -1,11 +1,11 @@
 # Dim API — REST + WebSocket + in-process stream/transcode (the web tier).
 # On-prem / LAN only: no public route, no Cloudflare. The UI proxies to it in-cluster.
-#   idpctl render --env dev --file examples/dim/api.deploy.yaml --image ghcr.io/jakenesler/dim:<tag>
+#   idpctl render --env dev --file examples/dim/api.deploy.yaml --image ghcr.io/yscale-sh/dim:<tag>
 app: dim
 component: api
 
 runtime:
-  image: ghcr.io/jakenesler/dim
+  image: ghcr.io/yscale-sh/dim
   port: 8000
 
 # Dim's API serves on :8000 but has no /healthz route, so a TCP port-open check

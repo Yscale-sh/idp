@@ -19,6 +19,6 @@ keywords:
   - platformctl
   - idp
   - clusterip
-home: https://github.com/jakenesler/platformctl
+home: https://github.com/yscale-sh/platformctl
 maintainers:
-  - name: jakenesler
+  - name: yscale-sh

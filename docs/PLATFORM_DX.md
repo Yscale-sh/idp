@@ -123,7 +123,7 @@ limits. This is the lowest-complexity way to "mint creds for all services."
 | SSM → external-secrets | ~0.5 day | you already push to SSM |
 | Cloudflare Access (humans + service tokens) | ~1 day | policies + scaffolder minting |
 | `scripts/new-app` scaffolder | ~1 day | **this is what keeps onboarding to minutes** |
-| CloudNativePG (separate workstream) | ~1 day | per POSTGRES_BACKUPS.md |
+| CloudNativePG (separate workstream) | ~1 day | CNPG barman→R2 |
 | Argo CD (optional) | +~1 day | only if you want pull-based GitOps |
 
 **Ongoing complexity (be clear-eyed):**

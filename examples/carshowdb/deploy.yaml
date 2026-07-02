@@ -4,12 +4,12 @@
 # DATABASE_URL points at a dead Supabase pooler. Declaring `db: primary` below
 # gives it the platform's dev Postgres and repoints DATABASE_URL.
 #
-# Image: legacy stackmaster/carshowdb-api, republished to ghcr.io/jakenesler/carshowdb-api.
+# Image: legacy stackmaster/carshowdb-api, republished to ghcr.io/yscale-sh/carshowdb-api.
 # Port: 8080 (ASSUMPTION — verify against the real container; carshowdb's port was
 #       not captured in ENV.md. Override here if the image listens elsewhere.)
 #
-# Render to dev:  idpctl render --env dev  --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
-# Render to prod: idpctl render --env prod --file deploy.yaml --image ghcr.io/jakenesler/carshowdb-api:<tag>
+# Render to dev:  idpctl render --env dev  --file deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:<tag>
+# Render to prod: idpctl render --env prod --file deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:<tag>
 
 app: carshowdb
 
@@ -20,7 +20,7 @@ app: carshowdb
 component: api
 
 runtime:
-  image: ghcr.io/jakenesler/carshowdb-api
+  image: ghcr.io/yscale-sh/carshowdb-api
   port: 8080
 
 routes:

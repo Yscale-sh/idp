@@ -4,12 +4,12 @@
 # main anyrent app). Internal-only: the anyrent router proxies esign.* here. Talks to
 # documenso over the in-cluster service (no public hairpin) + handles its webhooks.
 #
-# Render: idpctl render --env prod -f anyrent-signing.deploy.yaml --image ghcr.io/jakenesler/anyrent-signing:prod-0df8c47468f7ec90ef89ce8e7e48476186be7299
+# Render: idpctl render --env prod -f anyrent-signing.deploy.yaml --image ghcr.io/yscale-sh/anyrent-signing:prod-0df8c47468f7ec90ef89ce8e7e48476186be7299
 app: anyrent-signing
 component: app
 
 runtime:
-  image: ghcr.io/jakenesler/anyrent-signing   # full repo:tag from --image
+  image: ghcr.io/yscale-sh/anyrent-signing   # full repo:tag from --image
   port: 3002
 
 probes:

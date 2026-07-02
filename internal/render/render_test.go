@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite golden testdata files")
@@ -43,7 +43,7 @@ func devCluster() *clusterenv.Config {
 		LanPool: "lan-pool",
 		Flux: clusterenv.FluxConfig{
 			Namespace:  "flux-system",
-			RepoURL:    "https://github.com/jakenesler/idp.git",
+			RepoURL:    "https://github.com/yscale-sh/idp.git",
 			Branch:     "main",
 			SourceName: "flux-system",
 		},
@@ -128,22 +128,22 @@ func selectInZone(routes []appconfig.Route, c *clusterenv.Config) []appconfig.Ro
 
 func TestGolden_CarshowdbDev(t *testing.T) {
 	goldenCase(t, "carshowdb.deploy.yaml", "dev", devCluster(),
-		"ghcr.io/jakenesler/carshowdb-api:dev-abc123", "carshowdb.dev.golden.yaml")
+		"ghcr.io/yscale-sh/carshowdb-api:dev-abc123", "carshowdb.dev.golden.yaml")
 }
 
 func TestGolden_CarshowdbProd(t *testing.T) {
 	goldenCase(t, "carshowdb.deploy.yaml", "prod", prodCluster(),
-		"ghcr.io/jakenesler/carshowdb-api:prod-abc123", "carshowdb.prod.golden.yaml")
+		"ghcr.io/yscale-sh/carshowdb-api:prod-abc123", "carshowdb.prod.golden.yaml")
 }
 
 func TestGolden_DummyUIConnectsTo(t *testing.T) {
 	goldenCase(t, "dummy-ui.deploy.yaml", "dev", devCluster(),
-		"ghcr.io/jakenesler/dummy-ui:dev-1", "dummy-ui.dev.golden.yaml")
+		"ghcr.io/yscale-sh/dummy-ui:dev-1", "dummy-ui.dev.golden.yaml")
 }
 
 func TestBuildValues_TierAAndStores(t *testing.T) {
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
-	v, err := BuildValues(app, "dev", devCluster(), "ghcr.io/jakenesler/carshowdb-api:dev", "")
+	v, err := BuildValues(app, "dev", devCluster(), "ghcr.io/yscale-sh/carshowdb-api:dev", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestNamespaceAndStoreReleases(t *testing.T) {
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
 	app.Component = "api"
 
-	res, err := Render(app, "dev", devCluster(), "ghcr.io/jakenesler/carshowdb-api:dev-abc", "")
+	res, err := Render(app, "dev", devCluster(), "ghcr.io/yscale-sh/carshowdb-api:dev-abc", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestNamespaceAndStoreReleases(t *testing.T) {
 func TestProdNoPerAppPostgres(t *testing.T) {
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
 	app.Component = "api"
-	res, err := Render(app, "prod", prodCluster(), "ghcr.io/jakenesler/carshowdb-api:prod-abc", "")
+	res, err := Render(app, "prod", prodCluster(), "ghcr.io/yscale-sh/carshowdb-api:prod-abc", "")
 	if err != nil {
 		t.Fatal(err)
 	}

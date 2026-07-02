@@ -3,7 +3,7 @@ package render
 import (
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/appconfig"
 )
 
 // TestProvisionedVsReferencedPVC proves the two type: pvc modes:
@@ -13,7 +13,7 @@ import (
 func TestProvisionedVsReferencedPVC(t *testing.T) {
 	app := appconfig.App{
 		App:     "datawork",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/datawork", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/datawork", Port: 8080},
 		Volumes: []appconfig.Volume{
 			{Name: "data", Size: "20Gi", MountPath: "/data"},             // inferred: provisioned pvc
 			{Name: "shared", Claim: "team-shared", MountPath: "/shared"}, // inferred: referenced pvc
@@ -23,7 +23,7 @@ func TestProvisionedVsReferencedPVC(t *testing.T) {
 	if err := app.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	res, err := Render(app, "dev", devCluster(), "ghcr.io/jakenesler/datawork:t1", "")
+	res, err := Render(app, "dev", devCluster(), "ghcr.io/yscale-sh/datawork:t1", "")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

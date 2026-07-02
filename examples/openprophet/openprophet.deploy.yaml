@@ -6,11 +6,11 @@
 # Separate CNPG database `openprophet` (own role) + the SHARED family redis. Was
 # coupled to cartogopher on LKE (same PG instance + redis); here it's its own DB/role.
 #
-# Render: idpctl render --env prod -f openprophet.deploy.yaml --image ghcr.io/jakenesler/openprophet-api:7368aadc
+# Render: idpctl render --env prod -f openprophet.deploy.yaml --image ghcr.io/yscale-sh/openprophet-api:7368aadc
 app: openprophet
 
 runtime:
-  image: ghcr.io/jakenesler/openprophet-api    # tag supplied by `idpctl render --image`
+  image: ghcr.io/yscale-sh/openprophet-api    # tag supplied by `idpctl render --image`
   port: 3738
 
 logging:
@@ -47,7 +47,7 @@ components:
 
   - component: datastream
     runtime:
-      image: ghcr.io/jakenesler/openprophet-datastream   # tag = shared --image (7368aadc)
+      image: ghcr.io/yscale-sh/openprophet-datastream   # tag = shared --image (7368aadc)
       port: 2222
     probes:
       type: tcp
@@ -64,7 +64,7 @@ components:
 
   - component: router
     runtime:
-      image: ghcr.io/jakenesler/openprophet-router   # tag = shared --image (7368aadc)
+      image: ghcr.io/yscale-sh/openprophet-router   # tag = shared --image (7368aadc)
       port: 80
     probes:
       type: tcp

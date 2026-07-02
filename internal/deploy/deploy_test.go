@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 func devCluster() *clusterenv.Config {
@@ -45,7 +45,7 @@ func prodCluster() *clusterenv.Config {
 func multiEnvApp() appconfig.App {
 	return appconfig.App{
 		App:     "carshowdb",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 		Routes: []appconfig.Route{
 			{Host: "carshowdb.local", Public: true},
 			{Host: "carshowdb.example.com", Public: false},
@@ -58,7 +58,7 @@ func multiEnvApp() appconfig.App {
 func prodPublicApp() appconfig.App {
 	return appconfig.App{
 		App:     "carshowdb",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 		Routes: []appconfig.Route{
 			{Host: "carshowdb.local", Public: false},
 			{Host: "carshowdb.example.com", Public: true},
@@ -70,7 +70,7 @@ func prodPublicApp() appconfig.App {
 func TestBuild_DevSelectsLocalRoute(t *testing.T) {
 	plan, err := Build(Request{
 		App: multiEnvApp(), Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:dev-abc", Cluster: devCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster(),
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -87,7 +87,7 @@ func TestBuild_DevSelectsLocalRoute(t *testing.T) {
 func TestBuild_ProdSelectsPublicRoute(t *testing.T) {
 	plan, err := Build(Request{
 		App: prodPublicApp(), Env: "prod",
-		Image: "ghcr.io/jakenesler/carshowdb-api:prod-abc", Cluster: prodCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:prod-abc", Cluster: prodCluster(),
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -110,7 +110,7 @@ func TestBuild_ProdSelectsPublicRoute(t *testing.T) {
 func TestBuild_RejectsPublicOutOfZoneHost(t *testing.T) {
 	app := appconfig.App{
 		App:     "carshowdb",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 		Routes: []appconfig.Route{
 			{Host: "carshowdb.local", Public: true},
 			{Host: "evil.attacker.com", Public: true}, // public + in no approved zone
@@ -118,7 +118,7 @@ func TestBuild_RejectsPublicOutOfZoneHost(t *testing.T) {
 	}
 	_, err := Build(Request{
 		App: app, Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:dev-abc", Cluster: devCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster(),
 	})
 	if err == nil || !strings.Contains(err.Error(), "RouteZone") {
 		t.Fatalf("expected public out-of-zone host to be rejected, got %v", err)
@@ -133,7 +133,7 @@ func TestBuild_RejectsPublicOutOfZoneHost(t *testing.T) {
 func TestBuild_AllowsInternalOutOfZoneHost(t *testing.T) {
 	if _, err := Build(Request{
 		App: multiEnvApp(), Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:dev-abc", Cluster: devCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster(),
 	}); err != nil {
 		t.Fatalf("internal out-of-zone host should be allowed, got %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBuild_AllowsInternalOutOfZoneHost(t *testing.T) {
 func TestBuild_RejectsMutableTagInProd(t *testing.T) {
 	_, err := Build(Request{
 		App: prodPublicApp(), Env: "prod",
-		Image: "ghcr.io/jakenesler/carshowdb-api:latest", Cluster: prodCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: prodCluster(),
 	})
 	if err == nil || !strings.Contains(err.Error(), "MutableTag") {
 		t.Errorf("expected mutable-tag rejection, got %v", err)
@@ -156,7 +156,7 @@ func TestBuild_RejectsMutableTagWhenEnvForbids(t *testing.T) {
 	strict.AllowMutableTags = false
 	_, err := Build(Request{
 		App: multiEnvApp(), Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:latest", Cluster: strict,
+		Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: strict,
 	})
 	if err == nil || !strings.Contains(err.Error(), "MutableTag") {
 		t.Errorf("dev with allowMutableTags=false should reject :latest, got %v", err)
@@ -182,7 +182,7 @@ func TestBuild_HelmTemplateScanRunsAndPasses(t *testing.T) {
 	root := repoRoot(t)
 	plan, err := Build(Request{
 		App: multiEnvApp(), Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:dev-abc", Cluster: devCluster(), Root: root,
+		Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster(), Root: root,
 	})
 	if err != nil {
 		t.Fatalf("build with helm scan should pass for the ClusterIP-only chart, got %v", err)
@@ -214,7 +214,7 @@ func repoRoot(t *testing.T) string {
 func TestBuild_Summary(t *testing.T) {
 	plan, err := Build(Request{
 		App: multiEnvApp(), Env: "dev",
-		Image: "ghcr.io/jakenesler/carshowdb-api:dev-abc", Cluster: devCluster(),
+		Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster(),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -163,7 +163,7 @@ without the platform render path changing. The prod app namespace is still
 
 ### Container images
 
-- Primary registry: **`ghcr.io/jakenesler/<app>`** (GitHub Container Registry).
+- Primary registry: **`ghcr.io/yscale-sh/<app>`** (GitHub Container Registry).
 - Legacy `stackmaster/*` (Docker Hub) images still exist and are being
   republished to ghcr. New work targets ghcr.
 - The deploy.yaml `runtime.image` carries the **repository only** (no tag). CI
@@ -338,7 +338,7 @@ and `keda-http-add-on` (chart `keda-add-ons-http`). The first provides the
 interceptor + scaler that power `HTTPScaledObject` and scale-to-zero (see §8). Both
 are required for `autoscale.scaleToZero` apps.
 
-**yscale** is a real chart (`ghcr.io/jakenesler/yscale-controller`) but ships
+**yscale** is a real chart (`ghcr.io/yscale-sh/yscale-controller`) but ships
 `enabled: false`. It bursts ephemeral cloud nodes, so there is nothing to do on a
 LAN cluster. It is a `chartRepo` module, disabled by default.
 
@@ -371,7 +371,7 @@ app: <app>                     # required; derives all names
 product: <product>             # optional
 component: api|ui              # optional
 runtime:
-  image: ghcr.io/jakenesler/<app>   # repo only; CI adds the tag
+  image: ghcr.io/yscale-sh/<app>   # repo only; CI adds the tag
   port: 8080
 routes:
   - host: <host>
@@ -427,12 +427,12 @@ to its own `<app>-<component>` HelmRelease, identical to separate files:
 
 ```yaml
 app: media
-runtime: { image: ghcr.io/jakenesler/media-api, port: 8000 }   # base image
+runtime: { image: ghcr.io/yscale-sh/media-api, port: 8000 }   # base image
 db: [{ name: primary, type: postgres }]                        # provisioned once
 components:
   - { component: api }                                          # inherits base; provisions the store
   - { component: scanner, port: 0, env: { ROLE: scanner } }     # worker; auto-shares the store
-  - { component: ui, runtime: { image: ghcr.io/jakenesler/media-ui, port: 80 }, db: [] }  # own image; opts out
+  - { component: ui, runtime: { image: ghcr.io/yscale-sh/media-ui, port: 80 }, db: [] }  # own image; opts out
 ```
 
 ---

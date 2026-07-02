@@ -3,7 +3,7 @@ product: dummy
 component: ui
 
 runtime:
-  image: ghcr.io/jakenesler/dummy-ui
+  image: ghcr.io/yscale-sh/dummy-ui
   port: 3000
 
 routes:

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clusterenv"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -21,7 +21,7 @@ func envWithTunnel(on bool) *clusterenv.Config {
 func appWithRoutes(routes ...appconfig.Route) appconfig.App {
 	return appconfig.App{
 		App:     "carshowdb",
-		Runtime: appconfig.Runtime{Image: "ghcr.io/jakenesler/carshowdb-api", Port: 8080},
+		Runtime: appconfig.Runtime{Image: "ghcr.io/yscale-sh/carshowdb-api", Port: 8080},
 		Routes:  routes,
 	}
 }

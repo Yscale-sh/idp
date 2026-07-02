@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jakenesler/idp/internal/clusterenv"
-	"github.com/jakenesler/idp/internal/kube"
+	"github.com/yscale-sh/idp/internal/clusterenv"
+	"github.com/yscale-sh/idp/internal/kube"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jakenesler/idp/internal/render"
+	"github.com/yscale-sh/idp/internal/render"
 )
 
 // DiscoverEnvs lists the environments that have rendered state under clusters/ —

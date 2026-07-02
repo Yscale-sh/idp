@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/jakenesler/idp/internal/appconfig"
-	"github.com/jakenesler/idp/internal/deploy"
-	"github.com/jakenesler/idp/internal/render"
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/deploy"
+	"github.com/yscale-sh/idp/internal/render"
 	"github.com/spf13/cobra"
 )
 

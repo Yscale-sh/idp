@@ -74,7 +74,7 @@ func TestRemoveApp_RoundTrip(t *testing.T) {
 	c := devCluster()
 	app := loadTestApp(t, "carshowdb.deploy.yaml")
 
-	res, err := Render(app, "dev", c, "ghcr.io/jakenesler/carshowdb:abc123", "")
+	res, err := Render(app, "dev", c, "ghcr.io/yscale-sh/carshowdb:abc123", "")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

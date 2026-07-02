@@ -47,7 +47,7 @@ on:
     inputs: { confirm: { description: 'type PRODUCTION', required: true } }
 jobs:
   ship:
-    uses: JakeNesler/platform/.github/workflows/deploy.yml@v1   # ← the module's reusable workflow
+    uses: Yscale-sh/platform/.github/workflows/deploy.yml@v1   # ← the module's reusable workflow
     with: { app: dummy-api, values: deploy.yaml }
     secrets: inherit
 ```
@@ -70,7 +70,7 @@ jobs:
           echo "IMG=$IMG" >> "$GITHUB_ENV"
       - name: Clone the platform MODULE          # ← "clone the module in our runner"
         uses: actions/checkout@v4
-        with: { repository: JakeNesler/platform, ref: v1, path: .platform,
+        with: { repository: Yscale-sh/platform, ref: v1, path: .platform,
                 token: ${{ secrets.PLATFORM_REPO_TOKEN }} }   # PAT/App: read the private module
       - name: Deploy
         run: .platform/bin/deploy.sh --app "${{ inputs.app }}" --values "${{ inputs.values }}" --image "$IMG"
