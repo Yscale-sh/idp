@@ -3,7 +3,7 @@
 # job container: helm, git, github-cli. helm is LOAD-BEARING: internal/deploy runs a
 # best-effort `helm template charts/app` LoadBalancer scan only when helm is on PATH,
 # so dropping it would silently downgrade the no-LB guardrail to the typed check only.
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git curl
 # kubectl for idp-shipper: internal/kube + internal/builder drive build Jobs by
