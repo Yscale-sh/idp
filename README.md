@@ -1,4 +1,4 @@
-# Yscale IDP
+# Jakes Developer Platform
 
 > A tiny, opinionated **Internal Developer Platform** for self-hosted Kubernetes (k3s).
 > A developer writes one small `deploy.yaml`; the platform renders desired state; **Flux**
@@ -354,3 +354,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). TL;DR: `make test` and `make lint` mus
 ## License
 
 Apache-2.0 (see `LICENSE`).
+
+---
+
+Created by [Jake Nesler](https://www.github.com/jakenesler).
