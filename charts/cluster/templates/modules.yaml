@@ -1,0 +1,75 @@
+{{- $env := .Values.env -}}
+{{- range .Values.modules }}
+{{- if eq .source "chartRepo" }}
+---
+# infra module {{ .name }} -> Helm repo source
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.source.namespace }}
+  labels:
+    platform/module: {{ .name }}
+    platform/env: {{ $env }}
+    platform/managed-by: platformctl
+spec:
+  {{- /* OCI registries (e.g. Bitnami's oci://registry-1.docker.io/bitnamicharts,
+     now that the classic HTTP charts.bitnami.com repo is retired) MUST declare
+     type: oci — Flux rejects an oci:// URL on a default-type HelmRepository. */}}
+  {{- if hasPrefix "oci://" .repoURL }}
+  type: oci
+  {{- end }}
+  url: {{ .repoURL }}
+  interval: 10m
+{{- end }}
+---
+# infra module {{ .name }} -> HelmRelease in {{ .namespace }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.source.namespace }}
+  labels:
+    platform/module: {{ .name }}
+    platform/env: {{ $env }}
+    platform/managed-by: platformctl
+spec:
+  interval: 10m
+  releaseName: {{ .name }}
+  targetNamespace: {{ .namespace }}
+  storageNamespace: {{ .namespace }}
+  {{- if .disableWait }}
+  {{- /* No readiness wait: the module ships a resource that is only ready
+         once consumed (e.g. a WaitForFirstConsumer PVC). */}}
+  install:
+    createNamespace: true
+    disableWait: true
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+    remediation:
+      retries: 3
+  {{- else }}
+  {{- include "cluster.remediation" . | nindent 2 }}
+  {{- end }}
+  chart:
+    spec:
+      {{- if eq .source "chartRepo" }}
+      chart: {{ .chart }}
+      version: {{ .version }}
+      sourceRef:
+        kind: HelmRepository
+        name: {{ .name }}
+        namespace: {{ $.Values.source.namespace }}
+      {{- else }}
+      chart: ./{{ .chart }}
+      sourceRef:
+        {{- include "cluster.gitSourceRef" $ | nindent 8 }}
+      {{- end }}
+      reconcileStrategy: Revision
+  {{- if .values }}
+  values:
+    {{- toYaml .values | nindent 4 }}
+  {{- end }}
+{{- end }}

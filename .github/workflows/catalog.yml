@@ -1,0 +1,50 @@
+name: catalog
+
+# Publishes the read-only platform catalog (every env + an index) to Cloudflare
+# Pages. The site is a pure projection of the committed clusters/<env>/platform.yaml
+# — no cluster access, no secrets baked in — so it mirrors exactly what is already
+# in the repo.
+#
+# One-time setup:
+#   1. Create the Pages project (direct-upload):
+#        npx wrangler pages project create idp-catalog --production-branch=main
+#   2. Add two repo secrets (Settings → Secrets and variables → Actions) — the
+#      same names idpctl dns/tunnel already use:
+#        CLOUDFLARE_API_TOKEN    a token with Account → Cloudflare Pages → Edit
+#        CLOUDFLARE_ACCOUNT_ID   your Cloudflare account id
+#   The default site is then https://idp-catalog.pages.dev (add a custom domain in
+#   the Pages project if you want catalog.<your-zone>).
+
+# Manual-only for now: this does NOT auto-publish on push. Run it by hand from
+# Actions → catalog → "Run workflow" once Cloudflare Pages is set up (project
+# created + CLOUDFLARE_API_TOKEN/ACCOUNT_ID secrets added). To re-enable
+# publish-on-push later, add back a `push:` trigger.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once; let the latest win.
+concurrency:
+  group: catalog-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build idpctl
+        run: make build
+      - name: Render the catalog site
+        run: ./idpctl catalog --all --out-dir public
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=idp-catalog --branch=main

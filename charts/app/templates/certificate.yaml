@@ -1,0 +1,26 @@
+{{- /*
+Optional cert-manager Certificate — gated on .Values.certManager.enabled, which
+is OFF by default (Cloudflare Tunnel terminates TLS at the edge, so apps exposed
+via the tunnel need no in-cluster cert). Available for in-cluster mTLS / non-tunnel
+TLS: flip certManager.enabled and set issuer + dnsNames, and enable the
+cert-manager module for the env (environments/<env>/cluster.yaml). The renderer
+does not set certManager (chart-only, like nodeSelector); turn it on via values.
+Removing the cert (certManager.enabled=false or app removal) prunes it via Flux.
+*/ -}}
+{{- if .Values.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "app.fullname" . }}-tls
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.certManager.secretName | default (printf "%s-tls" (include "app.name" .)) }}
+  issuerRef:
+    name: {{ required "certManager.issuer is required when certManager.enabled" .Values.certManager.issuer }}
+    kind: {{ .Values.certManager.issuerKind | default "ClusterIssuer" }}
+  dnsNames:
+    {{- range .Values.certManager.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+{{- end -}}

@@ -1,0 +1,52 @@
+# dev-redis — values contract.
+#
+# A clean, minimal in-cluster Redis for dev / on-prem. ClusterIP ONLY (the template
+# hardcodes it; no service.type key — the infra-layer LoadBalancer guardrail). No
+# persistence by default: a dev Redis is an ephemeral pub/sub bus / cache, so it
+# runs with `--save "" --appendonly no`. The app chart wires REDIS_URL from
+# clusterenv.DevRedisURL (redis://<release>-dev-redis.<ns>.<domain>:6379).
+
+image:
+  repository: redis
+  tag: "7-alpine"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ── service (ClusterIP ONLY — no `type` key by design) ───────────────────────
+service:
+  port: 6379
+
+# ── persistence (OFF by default — dev Redis is an ephemeral bus) ─────────────
+persistence:
+  enabled: false
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+podSecurityContext:
+  fsGroup: 999             # redis group in the official image
+securityContext:
+  runAsUser: 999
+  runAsNonRoot: true
+
+# redis-server args. Default = no persistence (pub/sub bus). Override to enable AOF.
+args:
+  - "--save"
+  - ""
+  - "--appendonly"
+  - "no"

@@ -1,0 +1,52 @@
+# idp-shipper module values.
+#
+# The registry block is INSTANCE IDENTITY: which platform repo the shipper
+# commits to and which apps it ships. There are no defaults for those — the
+# chart fails at template time if they are unset (a fork must never silently
+# poll/push someone else's repos).
+
+image:
+  # The product's published idpctl image (the idp-shipper entrypoint lives in
+  # the same image). Override to pin your own build.
+  repository: ghcr.io/yscale-sh/idpctl
+  tag: v2
+  pullPolicy: Always   # mutable tag — re-pull on every Recreate
+
+registry:
+  env: ""              # REQUIRED: target environment (dev|prod|...)
+  platformRepo: ""     # REQUIRED: org/repo of YOUR platform repo (e.g. your-org/idp)
+  platformBranch: main
+  platformRoot: /platform
+  intervalSeconds: 45
+  # Apps to ship: where each app's deploy.yaml shopping lists live. Build detail
+  # (context/dockerfile/submodules) stays in each deploy.yaml `build:` block.
+  # - name: my-app
+  #   repo: my-org/my-app
+  #   branch: main
+  #   deployFiles: [deploy.yaml]
+  apps: []
+
+secrets:
+  # Names of the pre-existing Secrets in the release namespace (provisioned by
+  # the image-builder module or out-of-band).
+  gitToken: git-token    # key `token`: reads app repos + pushes the platform repo
+  imagePull: ghcr-push   # dockerconfigjson; doubles as the pod's imagePullSecret
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: "1", memory: 512Mi }
+
+cloudflare:
+  # Set enabled: true + accountId to activate the in-process tunnel
+  # auto-provisioner. When enabled the shipper calls EnsureTunnel / SetIngress /
+  # SyncHosts after each successful ship for apps with CF-zone public routes, and
+  # stashes the minted TUNNEL_TOKEN into Secret <app>/platform-local where ESO
+  # delivers it to the app's cloudflared sidecar. Failures are soft (logged,
+  # never abort the ship). Flip this on after the bootstrap tunnel up has run at
+  # least once (so the tunnel name already exists in your Cloudflare account).
+  enabled: false
+  # accountId is the Cloudflare account id (injected as CLOUDFLARE_ACCOUNT_ID).
+  accountId: ""
+  # secretRemoteKey is the SSM path the ExternalSecret pulls CLOUDFLARE_API_TOKEN
+  # from (homelab-ssm ClusterSecretStore, same store as R2 + other shared creds).
+  secretRemoteKey: /shared/cloudflare/admin-api-token

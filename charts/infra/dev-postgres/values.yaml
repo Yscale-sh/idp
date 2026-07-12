@@ -1,0 +1,76 @@
+# dev-postgres — values contract.
+#
+# A clean, minimal in-cluster Postgres for dev / on-prem. Differs from the legacy
+# workload-specific postgres chart on purpose:
+#   - Service is ClusterIP ONLY (there is no service.type key; the template
+#     hardcodes ClusterIP — the platform LoadBalancer guardrail at the infra layer).
+#   - The superuser password is GENERATED with randAlphaNum into a Secret on first
+#     install and preserved across upgrades (helm lookup), never committed.
+#   - PVC uses the cluster's local-path provisioner by default.
+#
+# The Secret it produces (named <release>-dev-postgres) carries the
+# DATABASE_URL-compatible keys the app chart consumes:
+#   POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT,
+#   DATABASE_URL.
+
+# ── image ────────────────────────────────────────────────────────────────────
+image:
+  repository: postgres
+  tag: "16-alpine"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ── auth ─────────────────────────────────────────────────────────────────────
+auth:
+  # Database + role created on first boot. The password is NOT set here; it is
+  # generated (randAlphaNum 24) into the Secret and reused on upgrade. To pin a
+  # known password (e.g. to import an existing volume), set `auth.password`.
+  database: app
+  username: app
+  password: ""              # empty => generated; set to override (avoid committing)
+  # existingSecret lets an external/SealedSecret/ExternalSecret own the creds
+  # instead of this chart generating them. When set, the chart references it and
+  # generates nothing.
+  existingSecret: ""
+
+# ── service (ClusterIP ONLY — no `type` key by design) ───────────────────────
+service:
+  port: 5432
+
+# ── persistence (local-path provisioner by default) ─────────────────────────
+persistence:
+  enabled: true
+  storageClass: local-path   # k3s default dynamic provisioner; "" => cluster default
+  accessMode: ReadWriteOnce
+  size: 8Gi
+
+# ── workload ─────────────────────────────────────────────────────────────────
+# Pin Postgres to a stable baseline node (the homelab "optiplex-pg" box) so the
+# PVC's local-path volume always reschedules onto the node that holds the data.
+# Empty => no constraint (scheduler picks any node).
+nodeSelector: {}
+#  kubernetes.io/hostname: optiplex-pg
+
+tolerations: []
+affinity: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+podSecurityContext:
+  fsGroup: 999             # postgres group in the official image
+securityContext:
+  runAsUser: 999
+  runAsNonRoot: true
+
+# Extra postgresql.conf tuning appended via POSTGRES_INITDB_ARGS-friendly knobs.
+# Kept minimal for dev; the app chart, not Postgres, owns connection pooling.
+maxConnections: 100

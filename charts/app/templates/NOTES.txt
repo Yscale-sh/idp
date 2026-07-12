@@ -1,0 +1,60 @@
+{{ include "app.name" . }} deployed via the IDP shared app chart (charts/app).
+
+  Environment : {{ .Values.platform.env | default "(unset)" }}
+  Namespace   : {{ .Release.Namespace }}
+  Image       : {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  Service     : {{ include "app.fullname" . }} (ClusterIP) :{{ .Values.service.port }}
+
+This app is ClusterIP ONLY — there is no LoadBalancer and no Ingress in this chart.
+
+In-cluster address (server-to-server):
+  http://{{ include "app.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+{{- if and .Values.tunnel .Values.tunnel.enabled }}
+
+Public exposure: cloudflared (Cloudflare Tunnel) sidecar — IN this pod, NO
+LoadBalancer. It serves these public hostnames through the tunnel to this app's
+own ClusterIP Service:
+{{- range .Values.tunnel.ingress }}
+  - {{ .hostname }} -> {{ .service }}
+{{- end }}
+  TUNNEL_TOKEN comes from Secret/{{ include "app.secretName" . }} — the platform
+  provisions it once at /apps/{{ .Values.platform.app }}/{{ .Values.platform.env }}/TUNNEL_TOKEN
+  in SSM (PREREQUISITE: do this before the first prod ship, or the cloudflared
+  container can't start). The renderer pins it as a remoteRef so a missing token
+  surfaces on the ExternalSecret, not as an opaque pod error.
+  DNS per public hostname (token tunnels don't auto-create it). Either set it by
+  hand — a proxied CNAME <host> -> <tunnel-id>.cfargotunnel.com (or `cloudflared
+  tunnel route dns <tunnel-name> <hostname>`) — OR let the ship pipeline do it:
+  enable manage-dns and it runs `idpctl dns sync` to upsert that CNAME for each
+  public route (tunnel id derived from TUNNEL_TOKEN). The tunnel is the exposure
+  either way; the CNAME just points the name at it.
+  Teardown: set the route private (public:false) or `idpctl remove` the app — the
+  sidecar + pod are pruned by Flux; `idpctl dns prune` (or manage-dns on a remove)
+  deletes the CNAMEs; then remove the tunnel/DNS in Cloudflare.
+{{- else }}
+
+Public exposure: none in-cluster. Declare a public route (routes[].public:true)
+and render to prod to add the cloudflared Tunnel sidecar.
+{{- end }}
+{{- if .Values.keda.enabled }}
+
+Autoscaling: KEDA {{ .Values.keda.kind | default "ScaledObject" }} ({{ .Values.keda.minReplicas }}..{{ .Values.keda.maxReplicas }} replicas).
+{{- else }}
+
+Replicas: {{ .Values.replicas }} (static; enable sizing.autoscale to use KEDA).
+{{- end }}
+{{- if .Values.externalSecret.enabled }}
+
+Secrets: ExternalSecret -> Secret/{{ include "app.secretName" . }} via backend={{ .Values.externalSecret.backend }} (store {{ .Values.externalSecret.storeRef.name }}).
+{{- else }}
+
+Secrets: externalSecret disabled — the pod has only Tier-A + plain env.
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+
+Metrics: ServiceMonitor enabled (release={{ .Values.serviceMonitor.releaseLabel | default "prometheus" }}, path={{ .Values.serviceMonitor.path }}).
+{{- end }}
+
+Reminder: Flux is the only writer. Reconcile by committing the rendered umbrella
+clusters/{{ .Values.platform.env | default "<env>" }}/platform.yaml (idpctl render
+to deploy, idpctl remove to tear down) — never `helm install`/`kubectl` by hand.

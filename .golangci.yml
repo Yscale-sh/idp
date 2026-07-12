@@ -1,0 +1,30 @@
+# golangci-lint config for idp. Run locally with `golangci-lint run`; CI gates on it.
+# The default set (errcheck, govet, ineffassign, staticcheck, unused, gosimple)
+# plus a few high-signal extras. Kept strict but quiet — the codebase is clean today.
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - misspell      # typos in comments/strings
+    - unconvert     # redundant type conversions
+    - gofmt         # formatting (also gated separately in CI)
+    - revive        # golint successor — light style checks
+    - bodyclose     # HTTP response bodies must be closed (the Cloudflare/GitHub clients)
+
+linters-settings:
+  revive:
+    rules:
+      - name: unreachable-code
+      - name: context-as-argument
+      # error-strings intentionally omitted: idpctl's user-facing errors are
+      # deliberately multi-line, capitalized help messages (e.g. internal/tenant).
+
+issues:
+  # Don't hide findings behind the default same-issue caps.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Test fixtures and golden helpers are allowed to be loose.
+    - path: _test\.go
+      linters: [errcheck]

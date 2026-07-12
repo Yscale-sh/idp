@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Pre-push CI gate. Runs the full local suite (scripts/ci-local.sh) — the same
+# checks the retired GitHub ci.yml used to run — so breakage is caught here
+# instead of burning Actions minutes on every push.
+#
+# Enable once per clone:  make hooks   (sets core.hooksPath -> .githooks)
+# Bypass in a pinch:       git push --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/ci-local.sh"

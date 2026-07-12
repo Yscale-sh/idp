@@ -1,0 +1,30 @@
+# clusters/prod/flux-instance.yaml — the ONE hand-written object per cluster.
+#
+# Same contract as clusters/dev/flux-instance.yaml, but prod tracks the
+# dedicated `prod` branch: prod only moves when you commit there (promotions
+# via `idpctl promote <app> prod --from dev`). sync.url must match
+# environments/prod/cluster.yaml flux.repoURL — point both at YOUR fork.
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+  annotations:
+    fluxcd.controlplane.io/reconcileEvery: "1h"
+spec:
+  distribution:
+    version: "2.x"
+    registry: "ghcr.io/fluxcd"
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+  cluster:
+    type: kubernetes
+  sync:
+    kind: GitRepository
+    url: "https://github.com/yscale-sh/idp.git"
+    ref: "refs/heads/prod"
+    path: "clusters/prod"
+    pullSecret: "github-auth"   # created out-of-band: flux-system Secret with repo credentials

@@ -1,0 +1,143 @@
+# The NFS server IPs, MinIO endpoints, and REPLACE_ME secrets below are example
+# placeholders (RFC 5737 documentation addresses). Replace them with your own
+# values before rendering.
+# yscale-media — single-manifest, multi-component (api + scanner + transcode + ui).
+# One shopping list for the whole product. The top level is the shared BASE;
+# each entry under components: carries only that part's deltas.
+app: yscale-media
+
+# ── shared base (every component inherits unless it overrides) ───────────────
+runtime:
+  image: ghcr.io/yscale-sh/yscale-media-api   # api/scanner/transcode; ui overrides
+  port: 8000
+build:
+  submodules:
+    - vendor/yscale-transcode      # the api image vendors the Rust transcoder (built once)
+# App-level stores: provisioned ONCE — api (first user) provisions, the worker
+# siblings auto-share (no provision:false), and the ui opts out with db/cache: [].
+db:
+  - name: primary
+    type: postgres
+cache:
+  - name: events
+    type: redis
+
+components:
+  - component: api          # web tier — provisions the stores, transcodes in-process
+    probes:
+      type: tcp
+    env:
+      YSCALE_ROLE: web
+      RUST_LOG: info
+      YSCALE_METADATA_DIR: /metadata
+      YSCALE_CACHE_DIR: /transcode
+      YSCALE_HWACCEL: "true"
+      YSCALE_DISABLE_AUTH: "true"
+      YSCALE_SECRET_KEY: "REPLACE_ME_32B_HEX"
+      YSCALE_TRANSCODE_MODE: sharded
+      YSCALE_SHARD_WINDOW_CHUNKS: "8"
+      YSCALE_SHARD_COOLDOWN_SECS: "120"
+      YSCALE_SEGMENT_TTL_SECS: "1800"
+      YSCALE_S3_ENDPOINT: http://minio.yscale-minio.svc:9000
+      YSCALE_S3_PUBLIC_BASE: http://192.0.2.30:9000
+      YSCALE_S3_BUCKET: yscale-transcode
+      YSCALE_S3_ACCESS_KEY: "REPLACE_ME_ACCESS_KEY"
+      YSCALE_S3_SECRET_KEY: "REPLACE_ME"
+    sizing:
+      profile: xlarge
+      replicas: 1
+      extraLimits:
+        gpu.intel.com/i915: "1"
+    volumes:
+      - name: media
+        type: pvc
+        claim: yscale-media-nfs
+        mountPath: /mnt/media
+        readOnly: true
+      - name: metadata
+        type: nfs
+        server: 192.0.2.10
+        path: /export/media
+        subPath: .yscale-metadata
+        mountPath: /metadata
+      - name: transcode
+        type: emptyDir
+        mountPath: /transcode
+
+  - component: scanner      # portless worker; shares the api stores
+    port: 0
+    env:
+      YSCALE_ROLE: scanner
+      RUST_LOG: info
+      YSCALE_METADATA_DIR: /metadata
+    sizing:
+      profile: large
+      replicas: 1
+      autosize: true
+    volumes:
+      - name: media
+        type: nfs
+        server: 192.0.2.10
+        path: /export/media
+        mountPath: /mnt/media
+        readOnly: true
+      - name: metadata
+        type: nfs
+        server: 192.0.2.10
+        path: /export/media
+        subPath: .yscale-metadata
+        mountPath: /metadata
+      - name: scan-cache
+        size: 2Gi
+        mountPath: /var/cache/yscale
+
+  - component: transcode    # sharded GPU worker pool (replicas:0 gate); shares the api stores
+    port: 0
+    env:
+      YSCALE_ROLE: transcode
+      YSCALE_TRANSCODE_MODE: sharded
+      RUST_LOG: info
+      YSCALE_CACHE_DIR: /transcode
+      YSCALE_HWACCEL: "true"
+      YSCALE_S3_ENDPOINT: http://minio.yscale-minio.svc:9000
+      YSCALE_S3_PUBLIC_BASE: http://192.0.2.30:9000
+      YSCALE_S3_BUCKET: yscale-transcode
+      YSCALE_S3_ACCESS_KEY: "REPLACE_ME_ACCESS_KEY"
+      YSCALE_S3_SECRET_KEY: "REPLACE_ME"
+    sizing:
+      profile: large
+      replicas: 0
+      extraLimits:
+        gpu.intel.com/i915: "1"
+    volumes:
+      - name: media
+        type: nfs
+        server: 192.0.2.10
+        path: /export/media
+        mountPath: /mnt/media
+        readOnly: true
+      - name: transcode
+        type: emptyDir
+        mountPath: /transcode
+
+  - component: ui           # nginx SPA — the LAN entrypoint; uses no app stores
+    runtime:
+      image: ghcr.io/yscale-sh/yscale-media-ui
+      port: 80
+    build:
+      context: ui
+    sizing:
+      profile: minimal
+      replicas: 1
+    db: []
+    cache: []
+    expose:
+      lan: true
+      host: yscale.lan
+      ip: 192.0.2.20
+    connectsTo:
+      - component: api
+        env: YSCALE_API_UPSTREAM
+        mode: clusterService
+        port: 8000
+        scheme: none

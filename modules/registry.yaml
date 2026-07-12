@@ -1,0 +1,391 @@
+# platformctl module registry — the CATALOG of platform infra + shared services.
+#
+# This file is the canonical definition of every module the platform knows how to
+# install: its source (in-repo chart vs upstream Helm/OCI repo), the chart it maps
+# to, its default target namespace, default values, and what it is for.
+#
+# A per-environment cluster.yaml (environments/<env>/cluster.yaml) references these
+# by name and decides which are ENABLED for that env and with what overrides.
+# Splitting "catalog" (here) from "toggles + overrides" (cluster.yaml) means the
+# enable matrix per env stays small and reviewable, and the source/version of a
+# chart is defined once.
+#
+# ENTRY SHAPE (see CONVENTIONS.md §5):
+#   modules.<name>:
+#     source:           localChart | chartRepo
+#     chart:            in-repo path (localChart) OR repo chart name (chartRepo)
+#     repoURL:             Helm repo / OCI URL          (chartRepo only)
+#     version:          pinned semver                (chartRepo: REQUIRED;
+#                                                      localChart: taken from the chart)
+#     defaultNamespace: target namespace for the release
+#     defaultValues:    inline values applied unless cluster.yaml overrides
+#     description:      what it is / why
+#
+# source=localChart -> chart lives in THIS repo under charts/ (path is relative to
+#   the repo root, e.g. charts/infra/dev-postgres); version comes from the chart.
+# source=chartRepo  -> chart pulled from a Helm repo or OCI registry; version is
+#   REQUIRED and pinned so a bad upstream release can't silently roll in.
+#
+# Enabling/disabling and per-env overrides live in environments/<env>/cluster.yaml,
+# NOT here. This catalog never says "enabled"; cluster.yaml does.
+
+apiVersion: platformctl.io/v1
+kind: ModuleRegistry
+
+modules:
+  # ── KEDA — event-driven autoscaling + scale-to-zero ──────────────────────────
+  # Backs the app chart's keda.* (ScaledObject + HTTPScaledObject). Enabled in
+  # every real env because autoscale is a first-class app feature.
+  keda:
+    source: chartRepo
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    version: 2.17.2
+    defaultNamespace: keda
+    defaultValues:
+      # CRDs install with the chart; the homelab has no separate CRD manager.
+      crds:
+        install: true
+    description: >-
+      KEDA autoscaler. Provides ScaledObject (cpu/memory/cron/prometheus triggers)
+      and, with the http-add-on, HTTPScaledObject (request-rate, scale-to-zero) —
+      the two kinds the app chart's keda.kind selects between.
+
+  keda-http-add-on:
+    source: chartRepo
+    repoURL: https://kedacore.github.io/charts
+    chart: keda-add-ons-http
+    version: 0.14.1
+    defaultNamespace: keda
+    description: >-
+      KEDA HTTP add-on: the interceptor + scaler that powers HTTPScaledObject and
+      scale-to-zero. Apps with autoscale.scaleToZero route through the interceptor
+      (keda-add-ons-http-interceptor-proxy), which parks the first request, wakes
+      the app from 0, then forwards it. Requires the keda module (CRDs) too.
+
+  # ── VPA — Vertical Pod Autoscaler (right-sizing) ─────────────────────────────
+  # Backs the app chart's autosize.* (a per-app VerticalPodAutoscaler). Recommends
+  # and (in Auto mode) applies CPU/memory requests from real usage so pods stop
+  # being hand-tuned. Needs metrics-server (k3s ships one). The chart bundles the
+  # recommender + updater + admission-controller and self-generates the webhook
+  # TLS cert via a pre-install hook, so no cert-manager dependency.
+  vpa:
+    source: chartRepo
+    repoURL: https://charts.fairwinds.com/stable
+    chart: vpa
+    version: 4.11.0
+    defaultNamespace: vpa
+    defaultValues:
+      # k3s already runs metrics-server in kube-system; don't install a second.
+      metrics-server:
+        enabled: false
+      recommender:
+        enabled: true
+      updater:
+        enabled: true
+      admissionController:
+        enabled: true
+        generateCertificate: true
+    description: >-
+      Vertical Pod Autoscaler (Fairwinds chart, VPA 1.6). A workload opts in via
+      the app chart's autosize.enabled; the VPA then sizes requests from observed
+      usage (mode Off=recommend, Initial=at-creation, Auto=evict+resize). CRDs
+      install with the chart (Flux install.crds=Create).
+
+  # ── dev-postgres — PER-APP in-cluster Postgres for dev / on-prem ─────────────
+  # The local chart authored in this repo. ClusterIP, generated password, PVC.
+  #
+  # NOTE: dev-postgres is NO LONGER a SHARED platform module. It is now a PER-APP
+  # localChart: every dev workload that declares db: postgres gets its OWN
+  # dedicated dev Postgres, rendered by the APP render path (platformctl render),
+  # NOT enabled here via a cluster.yaml modules block. Each per-app instance is a
+  # Flux HelmRelease named <app>-postgres targeting namespace <app>-<env>-postgres
+  # (install.createNamespace=true), written to environments/<env>/apps/<app>-postgres.yaml.
+  # The dev "data store defaults" (per-app DB name, dev placeholder password,
+  # optiplex-pg node pin) live in internal/clusterenv (DevPostgres* consts) +
+  # internal/render/store.go. Replaced in prod by managed/HA Postgres (DATABASE_URL
+  # from SSM); prod provisions NO per-app Postgres namespace. This entry stays in
+  # the catalog so the chart's source/path/intent is documented in one place.
+  dev-postgres:
+    source: localChart
+    chart: charts/infra/dev-postgres
+    # No defaultNamespace: the render path computes <app>-<env>-postgres per app.
+    defaultValues:
+      persistence:
+        enabled: true
+        storageClass: local-path
+        size: 8Gi
+      # The render path pins nodeSelector to the homelab baseline node (optiplex-pg)
+      # so the local-path PVC always reschedules onto the node holding the data.
+      nodeSelector: {}
+    description: >-
+      Minimal single-replica PostgreSQL for dev / on-prem, provisioned PER APP (not
+      a shared module). ClusterIP only, password from the dev placeholder, local-path
+      PVC. Produces the DATABASE_URL-compatible Secret the app chart wires into the
+      app (ENV.md Tier D). Rendered by `platformctl render` into <app>-<env>-postgres.
+      NOT for production.
+
+  # ── redis — in-cluster cache ─────────────────────────────────────────────────
+  # Bitnami Redis from the secured OCI mirror (the classic charts.bitnami.com repo
+  # is being retired). Standalone, in-cluster, auth on; produces REDIS_URL wiring.
+  redis:
+    source: chartRepo
+    repoURL: oci://registry-1.docker.io/bitnamicharts
+    chart: redis
+    version: 20.6.3
+    defaultNamespace: platform-data
+    defaultValues:
+      architecture: standalone
+      auth:
+        enabled: true
+      master:
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 2Gi
+      replica:
+        replicaCount: 0
+    description: >-
+      Standalone in-cluster Redis (cache). ClusterIP, auth enabled, local-path PVC.
+      Backs apps that declare `cache: redis` (REDIS_URL / <NAME>_REDIS_URL, Tier D).
+
+  # ── external-secrets — SSM/local secret sync ─────────────────────────────────
+  # The operator that materializes ExternalSecret -> k8s Secret. Required wherever
+  # externalSecret.enabled apps run. In dev it backs the LOCAL provider (Kubernetes
+  # SecretStore); in prod it backs the AWS SSM ClusterSecretStore.
+  external-secrets:
+    source: chartRepo
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    version: 0.14.4
+    defaultNamespace: external-secrets
+    defaultValues:
+      installCRDs: true
+    description: >-
+      external-secrets operator. Reconciles ExternalSecret objects into k8s Secrets
+      from a backend SecretStore/ClusterSecretStore. Per-env backend: dev=local
+      (Kubernetes provider / in-cluster Secret), prod=AWS SSM. The app chart's
+      externalSecret.storeRef points at the env store this operator serves.
+
+  # ── monitoring — kube-prometheus-stack (Prometheus + Grafana + Alertmanager) ──
+  # DEFAULT-DISABLED: the homelab already runs one kube-prometheus-stack whose
+  # Prometheus discovers ServiceMonitors via `release: prometheus`. The app chart's
+  # serviceMonitor.releaseLabel defaults to "prometheus" so those existing
+  # Prometheus instances pick apps up WITHOUT installing this module. Enable this
+  # only on a cluster that has no monitoring stack yet.
+  monitoring:
+    source: chartRepo
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    version: 66.3.1
+    defaultNamespace: monitoring
+    defaultValues:
+      # If installed, name the Prometheus release "prometheus" so it matches the
+      # serviceMonitor.releaseLabel apps already carry.
+      fullnameOverride: prometheus
+      prometheus:
+        prometheusSpec:
+          serviceMonitorSelectorNilUsesHelmValues: false
+    description: >-
+      kube-prometheus-stack (Prometheus + Grafana + Alertmanager). DISABLED by
+      default — the homelab already runs one that discovers ServiceMonitors via
+      `release: prometheus`. Enable only on a cluster with no existing monitoring.
+
+  # ── cert-manager — TLS certificate automation ───────────────────────────────
+  # Disabled by default on the LAN homelab (Cloudflare Tunnel terminates TLS at the
+  # edge; in-cluster traffic is plain HTTP on a trusted network). Useful in prod or
+  # for in-cluster mTLS / webhook certs; enable per-env as needed.
+  cert-manager:
+    source: chartRepo
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    version: v1.16.2
+    defaultNamespace: cert-manager
+    defaultValues:
+      crds:
+        enabled: true
+    description: >-
+      cert-manager (ACME / internal CA TLS automation). Disabled by default —
+      Cloudflare Tunnel terminates public TLS at the edge and the LAN is plain HTTP.
+      Enable for in-cluster certs (webhooks, mTLS) or cloud envs that need ACME.
+
+  # ── yscale — ephemeral cloud-node burst autoscaler (DEFERRED, disabled) ──────
+  # Real chart (image ghcr.io/yscale-sh/yscale-controller); it bursts EPHEMERAL
+  # cloud nodes (Fly.io) joined over Tailscale in k3s mode. On a LAN cluster there
+  # is nothing to burst into, so it ships enabled:false everywhere. chartRepo so it
+  # is pinned; do NOT deploy.
+  yscale:
+    source: chartRepo
+    repoURL: oci://ghcr.io/yscale-sh/charts
+    chart: yscale
+    version: 0.1.0
+    defaultNamespace: yscale-system
+    defaultValues:
+      # Belt-and-suspenders: even if mistakenly enabled, the controller itself is
+      # configured to do nothing here. (Real config lives in the yscale chart.)
+      enabled: false
+    description: >-
+      yscale ephemeral-cloud-node burst autoscaler (join.mode=k3s + Fly.io burst +
+      Tailscale). DEFERRED / disabled — it bursts ephemeral CLOUD nodes, so there
+      is nothing to do on a LAN cluster. Pinned here for catalog completeness only.
+
+  # ── unifi-controller — homelab network controller (example module, disabled) ─
+  # A homelab-flavored EXAMPLE of a stateful community-chart module: shows the
+  # registry shape for a stock app the platform can adopt. Disabled by default.
+  unifi-controller:
+    source: chartRepo
+    repoURL: https://charts.gabe565.com
+    chart: unifi-controller
+    version: 0.7.2
+    defaultNamespace: unifi
+    defaultValues:
+      persistence:
+        config:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi
+    description: >-
+      UniFi Network controller — a homelab EXAMPLE module (stock community chart)
+      demonstrating the registry shape for adopting a stateful third-party service.
+      Disabled by default; enable on the homelab if you want platformctl to own it.
+
+  # ── github-runners — scale-to-zero self-hosted CI runners per GitHub org ─────
+  # A localChart (charts/infra/github-runners) that deploys, on the SHARED in-cluster
+  # ARC controller (ns github), one RunnerDeployment + HorizontalRunnerAutoscaler per
+  # org — each 0 -> N on queued workflow runs. Deploys the POOLS only; the ARC
+  # controller + CRDs must already be installed. Each pool authenticates with a
+  # per-org fine-grained PAT Secret (github-token-<org>), created out-of-band. The
+  # enabled orgs + their repos/maxReplicas live in environments/<env>/cluster.yaml.
+  github-runners:
+    source: localChart
+    chart: charts/infra/github-runners
+    defaultNamespace: github
+    description: >-
+      Scale-to-zero GitHub Actions runner pools (summerwind ARC) per org, on the
+      shared in-cluster ARC controller (ns github). One RunnerDeployment + HRA per
+      org (0 -> N on queued runs). Pools authenticate with a per-org fine-grained PAT
+      Secret (github-token-<org>, out-of-band). Enabled orgs + per-org pools
+      (orgs/repos/maxReplicas) set in environments/<env>/cluster.yaml.
+
+  # ── image-builder — in-cluster image build backend ───────────────────────────
+  # The persistent pieces the on-demand BuildKit build Jobs rely on: the SA build
+  # pods run as, trigger RBAC, the shared layer-cache PVC, and (optionally) the
+  # ExternalSecrets for the two build credentials (ghcr-push dockerconfigjson +
+  # git-token PAT — names are the internal/builder Job-template contract). The
+  # build Jobs themselves are rendered at build time by internal/builder
+  # (idp-shipper / idpctl), never by this chart. The platform cannot build app
+  # images without this module (or an equivalent out-of-band setup).
+  image-builder:
+    source: localChart
+    chart: charts/infra/image-builder
+    defaultNamespace: image-builder
+    description: >-
+      In-cluster image build backend: ServiceAccount, trigger RBAC, BuildKit
+      layer-cache PVC, optional ExternalSecrets for build credentials. Build Jobs
+      are created on demand by the shipper/idpctl via internal/builder.
+
+  # ── idp-shipper — the platform's CD orchestrator ─────────────────────────────
+  # Polls each registered app repo; on a new head: build images (image-builder
+  # Jobs) -> render components into the umbrella -> commit/push the platform repo
+  # -> Flux reconciles. Deploy into the SAME namespace as image-builder (it reuses
+  # the git-token + ghcr-push secrets and creates build Jobs beside itself). The
+  # registry block (platformRepo + apps) is instance identity and MUST be set in
+  # cluster.yaml values — the chart fails at template time without it.
+  idp-shipper:
+    source: localChart
+    chart: charts/infra/idp-shipper
+    defaultNamespace: image-builder
+    description: >-
+      The in-cluster CD orchestrator (push to app master -> build -> render ->
+      commit -> Flux). Registry (platformRepo, apps to ship) set per env in
+      cluster.yaml; no identity defaults.
+
+  # ── loki — the platform log store (REQUIRED wherever observability.lokiURL ───
+  # is set). Every app gets LOKI_URL injected as Tier-A env and may declare
+  # logging.retention in its deploy.yaml (rendered into the loki-runtime-overrides
+  # ConfigMap in this module's namespace) — so an env that promises a lokiURL
+  # without enabling this module gets a loud warning from infra plan/render
+  # (external/managed Loki is the only reason to ignore it).
+  #
+  # Defaults are GENERIC + OSS-clean: filesystem storage, 30d retention, the
+  # runtime-overrides hook mounted (optional ConfigMap — safe when absent), and
+  # -config.expand-env so object-storage credentials come from a Secret (e.g.
+  # `loki-r2`, materialized by the env's secrets backend) via env vars — NEVER
+  # committed values. Per-env cluster.yaml overrides add the real storage
+  # (e.g. R2/S3 schema period — see infrastructure/onprem/logging for the shape).
+  loki:
+    source: chartRepo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki-stack
+    version: 2.10.3
+    defaultNamespace: loki
+    defaultValues:
+      loki:
+        extraArgs:
+          config.expand-env: "true"
+        config:
+          compactor:
+            retention_enabled: true
+          limits_config:
+            retention_period: 720h            # 30d platform default
+          runtime_config:
+            file: /etc/loki/runtime/overrides.yaml
+        extraVolumes:
+          - name: runtime-overrides
+            configMap:
+              name: loki-runtime-overrides    # rendered by the umbrella from
+              optional: true                  # deploy.yaml logging.retention
+        extraVolumeMounts:
+          - name: runtime-overrides
+            mountPath: /etc/loki/runtime
+            readOnly: true
+    description: >-
+      Loki, the platform log store backing the Tier-A LOKI_URL contract and the
+      per-app logging.retention feature. 30d default retention; runtime
+      overrides ConfigMap hook; credentials via env expansion from a Secret.
+      Enable in every env that sets observability.lokiURL.
+
+  # ── velero — cluster backup & restore → R2 ───────────────────────────────────
+  velero:
+    source: chartRepo
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    version: 12.0.2
+    defaultNamespace: velero
+    description: >-
+      Velero: scheduled backups of PVCs + k8s resources to R2 with one-command
+      restore. Prod uses CSI volume snapshots (Linode block storage); dev/homelab
+      (no CSI) uses node-agent file-system backup (kopia). R2 creds come from the
+      velero-creds module (credentials.existingSecret=velero-r2). REPLACES the
+      per-engine DB operators — run plain Postgres/Mongo and let Velero snapshot them.
+
+  # ── velero-creds — the R2 `cloud` credentials Secret Velero reads ─────────────
+  velero-creds:
+    source: localChart
+    chart: charts/infra/velero-creds
+    defaultNamespace: velero
+    description: >-
+      Builds the velero-r2 Secret (AWS `cloud` INI file) from the shared SSM R2
+      keys via external-secrets, so Velero's existingSecret can point at it.
+
+  # ── cnpg-operator — the CloudNativePG operator ───────────────────────────────
+  cnpg-operator:
+    source: chartRepo
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    version: 0.28.3
+    defaultNamespace: cnpg-system
+    description: >-
+      The CloudNativePG operator (CNCF) — manages Postgres clusters as Pods+PVCs
+      directly (no StatefulSet, no Patroni/etcd). Pair with the cnpg-db module,
+      which declares the actual cluster + its WAL/base → R2 PITR backups.
+
+  # ── cnpg-db — a lean Postgres cluster + barman→R2 PITR backups ────────────────
+  cnpg-db:
+    source: localChart
+    chart: charts/infra/cnpg-db
+    defaultNamespace: cnpg
+    description: >-
+      A small HA CloudNativePG cluster (primary + 1 replica), lean resources +
+      low-memory tuning, continuous WAL + daily base backups to R2 (barman, no
+      CSI), per-app databases, and a backup-monitor tripwire. Needs cnpg-operator.

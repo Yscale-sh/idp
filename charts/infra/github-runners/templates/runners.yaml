@@ -1,0 +1,82 @@
+{{- $top := . -}}
+{{- range $key, $r := .Values.runners }}
+{{- $secret := required (printf "runners.%s.credentialsSecret is required" $key) $r.credentialsSecret }}
+---
+# {{ $key }} org runners ({{ $r.organization }}) — scale-to-zero on the shared ARC.
+apiVersion: actions.summerwind.dev/v1alpha1
+kind: RunnerDeployment
+metadata:
+  name: {{ $key }}-runners
+  labels:
+    {{- include "github-runners.labels" $top | nindent 4 }}
+    platform/runner-org: {{ $r.organization }}
+spec:
+  # replicas intentionally OMITTED: the HRA is the sole owner of the count, so
+  # Flux/Helm never fight it over replicas.
+  template:
+    spec:
+      githubAPICredentialsFrom:
+        secretRef:
+          name: {{ $secret }}
+      organization: {{ required (printf "runners.%s.organization is required" $key) $r.organization }}
+      labels:
+        {{- range $top.Values.labels }}
+        - {{ . }}
+        {{- end }}
+        {{- range $r.extraLabels }}
+        - {{ . }}
+        {{- end }}
+      image: "{{ $top.Values.image.repository }}:{{ $top.Values.image.tag }}"
+      imagePullPolicy: {{ $top.Values.image.pullPolicy }}
+      {{- with $top.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      dockerdContainerResources: {}   # default sidecar dind -> `docker build` works in CI
+      env:
+        {{- if $top.Values.ephemeral }}
+        - name: RUNNER_FEATURE_FLAG_EPHEMERAL   # one job per runner, then exit
+          value: "true"
+        {{- end }}
+        - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+          value: "false"
+        - name: RUNNER_WORKDIR
+          value: /runner/_work
+        - name: DOCKER_BUILDKIT
+          value: "1"
+      resources:
+        {{- toYaml ($r.resources | default $top.Values.resources) | nindent 8 }}
+      volumeMounts:
+        - mountPath: /runner/_work
+          name: work
+      volumes:
+        - name: work
+          emptyDir:
+            sizeLimit: {{ $r.workDirSizeLimit | default $top.Values.workDirSizeLimit }}
+---
+apiVersion: actions.summerwind.dev/v1alpha1
+kind: HorizontalRunnerAutoscaler
+metadata:
+  name: {{ $key }}-runners-autoscaler
+  labels:
+    {{- include "github-runners.labels" $top | nindent 4 }}
+spec:
+  # The HRA carries its OWN creds — the queued-runs metric query does NOT inherit
+  # the RunnerDeployment's githubAPICredentialsFrom; without this it falls back to
+  # the controller-default token and 404s on this org's private repos.
+  githubAPICredentialsFrom:
+    secretRef:
+      name: {{ $secret }}
+  minReplicas: 0
+  maxReplicas: {{ $r.maxReplicas | default 1 }}
+  scaleDownDelaySecondsAfterScaleOut: {{ $top.Values.scaleDownDelaySeconds }}
+  scaleTargetRef:
+    kind: RunnerDeployment
+    name: {{ $key }}-runners
+  metrics:
+    - type: TotalNumberOfQueuedAndInProgressWorkflowRuns
+      repositoryNames:
+        {{- range (required (printf "runners.%s.repositories is required" $key) $r.repositories) }}
+        - {{ . }}
+        {{- end }}
+{{- end }}

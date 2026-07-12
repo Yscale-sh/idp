@@ -1,0 +1,41 @@
+# Dim scanner worker — media scan + TMDB match. No web tier (a portless worker).
+# SHARES the api's Postgres + Redis (provision: false). Same image as the api.
+#   idpctl render --env dev --file dim-scanner.deploy.yaml --image ghcr.io/yscale-sh/dim:<tag>
+app: dim
+component: scanner
+
+runtime:
+  image: ghcr.io/yscale-sh/yscale-media-api
+  port: 0            # worker: no inbound Service / probes / ServiceMonitor
+
+env:
+  DIM_ROLE: scanner
+  RUST_LOG: info
+  DIM_METADATA_DIR: /metadata   # write posters/backdrops to the shared NFS mount
+
+sizing:
+  replicas: 1
+
+# Share the SAME stores the api provisions — wire the URLs, provision nothing.
+db:
+  - name: primary
+    type: postgres
+    provision: false
+cache:
+  - name: events
+    type: redis
+    provision: false
+
+volumes:
+  - name: media
+    type: nfs
+    server: 192.0.2.10
+    path: /volume/f24160d1-3f63-4889-ac56-c892dc01f76c/.srv/.unifi-drive/nfs/.data
+    mountPath: /mnt/personal-drive
+    readOnly: true
+  - name: metadata        # writes posters/backdrops the api serves
+    type: nfs
+    server: 192.0.2.10
+    path: /volume/f24160d1-3f63-4889-ac56-c892dc01f76c/.srv/.unifi-drive/nfs/.data
+    subPath: .dim-metadata
+    mountPath: /metadata

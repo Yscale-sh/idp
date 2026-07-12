@@ -1,0 +1,25 @@
+app: dummy-ui
+product: dummy
+component: ui
+
+runtime:
+  image: ghcr.io/yscale-sh/dummy-ui
+  port: 3000
+
+routes:
+  - host: dummy-ui.local
+    public: false
+
+sizing:
+  profile: minimal
+  replicas: 1
+
+connectsTo:
+  - app: dummy-api
+    env: API_BASE_URL
+    mode: clusterService
+
+logging:
+  enabled: true
+metrics:
+  enabled: true

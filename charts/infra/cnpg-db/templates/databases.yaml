@@ -1,0 +1,37 @@
+{{- /* Per-app databases + their extensions, managed declaratively via the CNPG
+   Database CRD (databases.postgresql.cnpg.io — CNPG >= 1.24, extensions >= 1.27).
+   The operator reconciles these AFTER the Cluster is healthy and its login roles
+   exist (cluster.yaml postInitSQL), so each DB is created with the correct owner
+   and its untrusted extensions (postgis, pgcrypto) are installed as the superuser.
+   This replaces the old postInitSQL `CREATE DATABASE` + postInitTemplateSQL combo,
+   whose ordering meant per-app DBs never inherited the template1 extensions.
+   databaseReclaimPolicy: retain — deleting the Database resource must NEVER drop a
+   live app database. Each entry may override `extensions:`; default = templateExtensions. */}}
+{{- $cluster := .Values.clusterName }}
+{{- $ns := .Release.Namespace }}
+{{- $defaultExt := .Values.templateExtensions | default list }}
+{{- range .Values.databases }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ printf "%s-%s" $cluster .name }}
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  cluster:
+    name: {{ $cluster }}
+  name: {{ .name }}
+  owner: {{ .owner | default .name }}
+  ensure: present
+  databaseReclaimPolicy: retain
+  {{- $ext := .extensions | default $defaultExt }}
+  {{- with $ext }}
+  extensions:
+    {{- range . }}
+    - name: {{ . }}
+      ensure: present
+    {{- end }}
+  {{- end }}
+{{- end }}

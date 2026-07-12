@@ -1,0 +1,127 @@
+# carshowdb — a minimal single-service app (worked example).
+#
+# Declaring `db: primary` gives the platform's dev Postgres, replacing a hand-wired external DB URL.
+#
+# Image: ghcr.io/yscale-sh/carshowdb-api (repository only; CI supplies the tag).
+# Port: 8080 (ASSUMPTION — verify against your container image and override here
+#       if it listens elsewhere.)
+#
+# Render to dev:  idpctl render --env dev  --file deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:<tag>
+# Render to prod: idpctl render --env prod --file deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:<tag>
+
+app: carshowdb
+
+# component is the workload "purpose"; it becomes the {purpose} segment of the
+# app's own namespace (<app>-<env>-<component>). carshowdb is the API, so its dev
+# namespace is carshowdb-dev-api (prod: carshowdb-prod-api). Apps that omit
+# component default to purpose "app" (e.g. <app>-<env>-app).
+component: api
+
+runtime:
+  image: ghcr.io/yscale-sh/carshowdb-api
+  port: 8080
+
+routes:
+  # ONE route, env-aware — no env-specific fields; the same route works in every env.
+  # The bare label composes per environment under the env's wildcard zone
+  # (api.local in dev, api.<prod-zone> e.g. api.example.com in prod), and
+  # `public: true` ("expose to users") is fulfilled by whatever the env provides: a
+  # MetalLB LAN LoadBalancer with an auto-assigned IP + hostname in dev, a Cloudflare
+  # Tunnel in prod. Host is "api" so the API is reached at api.<prod-zone>.
+  - host: api
+    public: true
+    access:
+      humans: false
+      serviceToken: false
+
+sizing:
+  profile: minimal
+  replicas: 2
+  # autoscale DISABLED for the tunnel'd prod route: scaleToZero is incompatible with
+  # the cloudflared SIDECAR model — at 0 replicas the connector dies too, so the tunnel
+  # has no origin and nothing can wake it (chicken-and-egg). Fixed replicas: 2 keeps the
+  # tunnel up + gives HA. Re-enable autoscale (scaleToZero:false, or a standalone
+  # cloudflared Deployment in front of the keda-http interceptor) once that's designed.
+  autoscale:
+    enabled: false
+
+# carshowdb-api's health endpoint is /health (the chart default /healthz + /readyz
+# 404 -> liveness kills the pod -> CrashLoopBackOff). Point both probes at /health.
+probes:
+  path: /health
+
+db:
+  # First/default db -> bare DATABASE_URL alias (repoints the app off any external
+  # managed Postgres onto the platform Postgres) plus PRIMARY_DATABASE_URL.
+  - name: primary
+    type: postgres
+    size: minimal
+
+# Secret keys this app reads at boot, supplied by the env backend (prod=SSM at
+# /apps/carshowdb/prod/<key>; the renderer pins each as an explicit ExternalSecret
+# remoteRef). DATABASE_URL/PRIMARY_DATABASE_URL included because prod's Postgres is
+# self-hosted CNPG reached via a DATABASE_URL stored in SSM (no in-cluster provisioner).
+secrets:
+  - DATABASE_URL
+  - PRIMARY_DATABASE_URL
+  - JWT_SECRET
+  - GEMINI_API_KEY
+  - GEMINI_MODEL
+  - SENDGRID_API_KEY
+  - STRIPE_PUBLISHABLE_KEY
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - S3_ACCESS_KEY          # R2 access key id (shared homelab R2 creds for now)
+  - S3_SECRET_KEY          # R2 secret access key
+
+# Non-secret app config (committed; injected as plain env). S3 object storage =
+# Cloudflare R2 (S3-compatible) in the carshowdb-prod bucket. PUBLIC_WEB_URL/CORS
+# point at the app's public frontend.
+env:
+  S3_ENDPOINT: https://R2-ACCOUNT-ID.r2.cloudflarestorage.com
+  S3_REGION: auto
+  S3_BUCKET: carshowdb-prod
+  S3_USE_PATH_STYLE: "true"
+  S3_PUBLIC_BASE_URL: https://R2-ACCOUNT-ID.r2.cloudflarestorage.com/carshowdb-prod
+  CORS_ORIGIN: https://example.com
+  PUBLIC_WEB_URL: https://example.com
+
+logging:
+  enabled: true
+
+# metrics DISABLED in this env profile: prod has no Prometheus/monitoring stack, so the
+# ServiceMonitor CRD (monitoring.coreos.com/v1) isn't present and would fail the install.
+# Re-enable once a prod monitoring stack (or env-gated ServiceMonitor rendering) lands.
+metrics:
+  enabled: false
+
+# ── Secrets supplied by the env backend (dev=local, prod=ssm) ────────────────
+# These come from the env's SecretStore (NOT committed here). carshowdb's full
+# env, per ENV.md (/apps/carshowdb/<env>/* plus shared groups):
+#
+#   DATABASE_URL              # platform-provided from `db: primary` above (Tier D)
+#   JWT_SECRET                # /apps/carshowdb/<env>/JWT_SECRET
+#   CORS_ORIGIN               # /apps/carshowdb/<env>/CORS_ORIGIN
+#   PUBLIC_WEB_URL            # /apps/carshowdb/<env>/PUBLIC_WEB_URL
+#   GEMINI_API_KEY            # /apps/carshowdb/<env>/GEMINI_API_KEY
+#   GEMINI_MODEL              # /apps/carshowdb/<env>/GEMINI_MODEL
+#   S3_ACCESS_KEY             # storage -> /shared/storage/* (unified R2/S3 convention)
+#   S3_SECRET_KEY
+#   S3_ENDPOINT
+#   S3_BUCKET
+#   S3_REGION
+#   S3_PUBLIC_BASE_URL
+#   S3_USE_PATH_STYLE
+#   SENDGRID_API_KEY          # /shared/sendgrid/*
+#   FROM_EMAIL                # /shared/sendgrid/SENDGRID_FROM_EMAIL
+#   FROM_NAME                 # /shared/sendgrid/SENDGRID_FROM_NAME
+#   STRIPE_PUBLISHABLE_KEY    # /shared/stripe/*
+#   STRIPE_SECRET_KEY
+#   STRIPE_WEBHOOK_SECRET
+#   STRIPE_PRICE_*            # one or more price IDs
+#
+# Tier-A (ENVIRONMENT, LOKI_URL, OTEL_EXPORTER_OTLP_ENDPOINT, CONSOLE_LOGGING,
+# DEPLOY_TIME, PORT) is injected by the chart automatically — not listed here.
+# Sidecars TUNNEL_TOKEN / TS_* are Tier-B (platform-managed): the prod cloudflared
+# tunnel reads TUNNEL_TOKEN, provisioned by the platform at
+# /apps/carshowdb/prod/TUNNEL_TOKEN in SSM when the public route is onboarded — not declared here.

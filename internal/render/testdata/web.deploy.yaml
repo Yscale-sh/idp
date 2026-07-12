@@ -1,0 +1,11 @@
+# A single-manifest, env-aware route: one bare-host public route, NO env-specific
+# fields. The platform derives the exposure per environment — a MetalLB LAN
+# LoadBalancer (auto IP + hostname web.local) in dev, a Cloudflare Tunnel
+# (web.example.com) in prod.
+app: web
+runtime:
+  image: ghcr.io/yscale-sh/web
+  port: 80
+routes:
+  - host: web        # bare label -> web.local (dev) / web.example.com (prod)
+    public: true     # "expose to users" -> LAN in dev, tunnel in prod

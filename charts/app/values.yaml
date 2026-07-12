@@ -1,0 +1,342 @@
+# charts/app — the shared application chart VALUES CONTRACT.
+#
+# This file is the render target: `platformctl render` produces a values block of
+# exactly this shape from a deploy.yaml, and writes it into the Argo CD
+# Application at environments/<env>/apps/<app>.yaml. The chart templates consume
+# only these keys. Keep this file and internal/appconfig/types.go in lockstep.
+#
+# HARD POLICY (template + platformctl policy BOTH enforce):
+#   - Apps are ClusterIP ONLY. There is intentionally NO `service.type` key and
+#     the Service template hardcodes ClusterIP. A LoadBalancer can never render.
+#   - In prod, image.tag must be immutable (never "latest").
+#
+# KEY-BY-KEY:
+#   image.repository      <registry>/<app> (registry from idp.yaml).
+#   image.tag             concrete immutable tag injected by CI (--image).
+#   image.pullPolicy      IfNotPresent.
+#   port                  container port; drives PORT env + probes.
+#   replicas              baseline replica count (ignored when keda.enabled).
+#   resources             requests/limits chosen by profile (renderer fills the
+#                         active profile into resources.requests/limits).
+#   service.port          ClusterIP service port. NO type field by design.
+#   routes                informational only (host/public/access). Public
+#                         exposure is wired by Cloudflare Tunnel out-of-chart;
+#                         the chart renders NO Ingress/LoadBalancer.
+#   env.tierA             platform-injected vars stamped into EVERY app (ENV.md
+#                         Tier A). IMAGE_NAME is intentionally absent (Helm sets
+#                         the image). DATABASE_URL/REDIS_URL/<NAME>_* are NOT here;
+#                         they are wired via secretKeyRef from db/cache (Tier D).
+#   env.extra             app-specific non-secret plain env (map[string]string).
+#   externalSecret        ExternalSecret generation. backend=local|ssm per env.
+#                         storeRef points at the env SecretStore/ClusterSecretStore.
+#                         dataFrom pulls the whole app SSM root; remoteRefs pin
+#                         individual keys (incl. shared groups).
+#   keda                  autoscaling. kind=ScaledObject|HTTPScaledObject.
+#   serviceMonitor        Prometheus discovery. releaseLabel MUST be a value
+#                         (default "prometheus") so the homelab kube-prometheus-
+#                         stack discovers it via `release: prometheus`.
+#   pdb                   PodDisruptionBudget.
+#   db / cache            data-store wiring. The Deployment emits each store's
+#                         urlKeys (DATABASE_URL/REDIS_URL/<NAME>_*) via secretKeyRef
+#                         to the runtime Secret <app>-runtime. For the dev (local)
+#                         backend the chart also assembles the in-cluster URL from
+#                         connection.url into that plain Secret; the data stores
+#                         themselves are separate releases/modules.
+#   devSecretPlaceholders dev-only placeholder app-secret keys (local backend) so
+#                         an app boots without the external-secrets operator.
+#   platform              the label set stamped on every generated object.
+#
+# NOTE: tailscaleEgress (appconfig, deploy.yaml-level) drives the `tailscale` block
+# below — the renderer sets tailscale.enabled for a non-local/prod app that declared
+# it, and deployment.yaml then adds the userspace Tailscale egress sidecar.
+
+# ── image ────────────────────────────────────────────────────────────────────
+image:
+  repository: REPLACE_ME                        # <registry>/<app>; renderer always sets it
+  tag: ""                                       # REQUIRED, immutable; CI --image
+  pullPolicy: IfNotPresent
+
+# Kubernetes wants the {name: <secret>} object shape (NOT a bare string). The
+# renderer defaults this to [{name: ghcr-pull}] so pods can pull private ghcr
+# images. Align charts/app/ci/* with this shape.
+imagePullSecrets:
+  - name: ghcr-pull
+
+# Registry pull-secret ExternalSecret (pullsecret-externalsecret.yaml): when
+# enabled the chart materializes the registry dockerconfigjson into THIS app's
+# namespace from the env's secrets backend. The renderer sets this from
+# cluster.yaml secrets.imagePull; off by default (secret provided out-of-band).
+pullSecret:
+  enabled: false
+  name: ghcr-pull
+  remoteKey: ""
+  refreshInterval: 1h
+  storeRef:
+    name: ""
+    kind: ClusterSecretStore
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+port: 8080
+# worker: a portless background workload (renderer sets it when runtime.port == 0).
+# The chart then renders a Deployment ONLY — no Service, no HTTP probes, no
+# ServiceMonitor, no LAN expose. For media scanners / queue workers.
+worker: false
+replicas: 1
+
+# ── pod scheduling / security passthrough (optional; chart-level, not in the
+#    deploy.yaml contract — platformctl may set these from env policy) ─────────
+podAnnotations: {}        # extra pod annotations (merged with the deploy stamp)
+podSecurityContext: {}    # pod-level securityContext
+securityContext: {}       # container-level securityContext
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# ── platform-injected pod splice points (NOT in the deploy.yaml contract) ─────
+# General extension points: the Go renderer (or an operator) appends fully-formed
+# container/volume specs here. Empty by default → the splice templates in
+# deployment.yaml are a no-op. (The cloudflared sidecar uses the dedicated
+# `tunnel` block below, not these.)
+sidecars: []        # extra containers appended to the pod
+volumes: []         # extra pod volumes (raw k8s volume specs)
+volumeMounts: []    # matching container volumeMounts (raw k8s volumeMount specs;
+                    # the renderer fills volumes + volumeMounts together from
+                    # deploy.yaml volumes[] — NFS / emptyDir / PVC)
+
+# ── lanExpose: on-prem MetalLB LoadBalancer (renderer-driven, on-prem only) ────
+# The on-prem twin of the tunnel: when an app opts in via expose.lan on a LOCAL
+# backend, the renderer sets lanExpose.enabled and lan-service.yaml adds a MetalLB
+# LoadBalancer (the ONLY sanctioned LB) in front of the app. ip pins a MetalLB
+# address (else auto). Off by default → no LB; prod exposes via the tunnel instead.
+lanExpose:
+  enabled: false
+  ip: ""
+  port: 0   # 0 => service.port
+
+# ── tunnel: Cloudflare-Tunnel exposure for public routes (renderer-driven) ────
+# The renderer sets tunnel.enabled=true + tunnel.ingress for a PROD app that
+# declares a public route (derived from routes[].public; NOT a deploy.yaml field).
+# When enabled, deployment.yaml adds the cloudflared sidecar (token mode), serving
+# the public hostnames through the Cloudflare Tunnel to this app's OWN ClusterIP
+# Service — exposure with NO LoadBalancer/Ingress. TUNNEL_TOKEN comes from the
+# runtime Secret (prod: ExternalSecret from SSM). Default OFF so dev and any
+# non-public app render exactly as before; flipping it off (or removing the app)
+# tears the sidecar down.
+tunnel:
+  enabled: false
+  image: cloudflare/cloudflared:2024.10.0
+  ingress: []   # [{hostname: app.example.com, service: http://localhost:8080}] — metadata; CF owns live ingress for token tunnels
+
+# ── tailscale: egress sidecar (renderer-driven) ───────────────────────────────
+# The renderer sets tailscale.enabled=true for a NON-LOCAL (prod) app that declares
+# `tailscaleEgress: true` (appconfig). When enabled, deployment.yaml adds a userspace
+# tailscale sidecar (no host privileges) that joins the tailnet so the app can reach
+# out-of-cluster services with no in-cluster DNS — e.g. a Linode prod pod shipping
+# logs to the on-prem Loki. TS_AUTHKEY comes from the runtime Secret (prod:
+# ExternalSecret from the SHARED SSM key /shared/tailscale/auth-key). Default OFF so
+# dev and any app that didn't opt in render exactly as before.
+tailscale:
+  enabled: false
+  image: ghcr.io/tailscale/tailscale:v1.78.1
+  hostname: ""   # renderer sets <workload>-<env> (the node's tailnet name)
+
+# ── certManager: optional in-cluster TLS Certificate (chart-only, default OFF) ─
+# OFF by default — Cloudflare Tunnel terminates TLS at the edge. For in-cluster
+# mTLS / non-tunnel TLS, set enabled + issuer + dnsNames AND enable the
+# cert-manager module for the env. Not set by the renderer (like nodeSelector).
+certManager:
+  enabled: false
+  issuer: ""
+  issuerKind: ClusterIssuer
+  secretName: ""
+  dnsNames: []
+
+# Active resource envelope. The renderer selects this from sizing.profile.
+# resourceProfiles below documents the presets (informational; not consumed
+# directly by the template — the renderer copies the chosen one into resources).
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  # extraLimits: extended resource limits merged into limits beyond cpu/memory,
+  # e.g. {gpu.intel.com/i915: "1"} for hardware transcode (renderer sets from
+  # sizing.extraLimits). Empty for the common case.
+  extraLimits: {}
+
+# Vertical Pod Autoscaler opt-in (sizing.autosize). Off by default → no VPA is
+# rendered and the app uses the static `resources` above. Flip enabled:true to let
+# the cluster `vpa` module right-size requests from real usage instead of
+# hand-tuning. mode: Off (recommend only) | Initial (apply at pod creation) |
+# Auto (evict + recreate to resize). minAllowed/maxAllowed bound the VPA so it
+# stays within the env's resourceBounds.
+autosize:
+  enabled: false
+  # Matches the renderer's AutosizeValues. updateMode: Off|Initial|Auto (the
+  # renderer emits Initial — size at pod creation, never evict a running pod).
+  updateMode: Initial
+  controlledResources: ["cpu", "memory"]
+  minAllowed:
+    cpu: 50m
+    memory: 128Mi
+  maxAllowed:
+    cpu: "4"
+    memory: 4Gi
+
+resourceProfiles:
+  minimal:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  small:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  medium:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: "1", memory: 1Gi }
+  large:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits:   { cpu: "2", memory: 2Gi }
+  xlarge:
+    requests: { cpu: "1", memory: 1Gi }
+    limits:   { cpu: "4", memory: 4Gi }
+  huge:
+    requests: { cpu: "1", memory: 8Gi }
+    limits:   { cpu: "8", memory: 16Gi }
+
+# ── service (ClusterIP ONLY — no `type` key on purpose) ──────────────────────
+service:
+  port: 8080
+
+# ── probes (generated from port unless overridden) ───────────────────────────
+probes:
+  type: http        # http (httpGet path) | tcp (port-open) | none. Renderer sets
+                    # this from deploy.yaml probes.type; empty => http.
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# ── routes (INFORMATIONAL; ClusterIP only, no Ingress rendered) ──────────────
+routes: []
+#  - host: app.example.com
+#    public: true
+#    access: { humans: false, serviceToken: true }
+
+# ── env ──────────────────────────────────────────────────────────────────────
+env:
+  # Tier-A: platform injects these into EVERY app (ENV.md). NOT IMAGE_NAME.
+  tierA:
+    ENVIRONMENT: ""                     # e.g. dev|prod
+    LOKI_URL: ""                        # platform Loki endpoint
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""     # platform OTEL collector
+    CONSOLE_LOGGING: "true"
+    DEPLOY_TIME: ""                     # CI build stamp
+    PORT: "8080"                        # mirrors .port
+  # app-specific plain (non-secret) env.
+  extra: {}
+
+# ── secrets (per-env backend) ────────────────────────────────────────────────
+# backend selects WHICH runtime-Secret mechanism the chart renders into the same
+# Secret name <app>-runtime that the Deployment envFroms:
+#   backend=local (dev/on-prem) -> templates/secret.yaml: a PLAIN Kubernetes
+#     Secret. NO external-secrets operator. Carries the in-cluster dev DB/cache
+#     URLs (from db/cache .connection.url) plus dev placeholders
+#     (devSecretPlaceholders) so an app boots in dev.
+#   backend=ssm (prod/cloud) -> templates/externalsecret.yaml: an
+#     external-secrets.io/v1 ExternalSecret pulling the app SSM root + shared
+#     groups. dataFrom/remoteRefs/storeRef below apply to THIS path only.
+externalSecret:
+  enabled: false
+  backend: local                        # local (dev/on-prem) | ssm (prod/cloud)
+  refreshInterval: 1h
+  # storeRef references the env's SecretStore/ClusterSecretStore (configured in
+  # environments/<env>/cluster.yaml).
+  storeRef:
+    name: ""                            # e.g. platform-ssm | platform-local
+    kind: ClusterSecretStore            # ClusterSecretStore | SecretStore
+  # dataFrom pulls every key under the app's SSM root into the runtime Secret.
+  dataFrom: []
+  #  - extract: { key: /apps/<app>/<env> }
+  # remoteRefs pin individual keys, including shared groups (/shared/<group>/*).
+  remoteRefs: []
+  #  - secretKey: STRIPE_SECRET_KEY
+  #    remoteRef: { key: /shared/stripe/STRIPE_SECRET_KEY }
+
+# ── autoscaling (KEDA) ───────────────────────────────────────────────────────
+keda:
+  enabled: false
+  kind: ScaledObject                    # ScaledObject | HTTPScaledObject
+  minReplicas: 1
+  maxReplicas: 1
+  # ScaledObject triggers (cpu/memory/cron/prometheus/...).
+  triggers: []
+  #  - type: cpu
+  #    metadata: { type: Utilization, value: "70" }
+  # HTTPScaledObject request-rate config (used when kind=HTTPScaledObject).
+  http:
+    hosts: []
+    pathPrefixes: ["/"]
+    targetPendingRequests: 100
+    scaledownPeriod: 300
+
+# ── observability ────────────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  port: http
+  interval: 30s
+  # releaseLabel is a VALUE so the homelab kube-prometheus-stack discovers it.
+  releaseLabel: prometheus
+
+# ── disruption budget ────────────────────────────────────────────────────────
+pdb:
+  enabled: false
+  minAvailable: 1
+
+# ── data-store wiring (chart emits *_URL env from the runtime Secret) ────────
+# The data stores themselves are separate releases/modules; these entries tell
+# the Deployment which URL env vars to emit and where their VALUES come from:
+#   urlKeys    the env-var names this store contributes. The first/default entry
+#              of each class also gets the bare DATABASE_URL / REDIS_URL alias;
+#              every entry gets the prefixed <NAME>_DATABASE_URL / _REDIS_URL.
+#   connection (dev/local backend only) the assembled in-cluster connection URL
+#              the plain runtime Secret carries. Omitted for ssm/prod (the URL
+#              comes from SSM via the ExternalSecret). The Deployment ALWAYS wires
+#              urlKeys via secretKeyRef to <app>-runtime, so db/cache reach the pod
+#              for BOTH backends.
+db: []
+#  - name: primary
+#    type: postgres
+#    default: true
+#    urlKeys: [DATABASE_URL, PRIMARY_DATABASE_URL]
+#    connection: { url: "postgres://app:CHANGEME@dev-postgres:5432/app/app?sslmode=disable" }
+cache: []
+#  - name: default
+#    type: redis
+#    default: true
+#    urlKeys: [REDIS_URL, DEFAULT_REDIS_URL]
+
+# ── dev secret placeholders (local backend only) ─────────────────────────────
+# Clearly-marked DEV placeholder values for app-level secret keys the plain
+# runtime Secret carries so an app BOOTS in dev with no external-secrets operator.
+# Empty for the ssm/prod backend (SSM supplies the real values). NEVER real
+# secrets — every value is "dev-placeholder".
+devSecretPlaceholders: []
+#  - { name: JWT_SECRET, value: dev-placeholder }
+#  - { name: STRIPE_SECRET_KEY, value: dev-placeholder }
+
+# ── platform labels (stamped on every generated object) ──────────────────────
+platform:
+  app: ""           # platform/app label (the app, shared across components)
+  workload: ""      # the per-workload handle (<app>-<component> or <app>); names
+                    # the Deployment/Service/Secret. Empty => app.
+  env: ""           # platform/env
+  product: ""       # platform/product (optional)
+  component: ""     # platform/component (optional)
+  managedBy: platformctl   # platform/managed-by

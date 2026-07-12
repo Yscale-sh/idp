@@ -1,0 +1,105 @@
+# environments/dev/cluster.yaml — reference DEV environment definition.
+#
+# This is a working SKELETON a fork edits in place. Parsed by internal/clusterenv
+# (clusterenv.Config). Keep keys in lockstep with that struct: env,
+# secrets{backend,storeRef,refreshInterval}, observability, zones[],
+# resourceBounds, allowMutableTags, domain, flux{}, modules{}.
+#
+# The dev environment models an on-prem / LAN cluster (k3s or similar): local
+# secrets, no Cloudflare Tunnel, mutable image tags allowed for fast iteration.
+# Enabled modules MUST carry source/chart/version inline because
+# clusterenv.Validate reads them here; disabled modules stay terse.
+
+env: dev
+
+# ── secrets backend (per CONVENTIONS.md §4) ──────────────────────────────────
+# dev/on-prem => LOCAL: external-secrets Kubernetes provider (or a plain
+# in-cluster Secret for quick dev). The app chart's externalSecret.storeRef
+# points at this store; backend=local is injected by the renderer from this env.
+secrets:
+  backend: local
+  storeRef:
+    name: platform-local
+    kind: ClusterSecretStore        # cluster-wide local SecretStore (Kubernetes provider)
+  refreshInterval: 1h
+  # Registry pull secret: the app chart renders an ExternalSecret per app
+  # namespace. Point remoteKey at wherever YOUR registry credential lives.
+  imagePull:
+    secretName: ghcr-pull
+    remoteKey: /your-org/ghcr/pull-dockerconfigjson
+    storeRef:
+      name: platform-local
+      kind: ClusterSecretStore
+
+# ── observability endpoints (injected as Tier-A env into every app) ──────────
+observability:
+  lokiURL: http://loki.loki.svc.cluster.local:3100
+  consoleLogging: true
+
+# ── approved route zones (host policy guardrail) ─────────────────────────────
+# A route host outside these zones is a policy error (fail before mutating).
+zones:
+  - carshowdb.local
+  - "*.local"
+
+# ── seams this env provides (the rest derive) ────────────────────────────────
+# dev has no Cloudflare Tunnel, so publicRoutes (the tunnel ingress path) stays
+# off — a deploy.yaml route with public:true is fulfilled on-prem by a LAN
+# LoadBalancer (the lanExpose seam, on by default) instead of a tunnel.
+seams:
+  publicRoutes: false
+
+# ── policy knobs ─────────────────────────────────────────────────────────────
+# dev tolerates mutable image tags (:latest) for fast iteration; prod never does.
+allowMutableTags: true
+resourceBounds:
+  maxCPU: "8"
+  maxMemory: 16Gi
+
+domain: svc.cluster.local
+
+# MetalLB IPAddressPool the renderer auto-assigns a LAN LoadBalancer IP from
+# when an app exposes a public route here. Set to your pool's name
+# (kubectl -n metallb-system get ipaddresspools).
+lanPool: pool-default
+
+# ── Flux wiring (HelmReleases reference the GitRepository source here) ────────
+# repoURL/branch tell the FluxInstance which repo+branch to sync — point them at
+# YOUR fork of this platform repo.
+flux:
+  namespace: flux-system
+  sourceName: flux-system
+  repoURL: https://github.com/yscale-sh/idp.git
+  branch: main
+
+# ── module enable matrix + per-env values ────────────────────────────────────
+# source/chart/version mirror modules/registry.yaml (the catalog). This skeleton
+# enables the minimum useful set; see modules/registry.yaml for everything else
+# (velero, cnpg, image-builder, idp-shipper, github-runners, loki, vpa, ...).
+modules:
+  keda:
+    enabled: true
+    source: chartRepo
+    chart: keda
+    repoURL: https://kedacore.github.io/charts
+    version: 2.17.2
+    namespace: keda
+
+  external-secrets:
+    enabled: true                   # ESO: materializes remote params -> k8s Secrets
+    source: chartRepo
+    chart: external-secrets
+    repoURL: https://charts.external-secrets.io
+    version: 0.14.4
+    namespace: external-secrets
+    values:
+      installCRDs: true
+
+  monitoring:
+    enabled: false                  # enable if the cluster doesn't already run one
+
+  cert-manager:
+    enabled: false                  # LAN is plain HTTP; no ACME needed in dev
+
+  yscale:
+    enabled: false                  # nothing to burst on a LAN cluster

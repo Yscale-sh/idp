@@ -1,0 +1,50 @@
+# redis — lean standalone cache on the OFFICIAL redis image. Overridable from
+# environments/<env>/cluster.yaml (modules.redis.values).
+
+image:
+  repository: redis
+  tag: "7.4-alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  port: 6379
+
+# RDB persistence (NOT AOF) so a dumped dump.rdb restores by a plain file swap.
+# `save "60 1"` snapshots if ≥1 key changed in 60s. The PVC is node-local
+# (local-path); a single replica is effectively node-pinned, which is fine for a cache.
+persistence:
+  enabled: true
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+  size: 2Gi
+
+# AUTH: password from the env SecretStore (SSM). ESO syncs it into <release>-auth
+# key REDIS_PASSWORD; the server reads it via --requirepass $(REDIS_PASSWORD) and
+# the probes auth with it. REDIS_URL (with this password embedded) is stored per app
+# in SSM /apps/<app>/prod/REDIS_URL.
+auth:
+  enabled: true
+externalSecrets:
+  storeRef:
+    name: platform-ssm
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  passwordParam: /shared/redis/password
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+podSecurityContext:
+  fsGroup: 999             # redis uid/gid in the official image
+securityContext:
+  runAsUser: 999
+  runAsNonRoot: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

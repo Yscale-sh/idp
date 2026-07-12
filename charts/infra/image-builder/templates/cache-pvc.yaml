@@ -1,0 +1,17 @@
+# Shared BuildKit layer cache. Name `buildkit-cache` is the internal/builder
+# Job-template contract. RWO is fine for a single builder: the cache lives on
+# whichever node ran the last build.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: buildkit-cache
+  labels:
+    {{- include "image-builder.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.cache.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}

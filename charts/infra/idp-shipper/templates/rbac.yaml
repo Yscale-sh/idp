@@ -1,0 +1,65 @@
+# The shipper drives builds by creating image-builder Jobs and watching their
+# pods/logs (via the kubectl wrapper in internal/kube). It needs nothing
+# cluster-wide — only Jobs + pod reads in its own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idp-shipper
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-shipper
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-shipper
+subjects:
+  - kind: ServiceAccount
+    name: idp-shipper
+{{- if .Values.cloudflare.enabled }}
+---
+# When the CF tunnel auto-provisioner is enabled the shipper must write the
+# minted TUNNEL_TOKEN into Secret <app>/platform-local (ESO reads it from
+# there via the Kubernetes provider). resourceNames cannot scope `create` so
+# the Role is limited to the namespace only (platform-local is the dedicated
+# ESO backing namespace, not a general-purpose tenant namespace).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idp-shipper-tunnel-stash
+  namespace: platform-local
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-shipper-tunnel-stash
+  namespace: platform-local
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-shipper-tunnel-stash
+subjects:
+  - kind: ServiceAccount
+    name: idp-shipper
+    namespace: {{ .Release.Namespace }}
+{{- end }}

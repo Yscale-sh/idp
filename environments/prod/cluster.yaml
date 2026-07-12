@@ -1,0 +1,128 @@
+# environments/prod/cluster.yaml — reference PROD environment definition.
+#
+# This is a working SKELETON a fork edits in place. Parsed by internal/clusterenv
+# (clusterenv.Config); same key contract as environments/dev/cluster.yaml.
+#
+# The prod environment models a cloud cluster exposed via Cloudflare Tunnel:
+# SSM-backed secrets, immutable image tags only, no LAN expose. Apps stay
+# ClusterIP — never a LoadBalancer; the tunnel is the only ingress.
+
+env: prod
+
+# ── secrets backend ──────────────────────────────────────────────────────────
+# prod => SSM: external-secrets AWS SSM provider. Every app secret + the
+# registry pull credential materialize from Parameter Store.
+secrets:
+  backend: ssm
+  storeRef:
+    name: platform-ssm
+    kind: ClusterSecretStore        # AWS SSM-backed, cluster-wide
+  refreshInterval: 1h
+  imagePull:
+    secretName: ghcr-pull
+    remoteKey: /your-org/ghcr/pull-dockerconfigjson
+    storeRef:
+      name: platform-ssm
+      kind: ClusterSecretStore
+
+# ── observability (injected as Tier-A env into every app) ────────────────────
+observability:
+  lokiURL: http://loki-proxy.monitoring.svc.cluster.local:8090
+  consoleLogging: false             # prod ships structured logs, not console
+  # posthogProjectToken: phc_YOUR_PROJECT_TOKEN   # optional product analytics
+  # posthogHost: https://us.i.posthog.com
+
+# ── approved route zones (host policy guardrail) ─────────────────────────────
+# A route host outside these zones is a policy error (fail before mutating).
+# List the zones your apps actually route under. These match the app contracts
+# in examples/ — bare-label routes compose under the wildcard: carshowdb's route
+# "api" -> api.example.com. A fork replaces these with its own domains.
+zones:
+  - example.com
+  - "*.example.com"
+
+allowMutableTags: false             # prod rejects :latest regardless (hard rule)
+resourceBounds:
+  maxCPU: "2"
+  maxMemory: 2Gi
+
+domain: svc.cluster.local
+
+# ── seams this env provides ──────────────────────────────────────────────────
+# tunnel:true is what turns a deploy.yaml public route into Cloudflare Tunnel
+# ingress here (dev fulfills the same route with a LAN LoadBalancer instead).
+seams:
+  statefulStores: false
+  lanExpose: false
+  tunnel: true
+
+# Digest-forward promotion source: `idpctl promote <app> prod --from dev` reads
+# the digest already running in dev and re-renders under prod policy.
+promotion:
+  from: dev
+
+# ── Flux wiring ──────────────────────────────────────────────────────────────
+# Prod tracks a dedicated branch so prod only moves when you commit there.
+flux:
+  namespace: flux-system
+  sourceName: flux-system
+  repoURL: https://github.com/yscale-sh/idp.git
+  branch: prod
+
+# ── module enable matrix + per-env values ────────────────────────────────────
+modules:
+  keda:
+    enabled: true
+    source: chartRepo
+    chart: keda
+    repoURL: https://kedacore.github.io/charts
+    version: 2.17.2
+    namespace: keda
+
+  external-secrets:
+    enabled: true                   # required: materializes ExternalSecret -> Secret from SSM
+    source: chartRepo
+    chart: external-secrets
+    repoURL: https://charts.external-secrets.io
+    version: 0.14.4
+    namespace: external-secrets
+    values:
+      installCRDs: true
+
+  # ── CNPG — the shared prod Postgres: apps declaring `db: postgres` get a
+  # database + login role on this cluster; the SSM backend supplies DATABASE_URL
+  # pointing at <clusterName>-rw.cnpg.svc.cluster.local.
+  cnpg-operator:
+    enabled: true
+    source: chartRepo
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    version: 0.28.3
+    namespace: cnpg-system
+
+  cnpg-db:
+    enabled: true
+    source: localChart
+    chart: charts/infra/cnpg-db
+    namespace: cnpg
+    values:
+      clusterName: prod-pg
+      instances: 2
+      storage:
+        size: 20Gi
+        className: your-block-storage-class
+      databases:
+        - name: myapp
+          owner: myapp
+      backup:
+        r2:
+          destinationPath: s3://your-dr-bucket/pg/prod-pg
+          endpointURL: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+          secretName: cnpg-r2
+      externalSecrets:
+        storeRef:
+          name: platform-ssm
+          kind: ClusterSecretStore
+
+  yscale:
+    enabled: false                  # ephemeral burst nodes; enable when the agent backend exists

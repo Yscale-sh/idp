@@ -1,0 +1,12 @@
+apiVersion: v2
+name: velero-creds
+description: >
+  The R2 credentials Velero's AWS plugin reads (the `cloud` INI file), built from
+  the shared SSM R2 keys via external-secrets into the velero namespace. Velero's
+  Helm release references this as credentials.existingSecret=velero-r2. Tiny by
+  design — the velero operator + BackupStorageLocation + Schedule come from the
+  `velero` chartRepo module; this is just the secret it can't make itself.
+type: application
+version: 0.1.0
+appVersion: "1"
+home: https://github.com/yscale-sh/idp

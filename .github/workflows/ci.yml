@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "charts/**"
+      - "examples/**"
+      - "schemas/**"
+      - "Dockerfile"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "charts/**"
+      - "examples/**"
+      - "schemas/**"
+      - "Dockerfile"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: gofmt (formatting gate)
+        run: test -z "$(gofmt -l .)" || { echo 'Not gofmt-clean — run `make fmt`:'; gofmt -l .; exit 1; }
+
+      - name: Vet
+        run: make vet
+
+      - name: Unit + golden tests (race detector)
+        run: go test -race ./...
+
+      - name: Helm lint
+        run: make helm-lint
+
+      - name: Validate examples
+        run: |
+          ./idpctl validate --file examples/carshowdb/deploy.yaml
+          ./idpctl validate --file examples/yscale-media/yscale-media.deploy.yaml
+          ./idpctl validate --file examples/hello-dev/deploy.yaml
+
+      - name: Render smoke (must not dirty tracked state unexpectedly)
+        run: |
+          ./idpctl render --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000
+          ./idpctl infra render --env dev
+
+      - name: Catalog smoke (read-only viewer over the rendered state)
+        run: |
+          ./idpctl catalog --env dev --format json > /dev/null
+          ./idpctl catalog --all --out-dir /tmp/site
+          test -f /tmp/site/index.html
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Build golangci-lint with THIS module's Go toolchain so its build-version
+      # never lags the targeted go (the prebuilt action binaries can mismatch).
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    # Informational: stdlib advisories track the Go toolchain patch level, so a
+    # hard gate would red every PR on patch lag. Surfaces vulns without blocking.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

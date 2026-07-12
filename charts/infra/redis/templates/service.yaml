@@ -1,0 +1,19 @@
+{{- /* ClusterIP only (cache must never be a LoadBalancer). Apps reach it at
+   redis.<ns>.svc.cluster.local:<port> via the REDIS_URL stored in SSM. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: {{ .Values.service.port }}
+      targetPort: redis
+      protocol: TCP
+  selector:
+    app: redis

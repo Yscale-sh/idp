@@ -1,0 +1,17 @@
+apiVersion: v2
+name: image-builder
+description: >
+  The platform's in-cluster image build backend: the persistent (idle = zero
+  compute) pieces the on-demand BuildKit build Jobs rely on — the ServiceAccount
+  build pods run as, the trigger RBAC, the shared BuildKit layer-cache PVC, and
+  (optionally) the ExternalSecrets that materialize the registry-push and
+  git-clone credentials. The build Jobs themselves are rendered at build time by
+  internal/builder (idp-shipper / idpctl) — never by this chart, so Flux cannot
+  trigger a build on reconcile.
+type: application
+version: 0.1.0
+appVersion: "1"
+keywords:
+  - buildkit
+  - ci
+home: https://github.com/yscale-sh/idp

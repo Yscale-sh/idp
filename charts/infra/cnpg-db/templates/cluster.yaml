@@ -1,0 +1,89 @@
+{{- /* Lean CloudNativePG cluster: small HA, modest resources, low-memory tuning.
+   Backups = continuous WAL + base → R2 (barmanObjectStore) for PITR — no CSI /
+   volume snapshots, so it runs the same on local-path (dev) and block storage
+   (prod). Per-app databases + roles created at init via postInitSQL. */}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.postgresImage }}
+  {{- /* Pull secret for a PRIVATE operand image (e.g. our ghcr postgis+pgvector bake).
+     The default CNPG operands are public so this is empty; set imagePullSecrets when
+     postgresImage points at a private registry (ghcr-pull.yaml syncs the Secret here). */}}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- range . }}
+    - name: {{ . }}
+    {{- end }}
+  {{- end }}
+  primaryUpdateStrategy: unsupervised
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+  storage:
+    size: {{ .Values.storage.size }}
+    storageClass: {{ .Values.storage.className }}
+  postgresql:
+    parameters:
+      {{- range $k, $v := .Values.parameters }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+  {{- /* Declarative login roles: CNPG reconciles these continuously (NOT just at
+     initdb), so a role for an app onboarded AFTER the cluster exists is created
+     here — no hand CREATE ROLE — and its password comes from an ESO-synced
+     basic-auth Secret (<role>-pg-auth, from SSM; see managed-roles.yaml). This is
+     how a role+password is provisioned the GitOps way; postInitSQL still creates
+     any non-managed initdb roles. Roles NOT listed here are left untouched. */}}
+  {{- with .Values.managedRoles }}
+  managed:
+    roles:
+    {{- range . }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: {{ .name }}-pg-auth
+    {{- end }}
+  {{- end }}
+  monitoring:
+    enablePodMonitor: false          # no in-cluster Prometheus to scrape it (yet)
+  backup:
+    retentionPolicy: {{ .Values.backup.retention | quote }}
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.r2.destinationPath | quote }}
+      endpointURL: {{ .Values.backup.r2.endpointURL | quote }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.backup.r2.secretName }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ .Values.backup.r2.secretName }}
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      {{- /* The per-app DATABASES + their (untrusted: postgis/pgcrypto) EXTENSIONS are
+         managed by the CNPG Database CRD in databases.yaml — reconciled AFTER the
+         cluster is healthy, fixing the old ordering bug (postInitSQL CREATE DATABASE
+         ran before postInitTemplateSQL seeded template1). At initdb we still create
+         each database's owner LOGIN role so a fresh cluster can take ownership; roles
+         for apps onboarded later (and ALL role passwords) are handled declaratively by
+         managed.roles above. Collect DISTINCT owners — CREATE ROLE must not run twice
+         for a shared owner. */}}
+      {{- $owners := list }}
+      {{- range .Values.databases }}{{ $owners = append $owners (.owner | default .name) }}{{- end }}
+      postInitSQL:
+      {{- range ($owners | uniq) }}
+        - {{ printf "CREATE ROLE %s LOGIN" . | quote }}
+      {{- end }}

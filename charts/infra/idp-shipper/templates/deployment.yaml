@@ -1,0 +1,65 @@
+# idp-shipper — the platform's CD orchestrator. One replica; it polls each
+# registered app and ships changes. Idempotent: the umbrella commit is skipped
+# when render produces no diff, and builds reuse the BuildKit cache, so a
+# restart (which re-evaluates every app) is cheap and safe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-shipper
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # single writer of the platform repo; never two at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: idp-shipper
+  template:
+    metadata:
+      labels:
+        {{- include "idp-shipper.labels" . | nindent 8 }}
+      annotations:
+        # Recreate the pod when the registry changes (the shipper reads it once
+        # at start).
+        checksum/registry: {{ include (print $.Template.BasePath "/registry-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: idp-shipper
+      imagePullSecrets:
+        - name: {{ .Values.secrets.imagePull }}
+      containers:
+        - name: shipper
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["idp-shipper"]
+          env:
+            - name: REGISTRY_PATH
+              value: /etc/idp-shipper/registry.yaml
+            - name: GIT_TOKEN              # reads app repos + pushes the platform repo
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.gitToken }}
+                  key: token
+            {{- if .Values.cloudflare.enabled }}
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: idp-shipper-cf-token
+                  key: CLOUDFLARE_API_TOKEN
+            - name: CLOUDFLARE_ACCOUNT_ID
+              value: {{ .Values.cloudflare.accountId | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: registry
+              mountPath: /etc/idp-shipper
+              readOnly: true
+            - name: platform
+              mountPath: {{ .Values.registry.platformRoot }}   # platform repo checkout (clone on start, push on change)
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: registry
+          configMap:
+            name: idp-shipper-registry
+        - name: platform
+          emptyDir: {}

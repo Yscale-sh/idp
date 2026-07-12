@@ -1,0 +1,96 @@
+{{- /* Daily base backup to R2 (barman). WAL is archived continuously by the
+   Cluster's barmanObjectStore, so base + WAL = PITR. */}}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.clusterName }}-daily
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}   # 6-field CNPG cron
+  immediate: true
+  method: barmanObjectStore
+  cluster:
+    name: {{ .Values.clusterName }}
+{{- if .Values.monitor.enabled }}
+---
+{{- /* backup-monitor: the "are we actually backed up?" tripwire. Reads the
+   cluster's last successful backup + continuous-archiving condition and FAILS
+   (nonzero exit + a logged BACKUP ALERT line shipped to Loki) when the backup is
+   stale or WAL archiving is broken. Green run = verified-recent backup. */}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.clusterName }}-backup-monitor
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.clusterName }}-backup-monitor
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.clusterName }}-backup-monitor
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.clusterName }}-backup-monitor
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.clusterName }}-backup-monitor
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.clusterName }}-backup-monitor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: idp
+spec:
+  schedule: {{ .Values.monitor.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: {{ .Values.clusterName }}-backup-monitor
+          restartPolicy: Never
+          containers:
+            - name: check
+              image: {{ .Values.monitor.image }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  CLUSTER={{ .Values.clusterName }}
+                  MAX_AGE_H={{ .Values.monitor.maxAgeHours }}
+                  last=$(kubectl get cluster "$CLUSTER" -o jsonpath='{.status.lastSuccessfulBackup}')
+                  arch=$(kubectl get cluster "$CLUSTER" -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}')
+                  if [ -z "$last" ]; then echo "BACKUP ALERT: $CLUSTER has NO successful backup recorded"; exit 1; fi
+                  age=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 3600 ))
+                  echo "cnpg backup check: cluster=$CLUSTER last=$last age=${age}h archiving=$arch"
+                  if [ "$age" -gt "$MAX_AGE_H" ]; then echo "BACKUP ALERT: $CLUSTER last backup ${age}h old (> ${MAX_AGE_H}h)"; exit 1; fi
+                  if [ "$arch" != "True" ]; then echo "BACKUP ALERT: $CLUSTER continuous WAL archiving not OK (status=$arch)"; exit 1; fi
+                  echo "backup OK ($CLUSTER): ${age}h old, archiving $arch"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}

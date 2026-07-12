@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/yscale-sh/idp/main/schemas/deploy.schema.json",
+  "title": "idpctl deploy.yaml",
+  "description": "The developer 'shopping list' contract. Mirrors internal/appconfig/types.go (App). Authoritative validation is in Go (`idpctl validate`); this schema is for editors/docs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "app",
+    "runtime"
+  ],
+  "properties": {
+    "app": {
+      "type": "string",
+      "description": "Stable app handle. Derives namespace, release, service, SSM root.",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "product": {
+      "type": "string",
+      "description": "Optional product group label (platform/product).",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "component": {
+      "type": "string",
+      "description": "Optional component within a product (platform/component), e.g. api|ui.",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image",
+        "port"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Container repository WITHOUT tag (CI supplies --image). Convention: ghcr.io/yscale-sh/<app>."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Container port. Drives PORT env and probes.",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "description": "Hostnames this app answers on. ClusterIP only; exposure via Cloudflare Tunnel.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Route hostname. A bare label (e.g. \"web\") is composed per env (web.local in dev, web.example.com in prod); a full hostname is used as-is. Must land in an approved zone."
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Expose to users — a Cloudflare Tunnel in prod, a MetalLB LAN LoadBalancer (auto IP + hostname) in dev. One route works in both.",
+            "default": false
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "humans": {
+                "type": "boolean",
+                "description": "Gate behind interactive human SSO (Cloudflare Access).",
+                "default": false
+              },
+              "serviceToken": {
+                "type": "boolean",
+                "description": "Issue a Cloudflare Access service token for machine callers.",
+                "default": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "description": "Resource preset.",
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large",
+            "xlarge",
+            "huge"
+          ],
+          "default": "minimal"
+        },
+        "replicas": {
+          "type": "integer",
+          "description": "Baseline replica count / autoscale floor seed.",
+          "minimum": 0,
+          "default": 1
+        },
+        "autoscale": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "scaleToZero": {
+              "type": "boolean",
+              "description": "Scale fully to 0 when idle, wake on first request (sugar for kind: HTTPScaledObject + min: 0; needs the keda-http-add-on module)."
+            },
+            "min": {
+              "type": "integer",
+              "description": "Minimum replicas. 0 enables scale-to-zero (HTTPScaledObject).",
+              "minimum": 0
+            },
+            "max": {
+              "type": "integer",
+              "description": "Maximum replicas.",
+              "minimum": 1
+            },
+            "kind": {
+              "type": "string",
+              "description": "KEDA object kind.",
+              "enum": [
+                "ScaledObject",
+                "HTTPScaledObject"
+              ],
+              "default": "ScaledObject"
+            },
+            "metric": {
+              "type": "string",
+              "description": "Convenience single-trigger metric, e.g. cpu|memory."
+            },
+            "target": {
+              "type": "string",
+              "description": "Target value for the convenience metric, e.g. \"70\"."
+            },
+            "triggers": {
+              "type": "array",
+              "description": "Raw KEDA triggers ({type, metadata}) passed through to the ScaledObject.",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "db": {
+      "type": "array",
+      "description": "Requested databases. First/default entry also yields DATABASE_URL.",
+      "items": {
+        "$ref": "#/$defs/dataStore"
+      }
+    },
+    "cache": {
+      "type": "array",
+      "description": "Requested caches. First/default entry also yields REDIS_URL.",
+      "items": {
+        "$ref": "#/$defs/dataStore"
+      }
+    },
+    "storage": {
+      "type": "array",
+      "description": "Object-storage buckets (R2/S3-compatible).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stable handle and env-var prefix (<NAME>_BUCKET, <NAME>_ENDPOINT, ...)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "r2",
+              "s3"
+            ],
+            "default": "r2"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Loki/stdout wiring. Defaults true.",
+          "default": true
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "ServiceMonitor/OTEL wiring. Defaults true.",
+          "default": true
+        },
+        "path": {
+          "type": "string",
+          "description": "Scrape path.",
+          "default": "/metrics"
+        }
+      }
+    },
+    "connectsTo": {
+      "type": "array",
+      "description": "App-to-app connections; platform resolves the address per environment.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "env"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "app"
+            ]
+          },
+          {
+            "required": [
+              "component"
+            ]
+          }
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "description": "Target app name (cross-repo)."
+          },
+          "component": {
+            "type": "string",
+            "description": "Target component within the same product."
+          },
+          "env": {
+            "type": "string",
+            "description": "Env-var name to inject the resolved address into, e.g. API_BASE_URL."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "publicRoute",
+              "clusterService",
+              "serviceToken"
+            ],
+            "default": "clusterService"
+          }
+        }
+      }
+    },
+    "tailscaleEgress": {
+      "type": "boolean",
+      "description": "Inject Tailscale egress sidecar env only when true.",
+      "default": false
+    },
+    "expose": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "LAN exposure via MetalLB (on-prem only; the one sanctioned LoadBalancer). Prod exposure is the Cloudflare Tunnel.",
+      "properties": {
+        "lan": {
+          "type": "boolean",
+          "description": "Publish on the LAN via a MetalLB LoadBalancer.",
+          "default": false
+        },
+        "host": {
+          "type": "string",
+          "description": "LAN hostname published via external-dns (annotates the LoadBalancer Service)."
+        },
+        "ip": {
+          "type": "string",
+          "description": "Pin the MetalLB LoadBalancer IP (optional)."
+        },
+        "pool": {
+          "type": "string",
+          "description": "MetalLB IPAddressPool to auto-allocate from (optional; pools run autoAssign: false, so unpinned services need this)."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "LoadBalancer port (defaults to runtime.port)."
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "description": "Arbitrary non-secret env vars passed to the container (platform-reserved keys are dropped).",
+      "additionalProperties": { "type": "string" }
+    },
+    "secrets": {
+      "type": "array",
+      "description": "Extra secret env keys beyond the universal set (dev placeholder; prod from the secrets backend).",
+      "items": { "type": "string" }
+    },
+    "probes": {
+      "type": "object",
+      "description": "Health-probe shape. type: http (default) | tcp (port-open) | none.",
+      "properties": {
+        "type": { "type": "string", "enum": ["http", "tcp", "none"] }
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "description": "Mounted volumes: nfs | emptyDir | pvc.",
+      "items": { "type": "object" }
+    },
+    "build": {
+      "type": "object",
+      "description": "Image build hints for the in-cluster image-builder (context, dockerfile, submodules).",
+      "additionalProperties": true
+    },
+    "components": {
+      "type": "array",
+      "description": "Multi-component product: the top level is the shared base, each entry carries only its deltas; each renders to a <app>-<component> HelmRelease.",
+      "items": { "type": "object" }
+    }
+  },
+  "$defs": {
+    "dataStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable handle and env-var prefix (<NAME>_DATABASE_URL / <NAME>_REDIS_URL)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Engine. mongo is an external exception.",
+          "enum": [
+            "postgres",
+            "redis",
+            "mongo"
+          ]
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large"
+          ],
+          "default": "minimal"
+        }
+      }
+    }
+  }
+}

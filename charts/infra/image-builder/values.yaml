@@ -1,0 +1,39 @@
+# image-builder module values.
+#
+# RESOURCE-NAME CONTRACT (do not rename): internal/builder's Job template
+# hardwires ServiceAccount `image-builder`, PVC `buildkit-cache`, Secret
+# `ghcr-push` (key .dockerconfigjson) and Secret `git-token` (key token) in the
+# release namespace. This chart provisions those names; making them configurable
+# here would silently break every build.
+
+# ── BuildKit layer cache ──────────────────────────────────────────────────────
+# Persisting the cache across ephemeral build pods turns a cold multi-minute
+# build into a warm one. RWO + node-local provisioners are fine for a single
+# builder: the cache simply lives where the last build ran.
+cache:
+  size: 30Gi
+  storageClass: ""   # "" => the cluster's default StorageClass
+
+# ── trigger RBAC ──────────────────────────────────────────────────────────────
+# A scoped Role so a token bound to the image-builder SA can TRIGGER builds
+# (create Jobs, read pods/logs) with no cluster powers.
+rbac:
+  trigger: true
+
+# ── build credentials via external-secrets (optional) ────────────────────────
+# When enabled, renders ExternalSecrets that materialize the two build
+# credentials from your secrets backend into the release namespace:
+#   ghcr-push  <- remoteKeys.dockerconfigjson  (a kubernetes.io/dockerconfigjson
+#                 with push auth for YOUR registry — any registry, not just ghcr;
+#                 the secret name is the Go contract, not a ghcr requirement)
+#   git-token  <- remoteKeys.gitToken          (PAT that clones app repos)
+# When disabled, create both Secrets out-of-band with exactly those names/keys.
+externalSecrets:
+  enabled: false
+  storeRef:
+    name: ""                 # e.g. your ClusterSecretStore
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  remoteKeys:
+    dockerconfigjson: ""     # e.g. /infra/image-builder/registry-dockerconfigjson
+    gitToken: ""             # e.g. /infra/image-builder/git-token

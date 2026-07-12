@@ -1,0 +1,19 @@
+apiVersion: v2
+name: dev-redis
+description: >-
+  Minimal, single-replica Redis for platformctl dev / on-prem environments.
+  ClusterIP only (never a LoadBalancer), no persistence by default (an in-cluster
+  pub/sub bus / cache), local-path PVC available if persistence is enabled. The app
+  chart wires it into apps as REDIS_URL / <NAME>_REDIS_URL (ENV.md Tier D). Not for
+  production: prod uses a managed/HA Redis (see environments/prod).
+type: application
+version: 0.1.0
+appVersion: "7"
+keywords:
+  - redis
+  - cache
+  - dev
+  - homelab
+maintainers:
+  - name: Yscale maintainers
+    url: https://github.com/yscale-sh

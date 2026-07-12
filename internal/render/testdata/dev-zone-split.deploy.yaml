@@ -1,0 +1,12 @@
+app: myapp
+runtime:
+  image: ghcr.io/yscale-sh/myapp
+  port: 8080
+routes:
+  - host: app.local
+    public: true
+  - host: myapp-dev.yscale.sh
+    public: true
+sizing:
+  profile: minimal
+  replicas: 1

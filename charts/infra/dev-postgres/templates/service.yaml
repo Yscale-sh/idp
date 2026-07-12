@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dev-postgres.fullname" . }}
+  labels:
+    {{- include "dev-postgres.labels" . | nindent 4 }}
+spec:
+  # ClusterIP is hardcoded by design — dev-postgres must never be a LoadBalancer
+  # (platform guardrail; there is intentionally no service.type value).
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: {{ .Values.service.port }}
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    {{- include "dev-postgres.selectorLabels" . | nindent 4 }}

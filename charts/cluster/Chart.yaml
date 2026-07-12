@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cluster
+description: >-
+  platformctl umbrella chart. Flux installs ONE HelmRelease of this chart per
+  environment; it templates an isolated Flux HelmRelease per app (chart
+  ./charts/app, into <app>-<env>-<purpose>), per app data store (./charts/infra/*),
+  and per enabled infra module (in-repo chart or a Helm repo). The whole
+  environment's desired state is the .Values it carries.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

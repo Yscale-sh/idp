@@ -1,0 +1,82 @@
+package main
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/clouddns"
+	"github.com/yscale-sh/idp/internal/clusterenv"
+)
+
+// publicTunnelHosts delegates to the promoted clouddns.PublicTunnelHosts. See
+// that function for the full contract. Thin wrapper so idpctl call sites are
+// unchanged.
+func publicTunnelHosts(app appconfig.App, c *clusterenv.Config) []string {
+	return clouddns.PublicTunnelHosts(app, c)
+}
+
+// tunnelOriginPort delegates to the promoted clouddns.TunnelOriginPort. Thin
+// wrapper so idpctl call sites are unchanged.
+func tunnelOriginPort(app appconfig.App) int {
+	return clouddns.TunnelOriginPort(app)
+}
+
+// ensureTunnelDNS makes the app reachable through its Cloudflare Tunnel: ensure the
+// named tunnel exists (idempotent), point its ingress at the app's port for each
+// host, and upsert the proxied CNAME (host -> <tunnelID>.cfargotunnel.com). Safe to
+// run on every deploy — re-asserting ingress + DNS is how a promote "points
+// everything correctly". hosts must already be env-composed (see publicTunnelHosts).
+//
+// It needs only the Cloudflare API token + account id (no AWS/SSM): the per-app
+// TUNNEL_TOKEN the cloudflared sidecar runs with is provisioned ONCE out-of-band
+// (the `idpctl tunnel up --token-out` bootstrap), not on every deploy.
+func ensureTunnelDNS(out io.Writer, app appconfig.App, env string, hosts []string, accountID, zoneID string, dryRun bool) error {
+	cl, account, zone, err := resolveCFCreds(accountID, zoneID)
+	if err != nil {
+		return err
+	}
+	name := app.App + "-" + env
+	prefix := ""
+	if dryRun {
+		prefix = "[dry-run] "
+	}
+
+	// 1. Ensure the tunnel exists (idempotent by name).
+	tunnelID, created, err := cl.EnsureTunnel(account, name, dryRun)
+	if err != nil {
+		return fmt.Errorf("ensure tunnel %q: %w", name, err)
+	}
+	if dryRun && tunnelID == "" {
+		fmt.Fprintf(out, "%stunnel %q would be CREATED; ingress + DNS need a real tunnel id (dry-run stops here)\n", prefix, name)
+		return nil
+	}
+	if created {
+		fmt.Fprintf(out, "tunnel %q created: %s\n", name, tunnelID)
+	} else {
+		fmt.Fprintf(out, "tunnel %q exists: %s\n", name, tunnelID)
+	}
+	target := clouddns.TunnelTarget(tunnelID)
+
+	// 2. Push the ingress (each host -> the routed component's local port) + catch-all.
+	svc := fmt.Sprintf("http://localhost:%d", tunnelOriginPort(app))
+	rules := make([]clouddns.IngressRule, 0, len(hosts)+1)
+	for _, h := range hosts {
+		rules = append(rules, clouddns.IngressRule{Hostname: h, Service: svc})
+	}
+	rules = append(rules, clouddns.CatchAll())
+	if err := cl.SetIngress(account, tunnelID, rules, dryRun); err != nil {
+		return fmt.Errorf("set tunnel ingress: %w", err)
+	}
+	for _, h := range hosts {
+		fmt.Fprintf(out, "%singress: %s -> %s\n", prefix, h, svc)
+	}
+
+	// 3. Upsert the proxied CNAME per host -> <tunnelID>.cfargotunnel.com.
+	comment := fmt.Sprintf("idp: %s/%s (managed by idpctl promote)", app.App, env)
+	results, err := cl.SyncHosts(hosts, zone, target, true /* proxied */, comment, false, dryRun)
+	if err != nil {
+		return err
+	}
+	return reportDNS(out, prefix, "dns", target, false, results)
+}

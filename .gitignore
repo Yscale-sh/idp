@@ -1,0 +1,54 @@
+# ── Private operational data — NEVER commit (real creds / API dumps) ──
+/kube/
+/raw/
+/private/
+*kubeconfig*
+*.kubeconfig
+
+# ── Secrets / env ──
+.env
+.env.*
+*.pem
+*.key
+secrets.env
+secrets*.env
+**/secrets.env
+argocd-initial-admin-secret*
+
+# ── Go build artifacts ──
+/bin/
+/dist/
+*.test
+*.out
+/idpctl
+/jdpctl
+cmd/platformctl/platformctl
+
+# ── Helm ──
+charts/**/charts/
+*.tgz
+
+# ── Generated viewer (idpctl catalog) ──
+/catalog.html
+/public/
+
+# ── Node / tooling / OS ──
+node_modules/
+.dist/
+.DS_Store
+*.log
+/platformctl
+
+# cartogopher index
+bakes/
+fast.yaml
+migration/captures/
+
+# lw mission scratch (bundles, prompts, worker logs)
+.mission/
+
+# Claude Code: keep the bundled skill, ignore personal local settings
+.claude/settings.local.json
+
+# Generated GitOps state (the reference repo keeps skeletons only)
+/clusters/*/platform.yaml

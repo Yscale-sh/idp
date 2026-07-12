@@ -1,0 +1,62 @@
+# hello-dev — worked example: a DEV app exposed behind Cloudflare Access login.
+#
+# The pattern is ONE app with TWO route shapes in dev, side by side:
+#
+#   - a .local host        -> MetalLB LAN LoadBalancer, reachable on the local
+#                             network only, no Cloudflare in front (gate at the
+#                             network layer).
+#   - a CF-zone host       -> Cloudflare Tunnel + the wildcard Access app on your
+#                             account: a public HTTPS URL gated by interactive SSO.
+#
+# DEV CLOUDFLARE ZONE — this is per-instance: the `cloudflareZone` key in
+# environments/dev/cluster.yaml. On THIS instance it is `yscale.sh` (with a
+# `*.yscale.sh` Access app); an adopter substitutes their own zone.
+#
+# DOMAIN CONVENTION — your dev host is a subdomain of that zone. Take the
+# distinctive name of your PRODUCTION domain and reuse it as a subdomain:
+#
+#   acme.com                ->  acme.<zone>        (e.g. acme.yscale.sh)
+#   blog.example.org        ->  blog.<zone>        (e.g. blog.yscale.sh)
+#   carshowdb.example.com   ->  carshowdb.<zone>   (e.g. carshowdb.yscale.sh)
+#
+# One-time tunnel bootstrap + how to verify the login gate: see
+# docs/USAGE.md "Expose a dev app behind login" and CONVENTIONS.md section 9.
+#
+# Render to dev:  idpctl render --env dev --file deploy.yaml --image ghcr.io/OWNER/hello:<tag>
+
+app: hello
+
+runtime:
+  image: ghcr.io/OWNER/hello             # tagless repo; CI supplies the immutable tag
+  port: 8080
+
+routes:
+  # LAN route: served by a MetalLB LoadBalancer on the homelab network. No
+  # Cloudflare, so no access block is needed — restrict at the network layer.
+  - host: hello.local
+    public: true
+
+  # Cloudflare Access route: public at https://hello.yscale.sh, behind SSO login.
+  # A CF-zone host (anything under yscale.sh) MUST declare access — render-time
+  # policy REJECTS an unguarded one, because the *.yscale.sh Access app is what
+  # enforces authentication at the edge.
+  - host: hello.yscale.sh
+    public: true
+    access:
+      humans: true          # interactive human SSO via Cloudflare Access
+
+sizing:
+  profile: minimal
+  # Fixed replicas (no scaleToZero): the cloudflared tunnel connector runs as a
+  # sidecar, so at 0 replicas the connector dies and the tunnel has no origin.
+  replicas: 1
+
+probes:
+  path: /health
+
+logging:
+  enabled: true
+
+# No Prometheus stack on this instance yet — the ServiceMonitor CRD isn't present.
+metrics:
+  enabled: false

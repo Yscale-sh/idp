@@ -1,0 +1,24 @@
+apiVersion: v2
+name: app
+description: >-
+  platformctl shared application chart. Renders the desired state for a single
+  developer app onboarded via deploy.yaml: a ClusterIP Deployment + Service,
+  with optional KEDA autoscaling, ServiceMonitor, ExternalSecret, and PDB.
+  Apps are ClusterIP ONLY — this chart can never render a LoadBalancer, and it
+  renders no Ingress (public exposure is wired by Cloudflare Tunnel out-of-chart).
+type: application
+
+# Chart version (the chart's own SemVer). 0.x while the contract settles.
+version: 0.1.0
+
+# appVersion is informational only; the real image tag is injected per-render
+# via image.tag (CI --image). Kept as a placeholder so charts lint cleanly.
+appVersion: "0.1.0"
+
+keywords:
+  - platformctl
+  - idp
+  - clusterip
+home: https://github.com/yscale-sh/platformctl
+maintainers:
+  - name: yscale-sh

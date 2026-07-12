@@ -1,0 +1,66 @@
+# CoreDNS HA for the homelab k3s cluster (optiplex-pg)
+# ---------------------------------------------------------------------------
+# k3s ships CoreDNS as a SINGLE replica via its addon manager (the bundled
+# /var/lib/rancher/k3s/server/manifests/coredns.yaml). The addon/deploy
+# controller reconciles that file, so a plain `kubectl scale deploy/coredns`
+# is REVERTED on the next reconcile. There are two parts to making DNS HA
+# durable:
+#
+# CURRENT STATE (2026-06-03): applied LIVE via kubectl — coredns is scaled to 2
+# replicas, the topologySpreadConstraints below were patched onto the Deployment
+# (the 2 pods now sit on different nodes), and the PodDisruptionBudget is applied.
+# These have HELD so far (k3s isn't aggressively reconciling), but a k3s restart/
+# upgrade re-applies the bundled manifest and would reset replicas->1 + drop the
+# spread. PART A (the host-manifest edit) is what makes it survive that.
+#
+#   PART A (durable, needs host access): bump replicas + spread across nodes.
+#     The replica count + scheduling live on the coredns Deployment, which the
+#     addon manager owns — so this must go into the bundled manifest on a
+#     SERVER node, where k3s reconciles it (survives until a k3s upgrade
+#     re-extracts the file, at which point re-apply). On optiplex or node0:
+#
+#       sudo sed -n -i '...' # or just edit:
+#       sudo vi /var/lib/rancher/k3s/server/manifests/coredns.yaml
+#       #  - under the `coredns` Deployment spec, set:  replicas: 2
+#       #  - add the topologySpreadConstraints block below to the pod template
+#       sudo systemctl restart k3s    # (optional; the addon reconciles on its own)
+#
+#     The exact pod-template addition (under spec.template.spec:) —
+#
+#       topologySpreadConstraints:
+#         - maxSkew: 1
+#           topologyKey: kubernetes.io/hostname
+#           whenUnsatisfiable: ScheduleAnyway   # soft: still schedules if only 1 node is up
+#           labelSelector:
+#             matchLabels:
+#               k8s-app: kube-dns
+#
+#     (ScheduleAnyway + a soft spread keeps the 2 coredns pods on different
+#     nodes when possible, so one node dying doesn't take DNS down, while not
+#     blocking scheduling on a single-node/low-capacity day. Keep the existing
+#     priorityClassName: system-cluster-critical.)
+#
+#   PART B (durable, kubectl-applyable NOW): a PodDisruptionBudget so node
+#     drains/upgrades never evict BOTH coredns pods at once. The addon manager
+#     does NOT manage this object, so it persists. Apply it with:
+#
+#       kubectl --context optiplex-pg apply -f scripts/coredns-ha.yaml
+#
+# NOTE: this is also the most likely culprit behind some of the external-DNS
+# flakiness we hit — if the lone coredns pod lands on the `optiplex` node
+# (which currently can't reach external registries/upstreams), pod DNS for
+# external names degrades. Spreading to 2 replicas across nodes mitigates that.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coredns
+  namespace: kube-system
+  labels:
+    k8s-app: kube-dns
+    platform/managed-by: platformctl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      k8s-app: kube-dns

@@ -1,0 +1,37 @@
+# loki-proxy — centralized tailnet egress to the on-prem Loki. Overridable from
+# environments/<env>/cluster.yaml (modules.loki-proxy.values).
+
+# The on-prem loki-ingest tailnet endpoint this proxy forwards to (the receiving
+# twin: a tailscale node + socat :8090 -> loki.loki.svc:3100 on the homelab).
+# Tailnet IP, NOT a LAN/DNS name (prod reaches the homelab only over the tailnet).
+ingest:
+  host: 100.79.135.117
+  port: 8090
+
+# Local ClusterIP the apps point LOKI_URL at: http://loki-proxy.<ns>.svc:<port>.
+service:
+  port: 8090
+
+tailscale:
+  image: tailscale/tailscale:v1.82.0
+  hostname: loki-proxy-jak3s          # how this node appears in the tailnet
+socat:
+  image: alpine/socat:latest
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# TS_AUTHKEY is pulled from the env SecretStore (a reusable/ephemeral tailnet
+# auth key). State is NOT persisted to a kube Secret (TS_KUBE_SECRET=""), so no
+# RBAC is needed; TS_AUTH_ONCE re-auths from the key on restart.
+externalSecrets:
+  storeRef:
+    name: platform-ssm
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  authKeyParam: /shared/tailscale/auth-key

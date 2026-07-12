@@ -1,0 +1,38 @@
+{{- /*
+Vertical Pod Autoscaler for this app (sizing.autosize). Rendered only when
+autosize.enabled — apps that don't opt in get no VPA and behave exactly as before.
+Requires the cluster `vpa` module (the VPA controller + CRDs). The VPA sizes the
+Deployment's requests/limits from observed usage so they stop being hand-tuned.
+The schema mirrors the renderer's AutosizeValues (internal/render: enabled +
+updateMode + minAllowed/maxAllowed bounded to the profile envelope):
+  updateMode Off     -> recommend only (read `kubectl describe vpa`)
+  updateMode Initial -> apply at pod creation, no mid-life eviction (renderer default)
+  updateMode Auto    -> evict + recreate to apply new requests as usage shifts
+*/ -}}
+{{- if .Values.autosize.enabled }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "app.fullname" . }}
+  updatePolicy:
+    updateMode: {{ .Values.autosize.updateMode | default "Initial" | quote }}
+  resourcePolicy:
+    containerPolicies:
+      - containerName: '*'
+        controlledResources: {{ .Values.autosize.controlledResources | default (list "cpu" "memory") | toJson }}
+        {{- with .Values.autosize.minAllowed }}
+        minAllowed:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.autosize.maxAllowed }}
+        maxAllowed:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+{{- end }}

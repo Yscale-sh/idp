@@ -1,0 +1,21 @@
+apiVersion: v2
+name: github-runners
+description: >-
+  Scale-to-zero GitHub Actions self-hosted runner pools (summerwind ARC) for one or
+  more GitHub orgs, on the SHARED in-cluster ARC controller. One RunnerDeployment +
+  HorizontalRunnerAutoscaler per org, each scaling 0 -> N on queued workflow runs
+  (idle footprint is zero). Org pools authenticate with a per-org fine-grained PAT
+  Secret (githubAPICredentialsFrom). This chart deploys ONLY the pools — it requires
+  the ARC controller + its CRDs to already be installed in the target namespace.
+type: application
+version: 0.1.0
+appVersion: "0.27.4"
+keywords:
+  - github-actions
+  - runners
+  - arc
+  - ci
+  - scale-to-zero
+maintainers:
+  - name: Yscale maintainers
+    url: https://github.com/yscale-sh
