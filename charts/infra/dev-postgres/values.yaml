@@ -48,11 +48,11 @@ persistence:
   size: 8Gi
 
 # ── workload ─────────────────────────────────────────────────────────────────
-# Pin Postgres to a stable baseline node (the homelab "optiplex-pg" box) so the
+# Pin Postgres to a stable baseline node (the cluster "storage-node" box) so the
 # PVC's local-path volume always reschedules onto the node that holds the data.
 # Empty => no constraint (scheduler picks any node).
 nodeSelector: {}
-#  kubernetes.io/hostname: optiplex-pg
+#  kubernetes.io/hostname: storage-node
 
 tolerations: []
 affinity: {}

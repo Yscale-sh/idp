@@ -1,6 +1,6 @@
 // Env scaffolding: generate a starter environments/<env>/cluster.yaml for a
 // platform instance. This is what `idpctl init` writes so a fork does NOT have
-// to hand-author a cluster.yaml (or, worse, copy someone else's homelab one with
+// to hand-author a cluster.yaml (or, worse, copy someone else's cluster one with
 // its IPs, module matrix, and registry orgs baked in).
 //
 // The output carries the fork's OWN identity — flux.repoURL/branch come from the

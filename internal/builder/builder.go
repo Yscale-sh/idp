@@ -1,5 +1,5 @@
 // Package builder kicks a one-off, scale-to-zero container image build on the
-// homelab image-builder (clone -> rootless BuildKit -> push to ghcr) and waits
+// cluster image-builder (clone -> rootless BuildKit -> push to ghcr) and waits
 // for it. It is the Go replacement for the old onprem/image-builder/build.sh:
 // the shipper composes it with the render pipeline so "push to master -> image
 // built -> rendered -> Flux reconciles" runs end to end with no shell scripts.

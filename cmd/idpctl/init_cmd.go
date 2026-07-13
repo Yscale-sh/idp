@@ -16,7 +16,7 @@ import (
 // idp.yaml. It is the first step after forking: `idpctl init` then
 // `idpctl infra render` + `idpctl render` produce the clusters/ desired state.
 //
-// It deliberately does NOT copy anyone's homelab specifics (IPs, module matrix,
+// It deliberately does NOT copy anyone's cluster specifics (IPs, module matrix,
 // registry orgs) — the template is generic and heavily commented so the fork
 // fills in only what its cluster backs. Fail-closed: needs idp.yaml for repo
 // identity (or pass --repo-url); refuses to overwrite an existing cluster.yaml.
@@ -28,7 +28,7 @@ func newInitCmd() *cobra.Command {
 		Short: "Generate a starter environments/<env>/cluster.yaml for this platform instance",
 		Long: `init scaffolds a per-environment cluster.yaml from your platform identity
 (idp.yaml) so a fork doesn't hand-author one or inherit another instance's
-homelab specifics. The output is generic + heavily commented (LAN/in-cluster
+cluster specifics. The output is generic + heavily commented (LAN/in-cluster
 only, no modules, no public routes) and is validated before it is written.
 
 Typical first run after forking:

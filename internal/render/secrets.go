@@ -107,7 +107,7 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 
 // sharedTailscaleAuthKey is the SSM path of the shared Tailscale auth key every
 // tailscaleEgress app pulls into its runtime Secret as TS_AUTHKEY (the on-prem
-// homelab already provisions it; same /shared/<group>/* convention as stripe etc.).
+// cluster already provisions it; same /shared/<group>/* convention as stripe etc.).
 const sharedTailscaleAuthKey = "/shared/tailscale/auth-key"
 
 func hasServiceToken(app appconfig.App) bool {

@@ -48,5 +48,9 @@ cloudflare:
   # accountId is the Cloudflare account id (injected as CLOUDFLARE_ACCOUNT_ID).
   accountId: ""
   # secretRemoteKey is the SSM path the ExternalSecret pulls CLOUDFLARE_API_TOKEN
-  # from (homelab-ssm ClusterSecretStore, same store as R2 + other shared creds).
+  # from (cluster-ssm ClusterSecretStore, same store as R2 + other shared creds).
   secretRemoteKey: /shared/cloudflare/admin-api-token
+  secretStoreRef:
+    name: platform-secrets
+    kind: ClusterSecretStore
+  refreshInterval: 1h

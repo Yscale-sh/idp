@@ -13,7 +13,7 @@ keywords:
   - redis
   - cache
   - dev
-  - homelab
+  - cluster
 maintainers:
   - name: Yscale maintainers
     url: https://github.com/yscale-sh

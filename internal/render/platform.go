@@ -124,7 +124,7 @@ func PlatformPath(root, env string) string {
 
 // platformReleaseName is the umbrella HelmRelease (and helm release) name for
 // an env. Every umbrella lives in flux-system, and one cluster can host
-// SEVERAL envs (dev+stage share the homelab Flux), so the name must carry the
+// SEVERAL envs (dev+stage share the cluster Flux), so the name must carry the
 // env — a bare "platform" collides. dev keeps the legacy bare name: its live
 // HelmRelease predates this and renaming a helm release means a full
 // uninstall/reinstall churn for zero benefit.

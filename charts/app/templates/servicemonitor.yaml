@@ -1,6 +1,6 @@
 {{- if .Values.serviceMonitor.enabled -}}
 {{/*
-ServiceMonitor for the homelab kube-prometheus-stack. The extra
+ServiceMonitor for the cluster kube-prometheus-stack. The extra
 `release: <releaseLabel>` label (default "prometheus") is REQUIRED for the stack
 to discover this monitor — without it Prometheus ignores the object.
 */}}

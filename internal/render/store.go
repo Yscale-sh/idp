@@ -32,7 +32,7 @@ type StoreRelease struct {
 // backend is local (dev) and the app declares one or more db: postgres stores,
 // each gets its OWN dev-postgres HelmRelease (chart ./charts/infra/dev-postgres)
 // with targetNamespace <app>-<env>-postgres, the per-app database name, a DEV
-// PLACEHOLDER password, the optiplex-pg node pin, and install.createNamespace=true.
+// PLACEHOLDER password, the storage-node node pin, and install.createNamespace=true.
 //
 // In prod (backend=ssm) NO per-app Postgres is provisioned — the DB is
 // external/managed and DATABASE_URL comes from SSM — so this returns nil.
@@ -124,7 +124,7 @@ func buildDevRedisRelease(app appconfig.App, env string, c *clusterenv.Config, s
 // buildDevPostgresRelease renders one dedicated dev-postgres Flux HelmRelease for
 // the app's declared postgres store. release/service/namespace are derived from
 // the app (and the store name for a secondary store); the inline Helm values pin
-// the per-app database, the dev placeholder password, the optiplex-pg node, and
+// the per-app database, the dev placeholder password, the storage-node node, and
 // the local-path PVC — mirroring what clusterenv.DevDatabaseURL assumes so the
 // app's rendered DATABASE_URL points at exactly what this chart provisions.
 func buildDevPostgresRelease(app appconfig.App, env string, c *clusterenv.Config, storeName string, secondary bool) StoreRelease {
@@ -146,7 +146,7 @@ func buildDevPostgresRelease(app appconfig.App, env string, c *clusterenv.Config
 			"password": clusterenv.DevPostgresDefaultPassword,
 		},
 		"service": map[string]any{"port": 5432},
-		// Pin to the homelab baseline node so the local-path PVC reschedules onto
+		// Pin to the cluster baseline node so the local-path PVC reschedules onto
 		// the box that physically holds the data volume.
 		"persistence": map[string]any{
 			"enabled":      true,
@@ -156,7 +156,7 @@ func buildDevPostgresRelease(app appconfig.App, env string, c *clusterenv.Config
 	}
 	// Pin Postgres to a baseline node only when one is configured. In dev the pin is
 	// empty so the scheduler can place it on any node that can pull + run the image
-	// (the homelab's bare-metal node currently can't reach external registries).
+	// (the cluster's bare-metal node currently can't reach external registries).
 	if clusterenv.DevPostgresNode != "" {
 		values["nodeSelector"] = map[string]any{"kubernetes.io/hostname": clusterenv.DevPostgresNode}
 	}

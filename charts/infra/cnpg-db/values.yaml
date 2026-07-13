@@ -15,7 +15,7 @@ imagePullSecrets: []
 ghcrPull:
   enabled: false
   secretName: ghcr-pull
-  remoteKey: /homelab/ghcr/pull-dockerconfigjson
+  remoteKey: /platform/ghcr/pull-dockerconfigjson
 
 # ── lean footprint (small DBs) ────────────────────────────────────────────────
 resources:
@@ -36,7 +36,7 @@ storage:
   className: local-path            # dev default; prod overrides to linode-block-storage
 
 # Per-app databases + login roles (created at init). Passwords + the app
-# DATABASE_URL are wired at cutover (Gate C), not here.
+# DATABASE_URL are wired at transition (Gate C), not here.
 databases:
   - name: carshowdb
     owner: carshowdb
@@ -64,7 +64,7 @@ backup:
 
 externalSecrets:
   storeRef:
-    name: homelab-ssm              # dev; prod overrides to platform-ssm
+    name: platform-secrets              # dev; prod overrides to platform-ssm
     kind: ClusterSecretStore
   refreshInterval: 1h
   r2AccessKeyParam: /shared/cloudflare/r2-access-key-id

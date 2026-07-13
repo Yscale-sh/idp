@@ -43,7 +43,7 @@ volumes:
     type: nfs
     server: 192.0.2.10
     path: /volume/f24160d1-3f63-4889-ac56-c892dc01f76c/.srv/.unifi-drive/nfs/.data
-    mountPath: /mnt/personal-drive
+    mountPath: /mnt/media
     readOnly: true
   # Metadata (shared RW): posters/backdrops the scanner writes and the api serves
   # at /images. NFS subpath gives ReadWriteMany across api + scanner.

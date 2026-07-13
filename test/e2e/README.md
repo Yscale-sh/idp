@@ -15,7 +15,7 @@ one Flux source-controller compatibility question that has no documented answer.
 
 ## THE HEADLINE: does Flux's source-controller accept a `git://` daemon?
 
-ArgoCD's repo-server accepted the author's earlier in-cluster `git://` daemon pattern. Flux's docs
+ArgoCD's repo-server accepted the previous in-cluster `git://` daemon pattern. Flux's docs
 only list `http(s)://` and `ssh://` for a `GitRepository`. Before relying on that source type in a
 fork, this test checks empirically whether Flux's **source-controller** will use a `git://` source.
 

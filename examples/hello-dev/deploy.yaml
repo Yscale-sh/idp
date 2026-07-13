@@ -31,7 +31,7 @@ runtime:
   port: 8080
 
 routes:
-  # LAN route: served by a MetalLB LoadBalancer on the homelab network. No
+  # LAN route: served by a MetalLB LoadBalancer on the cluster network. No
   # Cloudflare, so no access block is needed — restrict at the network layer.
   - host: hello.local
     public: true

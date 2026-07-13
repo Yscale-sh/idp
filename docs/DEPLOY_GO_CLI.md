@@ -19,7 +19,7 @@ git commit. Flux is the only writer.
 
 The included reference environments model the same contract in two shapes:
 
-- `prod`: a self-provisioned k3s production cluster (Linode in the reference instance).
+- `prod`: an existing production Kubernetes cluster.
 - `dev`: a local/on-prem k3s cluster for development and testing.
 
 The deployment-module shape still holds:

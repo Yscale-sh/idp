@@ -218,7 +218,7 @@ type ImagePullConfig struct {
 	SecretName string `json:"secretName,omitempty"`
 
 	// RemoteKey is the backend key holding the registry dockerconfigjson
-	// (e.g. /homelab/ghcr/pull-dockerconfigjson). Required when ImagePull set.
+	// (e.g. /cluster/ghcr/pull-dockerconfigjson). Required when ImagePull set.
 	RemoteKey string `json:"remoteKey,omitempty"`
 
 	// StoreRef is the store the pull ES reads from. It often differs from the
@@ -492,7 +492,7 @@ const (
 	// DevPostgresNode optionally pins the per-app dev Postgres to a baseline node so
 	// the local-path PVC always reschedules onto the box that holds the data. Empty
 	// = no pin (the scheduler picks any node that can pull + run the image). Left
-	// empty for the homelab because its bare-metal node ("optiplex") can't reach
+	// empty for the cluster because its bare-metal node ("storage node") can't reach
 	// external registries; set this to a real node hostname to pin in other envs.
 	DevPostgresNode = ""
 )

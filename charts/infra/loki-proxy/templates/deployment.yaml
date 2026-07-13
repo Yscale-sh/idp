@@ -1,6 +1,6 @@
 {{- /* tailscale (kernel mode, NET_ADMIN + /dev/net/tun) joins the tailnet; socat
    forwards the in-cluster :8090 to the on-prem loki-ingest tailnet endpoint.
-   NET_ADMIN/TUN are permitted on hardened jaK3s nodes for exactly this egress. */}}
+   NET_ADMIN/TUN are permitted on hardened Kubernetes nodes for exactly this egress. */}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,7 +51,7 @@ spec:
           image: {{ .Values.socat.image }}
           args:
             - "TCP-LISTEN:{{ .Values.service.port }},fork,reuseaddr"
-            - "TCP:{{ .Values.ingest.host }}:{{ .Values.ingest.port }}"
+            - "TCP:{{ required "loki-proxy ingest.host is required" .Values.ingest.host }}:{{ .Values.ingest.port }}"
           ports:
             - containerPort: {{ .Values.service.port }}
               protocol: TCP

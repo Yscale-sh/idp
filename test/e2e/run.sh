@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
 # test/e2e/run.sh — ephemeral, self-cleaning end-to-end test for the NEW
-# Flux + umbrella platform (the ArgoCD -> Flux cutover).
+# Flux + umbrella platform (the ArgoCD -> Flux transition).
 #
 # It spins up a THROWAWAY k3d cluster and proves the real, rendered desired state
 # (clusters/dev/platform.yaml — the umbrella HelmRelease that installs
 # charts/cluster, which fans out one HelmRelease per app + its Postgres + each
 # enabled module) reconciles on a real Kubernetes cluster running Flux.
 #
-# ── THE HEADLINE QUESTION (for the homelab cutover) ──────────────────────────
+# ── THE HEADLINE QUESTION (for the cluster transition) ──────────────────────────
 # ArgoCD's repo-server happily cloned our in-cluster git:// daemon. Flux's
 # source-controller, per its docs, only documents http(s):// and ssh:// for a
 # GitRepository. Does Flux's source-controller ACTUALLY accept a git:// daemon
 # as a GitRepository source, or reject it?
 #
 # This test answers it empirically: it stands up the SAME in-cluster git daemon
-# the homelab uses (buildpack-deps:bookworm-scm running `git daemon` on :9418,
+# the cluster uses (buildpack-deps:bookworm-scm running `git daemon` on :9418,
 # populated by `kubectl cp` of a bare clone), points a Flux GitRepository at
 # git://…/platformctl.git, waits, and reads status.conditions. It prints the
 # verdict as the headline line:
@@ -208,7 +208,7 @@ kubectl get crd httpscaledobjects.http.keda.sh >/dev/null 2>&1 \
   || fail "HTTPScaledObject CRD missing after keda-add-ons-http install"
 
 # The carshowdb app chart renders a ServiceMonitor (serviceMonitor.enabled:true in
-# the rendered umbrella values). The homelab already runs kube-prometheus-stack, so
+# the rendered umbrella values). The cluster already runs kube-prometheus-stack, so
 # the ServiceMonitor CRD exists there; an ephemeral k3d cluster does not. Without
 # the CRD the carshowdb HelmRelease install fails on apply and Flux remediation
 # uninstalls it (Ready=False, runtime Secret gone). Install just the Prometheus
@@ -223,7 +223,7 @@ kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1 \
   && ok "ServiceMonitor CRD present" \
   || fail "ServiceMonitor CRD missing after prometheus-operator-crds install"
 
-# ── 5. serve THIS repo in-cluster via a git daemon (homelab pattern) ─────────
+# ── 5. serve THIS repo in-cluster via a git daemon (cluster pattern) ─────────
 log "Serving the repo in-cluster (git daemon + smart-HTTP, ns ${GIT_NS})"
 BARE="${WORKDIR}/${GIT_REPO}"
 git clone --bare "${REPO_ROOT}" "${BARE}" >/dev/null 2>&1

@@ -49,9 +49,9 @@ var profileResources = map[string]ResourceEnvelope{
 	// REQUEST is deliberate scheduling pressure: it exceeds the free memory of the
 	// small 5–8Gi nodes (node0/1/2, incl. the control-plane masters) so the scheduler
 	// keeps the pod off them — a 16Gi-limit pod on a 7.7Gi master node-OOMs the whole
-	// node on a build. 8Gi fits only the always-on optiplex (~14Gi) and node3/burst,
+	// node on a build. 8Gi fits only the always-on storage node (~14Gi) and node3/burst,
 	// the nodes that can actually back a heavy dev workload. The 16Gi limit is still a
-	// CEILING fully realized only on a >=16Gi node; on optiplex it bursts to ~capacity.
+	// CEILING fully realized only on a >=16Gi node; on storage node it bursts to ~capacity.
 	"huge": {
 		Requests: ResourceSpec{CPU: "1", Memory: "8Gi"},
 		Limits:   ResourceSpec{CPU: "8", Memory: "16Gi"},

@@ -386,7 +386,7 @@ type Volume struct {
 	Size string `json:"size,omitempty" yaml:"size,omitempty"`
 
 	// StorageClass overrides the default storage class for a PROVISIONED pvc
-	// (homelab default: the cluster default / local-path). Ignored when referencing.
+	// (cluster default: the cluster default / local-path). Ignored when referencing.
 	StorageClass string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
 
 	// Secret mounts an existing Kubernetes Secret as read-only files (type: secret) —

@@ -33,7 +33,7 @@
 #                         individual keys (incl. shared groups).
 #   keda                  autoscaling. kind=ScaledObject|HTTPScaledObject.
 #   serviceMonitor        Prometheus discovery. releaseLabel MUST be a value
-#                         (default "prometheus") so the homelab kube-prometheus-
+#                         (default "prometheus") so the cluster kube-prometheus-
 #                         stack discovers it via `release: prometheus`.
 #   pdb                   PodDisruptionBudget.
 #   db / cache            data-store wiring. The Deployment emits each store's
@@ -131,7 +131,7 @@ tunnel:
 # The renderer sets tailscale.enabled=true for a NON-LOCAL (prod) app that declares
 # `tailscaleEgress: true` (appconfig). When enabled, deployment.yaml adds a userspace
 # tailscale sidecar (no host privileges) that joins the tailnet so the app can reach
-# out-of-cluster services with no in-cluster DNS — e.g. a Linode prod pod shipping
+# out-of-cluster services with no in-cluster DNS — e.g. a cloud provider prod pod shipping
 # logs to the on-prem Loki. TS_AUTHKEY comes from the runtime Secret (prod:
 # ExternalSecret from the SHARED SSM key /shared/tailscale/auth-key). Default OFF so
 # dev and any app that didn't opt in render exactly as before.
@@ -291,7 +291,7 @@ serviceMonitor:
   path: /metrics
   port: http
   interval: 30s
-  # releaseLabel is a VALUE so the homelab kube-prometheus-stack discovers it.
+  # releaseLabel is a VALUE so the cluster kube-prometheus-stack discovers it.
   releaseLabel: prometheus
 
 # ── disruption budget ────────────────────────────────────────────────────────

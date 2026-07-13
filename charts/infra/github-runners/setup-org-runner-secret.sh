@@ -6,7 +6,7 @@
 #
 # PREREQUISITE (one-time): create a fine-grained PAT at
 #   https://github.com/settings/personal-access-tokens/new
-#   - Resource owner:           the org (Yscale-sh / Cartogopher-ai)
+#   - Resource owner:           the org (your GitHub organization)
 #   - Repository access:        All repositories
 #   - Repository permissions:     Actions: Read-only   (Metadata: Read-only is auto)
 #   - Organization permissions:   Self-hosted runners: Read and write
@@ -14,13 +14,12 @@
 #    Settings -> Personal access tokens before the token works.)
 #
 # Usage (token from $GITHUB_RUNNER_PAT, else prompted — never passed on argv):
-#   ./setup-org-runner-secret.sh Yscale-sh      github-token-yscale
-#   ./setup-org-runner-secret.sh Cartogopher-ai github-token-cartogopher
+#   ./setup-org-runner-secret.sh your-org github-token-your-org
 set -euo pipefail
 
 ORG="${1:?usage: setup-org-runner-secret.sh <org-slug> <secret-name>}"
 SECRET="${2:?usage: setup-org-runner-secret.sh <org-slug> <secret-name>}"
-CTX="${KUBE_CONTEXT:-optiplex-pg}"
+CTX="${KUBE_CONTEXT:-$(kubectl config current-context)}"
 NS="${RUNNER_NAMESPACE:-github}"
 
 TOKEN="${GITHUB_RUNNER_PAT:-}"

@@ -60,7 +60,7 @@ func newTunnelUpCmd() *cobra.Command {
 		RunE:  func(cmd *cobra.Command, _ []string) error { return runTunnelUp(cmd, o) },
 	}
 	addTunnelFlags(cmd, &o)
-	cmd.Flags().BoolVar(&o.skipDNS, "skip-dns", false, "create the tunnel + token + ingress but DON'T upsert the public DNS CNAME — for staging an app live on its tunnel before the production cutover (flip DNS later)")
+	cmd.Flags().BoolVar(&o.skipDNS, "skip-dns", false, "create the tunnel + token + ingress but DON'T upsert the public DNS CNAME — for staging an app live on its tunnel before the production transition (flip DNS later)")
 	cmd.Flags().StringVar(&o.tokenOut, "token-out", "", "write the minted TUNNEL_TOKEN to this file (mode 0600) for the pipeline to stash in SSM")
 	cmd.Flags().BoolVar(&o.printToken, "print-token", false, "also print TUNNEL_TOKEN=<token> to stdout (mask it in CI)")
 	cmd.Flags().BoolVar(&o.verifyAccess, "verify-access", false, "verify each public host is protected by Cloudflare Access after DNS upsert (default: on when env cloudflareZone is set, off otherwise; explicit flag wins; skipped under --dry-run or --skip-dns)")
@@ -204,7 +204,7 @@ func runTunnelUp(cmd *cobra.Command, o tunnelOpts) error {
 	// 4. Upsert the proxied CNAME per host -> <tunnelID>.cfargotunnel.com.
 	// --skip-dns stages the tunnel live (connected + routable by ingress) WITHOUT
 	// repointing public DNS — so an app can be verified on its tunnel before the
-	// production cutover. Flip DNS later with a plain `tunnel up` (or promote).
+	// production transition. Flip DNS later with a plain `tunnel up` (or promote).
 	if o.skipDNS {
 		fmt.Fprintf(out, "%sdns: SKIPPED (--skip-dns) for %s — public CNAME(s) not touched; tunnel target is %s\n", prefix, strings.Join(hosts, ", "), target)
 		return nil

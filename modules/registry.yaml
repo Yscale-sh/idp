@@ -43,7 +43,7 @@ modules:
     version: 2.17.2
     defaultNamespace: keda
     defaultValues:
-      # CRDs install with the chart; the homelab has no separate CRD manager.
+      # CRDs install with the chart; the cluster has no separate CRD manager.
       crds:
         install: true
     description: >-
@@ -102,7 +102,7 @@ modules:
   # Flux HelmRelease named <app>-postgres targeting namespace <app>-<env>-postgres
   # (install.createNamespace=true), written to environments/<env>/apps/<app>-postgres.yaml.
   # The dev "data store defaults" (per-app DB name, dev placeholder password,
-  # optiplex-pg node pin) live in internal/clusterenv (DevPostgres* consts) +
+  # storage-node node pin) live in internal/clusterenv (DevPostgres* consts) +
   # internal/render/store.go. Replaced in prod by managed/HA Postgres (DATABASE_URL
   # from SSM); prod provisions NO per-app Postgres namespace. This entry stays in
   # the catalog so the chart's source/path/intent is documented in one place.
@@ -115,7 +115,7 @@ modules:
         enabled: true
         storageClass: local-path
         size: 8Gi
-      # The render path pins nodeSelector to the homelab baseline node (optiplex-pg)
+      # The render path pins nodeSelector to the cluster baseline node (storage-node)
       # so the local-path PVC always reschedules onto the node holding the data.
       nodeSelector: {}
     description: >-
@@ -168,7 +168,7 @@ modules:
       externalSecret.storeRef points at the env store this operator serves.
 
   # ── monitoring — kube-prometheus-stack (Prometheus + Grafana + Alertmanager) ──
-  # DEFAULT-DISABLED: the homelab already runs one kube-prometheus-stack whose
+  # DEFAULT-DISABLED: the cluster already runs one kube-prometheus-stack whose
   # Prometheus discovers ServiceMonitors via `release: prometheus`. The app chart's
   # serviceMonitor.releaseLabel defaults to "prometheus" so those existing
   # Prometheus instances pick apps up WITHOUT installing this module. Enable this
@@ -188,11 +188,11 @@ modules:
           serviceMonitorSelectorNilUsesHelmValues: false
     description: >-
       kube-prometheus-stack (Prometheus + Grafana + Alertmanager). DISABLED by
-      default — the homelab already runs one that discovers ServiceMonitors via
+      default — the cluster already runs one that discovers ServiceMonitors via
       `release: prometheus`. Enable only on a cluster with no existing monitoring.
 
   # ── cert-manager — TLS certificate automation ───────────────────────────────
-  # Disabled by default on the LAN homelab (Cloudflare Tunnel terminates TLS at the
+  # Disabled by default on the LAN cluster (Cloudflare Tunnel terminates TLS at the
   # edge; in-cluster traffic is plain HTTP on a trusted network). Useful in prod or
   # for in-cluster mTLS / webhook certs; enable per-env as needed.
   cert-manager:
@@ -228,26 +228,6 @@ modules:
       yscale ephemeral-cloud-node burst autoscaler (join.mode=k3s + Fly.io burst +
       Tailscale). DEFERRED / disabled — it bursts ephemeral CLOUD nodes, so there
       is nothing to do on a LAN cluster. Pinned here for catalog completeness only.
-
-  # ── unifi-controller — homelab network controller (example module, disabled) ─
-  # A homelab-flavored EXAMPLE of a stateful community-chart module: shows the
-  # registry shape for a stock app the platform can adopt. Disabled by default.
-  unifi-controller:
-    source: chartRepo
-    repoURL: https://charts.gabe565.com
-    chart: unifi-controller
-    version: 0.7.2
-    defaultNamespace: unifi
-    defaultValues:
-      persistence:
-        config:
-          enabled: true
-          storageClass: local-path
-          size: 5Gi
-    description: >-
-      UniFi Network controller — a homelab EXAMPLE module (stock community chart)
-      demonstrating the registry shape for adopting a stateful third-party service.
-      Disabled by default; enable on the homelab if you want platformctl to own it.
 
   # ── github-runners — scale-to-zero self-hosted CI runners per GitHub org ─────
   # A localChart (charts/infra/github-runners) that deploys, on the SHARED in-cluster
@@ -354,7 +334,7 @@ modules:
     defaultNamespace: velero
     description: >-
       Velero: scheduled backups of PVCs + k8s resources to R2 with one-command
-      restore. Prod uses CSI volume snapshots (Linode block storage); dev/homelab
+      restore. Prod uses CSI volume snapshots (cloud provider block storage); dev/cluster
       (no CSI) uses node-agent file-system backup (kopia). R2 creds come from the
       velero-creds module (credentials.existingSecret=velero-r2). REPLACES the
       per-engine DB operators — run plain Postgres/Mongo and let Velero snapshot them.

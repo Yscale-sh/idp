@@ -165,8 +165,7 @@ prints the branch); the prod cluster syncs `refs/heads/prod`. Rollback is `git r
 one commit.
 
 Prod refuses mutable tags: `allowMutableTags: false`, and prod is hard-rejected in code
-regardless. The reference prod cluster is self-provisioned k3s on Linode (hardened nodes,
-Cilium, embedded etcd, kube-vip; etcd snapshots ship to R2). Prod exposure is Cloudflare Tunnel
+regardless. The target production environment must provide an existing Kubernetes cluster and every storage, networking, backup, and exposure capability it declares. Prod exposure is Cloudflare Tunnel
 only (no MetalLB); `statefulStores: false`, so apps get `DATABASE_URL` from the SSM secrets
 backend.
 

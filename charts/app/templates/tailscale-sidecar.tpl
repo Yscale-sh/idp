@@ -3,13 +3,13 @@ Tailscale EGRESS sidecar — included into the pod spec by deployment.yaml when
 .Values.tailscale.enabled (the renderer sets that ONLY for a non-local/prod app
 that declared `tailscaleEgress: true`). Userspace tailscaled joins the tailnet so
 the app can reach out-of-cluster services that have no in-cluster DNS — e.g. the
-on-prem Loki for log shipping from a Linode prod cluster.
+on-prem Loki for log shipping from a cloud provider prod cluster.
 
-Mirrors the pattern the apps already ran with on LKE: userspace mode (no NET_ADMIN,
+Mirrors the pattern the apps already ran with on managed Kubernetes: userspace mode (no NET_ADMIN,
 no /dev/net/tun), ephemeral node (TS_KUBE_SECRET=""), TS_AUTHKEY pulled from the
 runtime Secret <app>-runtime (populated for prod by the ExternalSecret from the
 SHARED key /shared/tailscale/auth-key). No host privileges, so it holds on the
-hardened jaK3s nodes.
+hardened Kubernetes nodes.
 */}}
 {{- define "app.tailscaleSidecar" -}}
 - name: tailscale

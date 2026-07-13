@@ -484,7 +484,7 @@ type TailscaleValues struct {
 // tailscaleEgressActive reports whether the app's Tailscale egress sidecar should
 // render: the app opted in (tailscaleEgress) AND the env is NON-LOCAL (managed/prod),
 // where out-of-cluster services (e.g. the on-prem Loki) aren't reachable by cluster
-// DNS. Dev (homelab) reaches them on the LAN directly, so no sidecar there — the same
+// DNS. Dev (cluster) reaches them on the LAN directly, so no sidecar there — the same
 // "declare once, the env fulfills it differently" contract as the tunnel.
 func tailscaleEgressActive(app appconfig.App, c *clusterenv.Config) bool {
 	return app.TailscaleEgress && !isLocalBackend(c)

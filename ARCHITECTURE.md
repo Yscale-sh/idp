@@ -1,119 +1,94 @@
-# Target architecture: minimal host + yscale mesh + Cloudflare Tunnel
+# Architecture
 
-Status: this is the current reference production shape. Read alongside docs/ENVIRONMENTS.md for the implemented state.
+Jakes Developer Platform is an application delivery layer for an existing Kubernetes cluster. It
+starts at the application contract and ends at reconciled Kubernetes resources. Cluster creation,
+node management, networking, and provider infrastructure stay outside its boundary.
 
-> **Still 100% Kubernetes.** "Minimal host" = a small **k3s** node (full k8s API), not a move off
-> Kubernetes. Everything stays k8s-native: apps are `Deployment`+`Service` via the IDP Helm chart,
-> Postgres is a `StatefulSet`+Service, yscale is a dynamically-scaling k8s node mesh, cloudflared is
-> a `Deployment`. Savings come from fewer/leaner nodes plus Tunnel plus self-hosted PG, not from dropping k8s.
+## Logical flow
 
-The cheapest *and* most scalable shape on the table. Replaces the "one fat managed cluster" node
-layer from the earlier migration plan. Everything else from that plan (Cloudflare Tunnel ingress,
-self-hosted Postgres with CNPG barman→R2 backups, the IDP app-chart, namespace model) stays the same.
-
-```
-                 Cloudflare  (DNS + edge TLS + DDoS + free Tunnel)
-                                  │
-                     ┌────────────┴─────────────┐
-                     │   cloudflared (in-cluster) │   all ingress, $0 NodeBalancers
-                     └────────────┬─────────────┘
-   ┌─────────────────────────────┴──────────────────────────────┐
-   │  MINIMAL HOST  (k3s on Linode, always-on, never scaled away) │
-   │  • k3s control plane                                          │
-   │  • Postgres (+ pgbouncer, redis)  ← all stateful lives here   │
-   │  • always-on core services + cloudflared                      │
-   │  • the cheap floor: 1 small Linode                            │
-   └───────────────────────────────────────────────────────────────┘
-                                  │  KEDA signals load / schedule / prediction
-                     ┌────────────┴─────────────┐
-                     │          yscale           │  ← stateless apps + jobs run here
-                     │  dynamically-scaling k8s  │     availability in any DC as needed
-                     │  mesh; KEDA-native        │     (elastic: pay while serving)
-                     └───────────────────────────┘
+```text
+deploy.yaml
+    |
+    v
+idpctl: load -> expand -> validate -> policy -> render
+    |
+    v
+clusters/<env>/platform.yaml
+    |
+    v
+Git branch -> Flux -> umbrella HelmRelease
+    |
+    v
+per-app HelmRelease -> Deployment, Service, probes, limits, secrets, optional stores
 ```
 
-## The two parts
+Flux is the only ongoing writer to the cluster. `idpctl` writes desired state to Git; it does not
+perform application releases with direct Helm or kubectl mutations.
 
-### 1. Minimal host (the floor)
-A single small always-on k3s node on Linode that runs the control plane plus everything stateful and
-always-on (Postgres, redis, pgbouncer, cloudflared, core services). This is the only guaranteed cost.
-Lean by design: one node when nothing's happening.
+## Components
 
-### 2. yscale: the dynamic scaling layer
-> **A dynamically-scaling Kubernetes mesh that puts availability in any datacenter as needed and
-> works with KEDA.**
+### Application contract
 
-Stateless apps and batch jobs run on the mesh; it expands and contracts with demand, so capacity
-only costs money while it's serving load. The minimal host stays put. Treated as a black-box
-capability here: the internals are yscale's job.
+`deploy.yaml` declares the workload, routes, stores, secrets, sizing, probes, volumes, and
+connections. Multi-component products share a base contract and render isolated workloads.
 
-### 3. Cloudflare Tunnel (ingress)
-All public traffic enters through `cloudflared`, so there are **no NodeBalancers and no public IPs**
-on any node, including the elastic mesh nodes, which come and go. New app = a Tunnel route + DNS
-CNAME. (You already run this pattern in carshowdb.)
+### CLI
 
----
+`idpctl` validates contracts, applies environment policy, renders desired state, promotes immutable
+artifacts, removes workloads, renders modules, builds the catalog, and checks declared seams.
 
-## The one hard rule: stateful stays on the minimal host
-The mesh is elastic: nodes appear and vanish. **Postgres, redis, and anything with a PVC must run
-on the minimal host, never on the mesh**, or an automatic scale-down can take your database with it.
-The IDP app-chart enforces this: stateful workloads pin to the host (`nodeSelector: role=baseline`);
-stateless apps and jobs are free to schedule onto the mesh. KEDA drives the mesh; the host is fixed.
+### Environment configuration
 
-## Two things to decide / accept
-- **Control-plane resilience.** A single self-hosted k3s control plane is a SPOF (running pods
-  survive an API outage, but nothing reschedules until it's back). Mitigate cheaply with regular k3s
-  datastore snapshots → R2; or run 3-server embedded-etcd k3s for true HA (raises the floor). Pick
-  the trade you want. (LKE's free managed control plane is the alternative if you'd rather not own
-  this, but it pins you to one region and the CCM, which the mesh model is designed to escape.)
-- **Storage.** k3s doesn't bundle the Linode CSI; install it so Postgres PVCs survive node loss
-  (don't use local-path for the DB). Backups via CNPG barman→R2 (chart `charts/infra/cnpg-db`).
+`environments/<env>/cluster.yaml` describes capabilities available to applications: Flux source,
+secret backend, route zones, modules, resource bounds, promotion source, and seam declarations.
+Environment names are labels, not infrastructure implementations.
 
----
+### Umbrella chart
 
-## Measured usage: why the floor can be tiny (evidence)
-Author-instance sizing snapshot, pulled from an in-cluster Prometheus (2026-06-01, 7-day window):
+Each environment has one umbrella HelmRelease. The cluster chart expands its values into isolated
+HelmReleases for applications, stores, and enabled modules. A failed application does not need to
+block reconciliation of unrelated workloads.
 
-| Resource | Allocatable (4 nodes) | Requested | Used now | **7-day MAX** |
-|---|---|---|---|---|
-| CPU | 4.00 cores | 2.79 | 0.25 | **0.26 cores** |
-| Memory | 7.3 GiB | 4.1 | 2.7 | **2.8 GiB** |
+### Optional automation
 
-That cluster ran at **~6% CPU / ~38% memory**, and 7-day peak was essentially flat:
-The platform was shaped by a recurring self-hosting pattern: per-node system overhead dominated
-small application workloads, so consolidation and scale-to-zero needed to be platform defaults.
-×4**; consolidating to one node removes ~3 nodes' worth of that overhead.
+`idp-shipper` can poll application repositories, build images, render updated state, and push the
+platform branch. It is optional; manual render and commit remains a complete delivery path.
 
-**Sizing conclusion:** a similar small workload can fit in **one 4 GB node** (with headroom for
-Postgres). CPU is a non-constraint; size the host for memory (~3 GiB working set). If a fork lacks
-Prometheus history for its prod cluster, get a `kubectl top` snapshot before sizing it in.
+## Trust boundaries
 
-> Caveat: 7-day max of 0.26 cores means there's been no real load this week. yscale's elastic mesh
-> is exactly what covers genuine traffic spikes, so the *baseline* can stay this small safely.
+| Boundary | Trusted with |
+|---|---|
+| Platform Git repository | Desired state and non-secret configuration. |
+| Flux controllers | Read access to desired state and write access to declared cluster resources. |
+| Secret backend and External Secrets | Credential values for configured applications and modules. |
+| Image registry | Application artifacts and optional pull or push credentials. |
+| Provider integrations | Only the scoped DNS, tunnel, storage, or identity permissions enabled by the operator. |
+| Application namespace | The secrets and service identity required by that workload. |
 
-## Cost shape
+Credentials never belong in rendered Git state. Charts render Secret references or ExternalSecret
+objects; a configured backend supplies values at reconciliation time.
 
-| Line | Today | Minimal host + yscale mesh |
-|---|---:|---:|
-| Baseline compute (1 minimal host) | $84 (7 nodes) | ~$12-24 |
-| Peak/job capacity (yscale, on-demand) | none | pay-as-scaled (~$5-15 typical) |
-| NodeBalancers | $70 | **$0** (Cloudflare Tunnel) |
-| Postgres | $32 managed | ~$4 self-host + R2 |
-| Orphaned volumes | $6 | $0 |
-| GPU/ephemeral burst | ~$14 | ~$14 (+ cost cap) |
-| Object storage | $5 | $5 |
-| Misc/tax | ~$24 | ~$8 |
-| **Total** | **~$235** | **~$50-70/mo** |
+## Seam contract
 
-The bill is mostly the minimal host + Postgres now; everything else is elastic and only costs money
-while it's actually serving load. The two levers doing the work: **Cloudflare Tunnel (saves $70)** and
-**lean floor + dynamic mesh (saves $60+)**.
+Applications request capabilities. Environments declare whether they provide them.
 
-## How this changes the migration
-The earlier migration plan already gets you off per-app load balancers and off managed Postgres.
-This swaps its middle phases ("migrate everything onto one fat managed cluster, right-size to ~4
-nodes") for **"stand up the minimal k3s host + yscale mesh, move apps onto it via the IDP chart,
-point Cloudflare Tunnel at it, retire the managed clusters."** Same destination (one production
-environment, IDP-driven, Tunnel ingress), leaner floor, and it runs on your own stack. The Tunnel
-cutover and self-hosted Postgres are still worth doing first since they bank most of the savings
-independently of the cluster move.
+- `statefulStores`: databases, caches, and PVC-backed application volumes.
+- `lanExpose`: a LoadBalancer implementation for direct or LAN routes.
+- `publicRoutes` or `tunnel`: an external routing implementation.
+- `autoscale`: KEDA or another supported autoscaling implementation.
+- `observability`: endpoints and controllers required by enabled logging or metrics.
+
+Validation fails closed when an app requests a capability the target environment does not declare.
+`idpctl doctor` checks the runtime side of those declarations against the user's cluster.
+
+## Storage and availability
+
+JDP does not prescribe a storage provider or availability topology. Operators choose StorageClasses,
+replica counts, backup systems, disruption policy, and recovery objectives. The reference modules
+are optional implementations, not cluster prerequisites.
+
+## Promotion
+
+Promotion is digest-forward. JDP reads the artifact selected in the source environment, applies the
+target environment's policy and configuration, and renders the same artifact into the target branch.
+Mutable production tags are rejected. Rollback is a Git revert.

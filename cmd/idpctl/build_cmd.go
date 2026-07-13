@@ -24,7 +24,7 @@ func newBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build + push an image on the in-cluster image-builder (clone -> BuildKit -> ghcr)",
-		Long: `build triggers the homelab image-builder to clone a repo at a ref, build its
+		Long: `build triggers the cluster image-builder to clone a repo at a ref, build its
 Dockerfile with rootless BuildKit, and push the result to ghcr — the same Job the
 idp-shipper runs for app images. It drives the Job through kubectl, so it needs
 cluster access but NO local Docker, and the build runs in-cluster on amd64 with
