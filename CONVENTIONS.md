@@ -49,7 +49,7 @@ failing app so it cannot wedge its siblings.
 - **dev (continuous, automatic).** The in-cluster `idp-shipper` (`cmd/idp-shipper`)
   is infra-owned and enabled per environment. It realizes "push to your branch, it deploys." Per
   registered app, every interval it reads the GitHub head SHA for the app's
-  repo+branch; if the SHA changed, it derives the build set from the shopping lists
+  repo+branch; if the SHA changed, it derives the build set from the app manifests
   (dedup by image), builds ONLY images whose inputs (`build.context`/`dockerfile`/
   submodules) changed via the in-cluster image-builder (rootless BuildKit to GHCR,
   tag `<image>:<short-sha>`), reuses the tag already pinned in the umbrella for

@@ -3,12 +3,12 @@
 **yscale-media** is the platform's multi-component worked example: a self-hosted
 media server (api + scanner + ui sharing one Postgres/Redis, an iGPU, an NFS
 library, and a LAN UI) plus a fourth component — an **optionally-distributed
-sharded transcoder** — all authored as a single multi-component shopping list
+sharded transcoder** — all authored as a single multi-component app manifest
 (`yscale-media.deploy.yaml`). It began as a fork of the open-source
 [Dim](https://github.com/Dusk-Labs/dim) media server.
 
 It is kept here as the worked example because it exercises essentially the whole
-contract. The per-app shopping list is the
+contract. The per-app app manifest is the
 product: a developer declares a small app contract and the platform derives all
 of the Kubernetes (namespaces, Deployments, ClusterIP Services, secret refs, env
 vars, probes, limits, autoscaling) from it. Nobody writes a Deployment, Service,

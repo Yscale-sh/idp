@@ -4,7 +4,7 @@ Day-to-day runbooks for a Yscale IDP fork. For the command design, read
 [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md); for the target production shape, read
 [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-The unit of work everywhere below is the per-app `deploy.yaml` shopping list. A
+The unit of work everywhere below is the per-app `deploy.yaml` app manifest. A
 developer declares a small app contract (app, runtime, routes, sizing, db, cache,
 volumes, `connectsTo`), and the platform derives every Kubernetes object from it:
 namespaces, Deployment, ClusterIP Service, secret refs, env vars (`DATABASE_URL`,
@@ -16,7 +16,7 @@ Flux branch, and Flux reconciles it. Never `kubectl apply` or `helm upgrade`.
 
 ## 1. Deploy a brand-new app
 
-1. Scaffold the shopping list. The CLI takes the app name as a flag:
+1. Scaffold the app manifest. The CLI takes the app name as a flag:
 
    ```bash
    idpctl new app --name myapp --dir ./myapp
@@ -67,7 +67,7 @@ touches the registry or the platform repo; they only edit their own `deploy.yaml
 
 2. The in-cluster `idp-shipper` reads the GitHub head SHA for the registered repo and
    branch. When it changes, it fetches the registered `deploy.yaml` at that commit and
-   derives the build set from the shopping lists, deduped by `runtime.image`.
+   derives the build set from the app manifests, deduped by `runtime.image`.
 3. The image-builder clones that commit, builds with rootless BuildKit, and pushes
    `<runtime.image>:<short-sha>` to GHCR. Build inputs are self-declared by the app:
 

@@ -1,12 +1,12 @@
 ---
 name: idp
-description: Ship and manage apps on this self-hosted k3s platform with idpctl. Use when working in this repo to author or validate a deploy.yaml shopping list, deploy or promote an app (dev or prod), inspect the catalog or live-cluster seams, or understand the lifecycle (auto-reconcile via the idp-shipper, digest-forward promotion, Flux). Read this before running idpctl.
+description: Ship and manage apps on this self-hosted k3s platform with idpctl. Use when working in this repo to author or validate a deploy.yaml app manifest, deploy or promote an app (dev or prod), inspect the catalog or live-cluster seams, or understand the lifecycle (auto-reconcile via the idp-shipper, digest-forward promotion, Flux). Read this before running idpctl.
 ---
 
 # idp: ship to this self-hosted k3s platform
 
 You are working inside the **idp platform repo**. `idpctl` turns a small app contract
-(`deploy.yaml`, the "shopping list") into reconciled Kubernetes state. You never write a
+(`deploy.yaml`, the "app manifest") into reconciled Kubernetes state. You never write a
 Deployment, Service, or LoadBalancer. The platform derives namespaces, secret refs, env vars
 (`DATABASE_URL`, `REDIS_URL`, and the rest), probes, resource limits, autoscaling, and
 observability from the contract.
@@ -17,7 +17,7 @@ You commit that file on the env's `flux.branch`, and **Flux** reconciles it into
 is the only writer. `charts/cluster` templates one isolated HelmRelease per app, its stores, and
 each enabled module; `disableWait` isolates a failing app so it cannot wedge its siblings.
 
-The per-app `deploy.yaml` shopping list is the product. Everything else is derived from it.
+The per-app `deploy.yaml` app manifest is the product. Everything else is derived from it.
 
 Authoritative detail lives in the repo. Read on demand, do not preload:
 
@@ -55,7 +55,7 @@ Authoritative detail lives in the repo. Read on demand, do not preload:
    `plan` before a `render`. After a write, commit the changed `clusters/<env>/platform.yaml` on the
    env's `flux.branch`; Flux does the rest. Confirm with `catalog` or `doctor`.
 
-## The deploy.yaml contract (the shopping list)
+## The deploy.yaml contract (the app manifest)
 
 ```yaml
 app: carshowdb

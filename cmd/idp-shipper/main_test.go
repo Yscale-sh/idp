@@ -57,7 +57,7 @@ func TestBuildAffected(t *testing.T) {
 	api := buildTarget{Image: "ghcr.io/x/api", Context: ".", Submodules: []string{"vendor/transcode"}}
 	ui := buildTarget{Image: "ghcr.io/x/ui", Context: "ui"}
 
-	// Config-only change: the shopping list is not a build input → nothing rebuilds.
+	// Config-only change: the app manifest is not a build input → nothing rebuilds.
 	if buildAffected([]string{"deploy/yscale-media.deploy.yaml"}, api, deployFiles) {
 		t.Error("deploy.yaml change must not affect the api build")
 	}

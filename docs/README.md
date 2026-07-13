@@ -1,6 +1,6 @@
 # Documentation
 
-The per-app `deploy.yaml` shopping list is the product. The platform derives Kubernetes state from
+The per-app `deploy.yaml` app manifest is the product. The platform derives Kubernetes state from
 that contract, commits desired state, and leaves reconciliation to Flux.
 
 ## Start here

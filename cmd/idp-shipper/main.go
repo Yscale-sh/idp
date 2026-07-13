@@ -1,11 +1,11 @@
 // idp-shipper is the infra-owned, in-cluster orchestrator that realizes the
 // platform's "push to master -> it deploys" contract. Developers only ever touch
-// their deploy.yaml shopping list; the shipper holds ALL the orchestration:
+// their deploy.yaml app manifest; the shipper holds ALL the orchestration:
 //
 //	for each registered app, every interval:
 //	  sha := github head(app.repo, app.branch)
 //	  if sha changed:
-//	    derive the build set from the shopping lists (dedup by image)
+//	    derive the build set from the app manifests (dedup by image)
 //	    diff sha against the last-shipped sha; build only images whose inputs
 //	      (context/dockerfile/submodules) changed — skipped images reuse the tag
 //	      already pinned in the umbrella (internal/builder)
@@ -45,7 +45,7 @@ var (
 )
 
 // Registry is the infra-owned config (a ConfigMap) of apps to ship. It says only
-// WHERE each app's shopping lists live — never how to build them (that's in the
+// WHERE each app's app manifests live — never how to build them (that's in the
 // deploy.yaml). The developer's repo holds none of this.
 type Registry struct {
 	Env             string    `json:"env"`             // target environment (dev|prod)
@@ -63,7 +63,7 @@ type Registry struct {
 }
 
 // AppSpec registers one application: which repo/branch to watch and which
-// deploy.yaml shopping lists it has. Nothing build-specific lives here.
+// deploy.yaml app manifests it has. Nothing build-specific lives here.
 type AppSpec struct {
 	Name        string   `json:"name"`        // logical app name (for logs)
 	Repo        string   `json:"repo"`        // org/name to watch + build
@@ -71,13 +71,13 @@ type AppSpec struct {
 	DeployFiles []string `json:"deployFiles"` // deploy.yaml paths within the repo
 }
 
-// component is a parsed shopping list.
+// component is a parsed app manifest.
 type component struct {
 	file string
 	cfg  appconfig.App
 }
 
-// buildTarget is one image to build, derived from the shopping lists.
+// buildTarget is one image to build, derived from the app manifests.
 type buildTarget struct {
 	Image      string
 	Context    string
@@ -156,7 +156,7 @@ func main() {
 	}
 }
 
-// shipApp fetches the app's shopping lists at sha, builds only the images whose
+// shipApp fetches the app's app manifests at sha, builds only the images whose
 // build inputs actually changed since base, then renders+commits+pushes. An image
 // whose context/Dockerfile/submodules are untouched is NOT rebuilt — the render
 // reuses the tag already pinned in the umbrella, so a docs- or config-only commit
@@ -171,7 +171,7 @@ func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token s
 	}
 	targets := deriveBuildTargets(comps)
 	if len(targets) == 0 {
-		return fmt.Errorf("no buildable images in %s shopping lists", app.Name)
+		return fmt.Errorf("no buildable images in %s app manifests", app.Name)
 	}
 
 	// Resolve the changed-path set once. buildAll fails safe to a full rebuild when
@@ -219,7 +219,7 @@ func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token s
 	return renderCommitPush(ctx, reg, app, comps, tag, tagByImage)
 }
 
-// fetchComponents downloads and parses every shopping list for the app at sha.
+// fetchComponents downloads and parses every app manifest for the app at sha.
 func fetchComponents(ctx context.Context, app AppSpec, sha, token string) ([]component, error) {
 	out := make([]component, 0, len(app.DeployFiles))
 	for _, df := range app.DeployFiles {
@@ -236,7 +236,7 @@ func fetchComponents(ctx context.Context, app AppSpec, sha, token string) ([]com
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", df, err)
 		}
-		// One shopping list may declare several components (api+scanner+ui+…);
+		// One app manifest may declare several components (api+scanner+ui+…);
 		// Expand() yields one full App per component (a plain file → just itself),
 		// so a single deployFile entry can ship a whole multi-component product.
 		for _, a := range cfg.Expand() {
@@ -246,7 +246,7 @@ func fetchComponents(ctx context.Context, app AppSpec, sha, token string) ([]com
 	return out, nil
 }
 
-// deriveBuildTargets folds the shopping lists into the unique set of images to
+// deriveBuildTargets folds the app manifests into the unique set of images to
 // build. Components sharing an image (e.g. api + scanner) collapse to one build;
 // their build blocks merge (union of submodules, first non-default context/dockerfile).
 func deriveBuildTargets(comps []component) []buildTarget {
@@ -407,7 +407,7 @@ func umbrellaTagFor(reg *Registry, image string) (string, bool) {
 
 // buildAffected reports whether any changed file is a build input for target t:
 // a file under its build context or under one of its submodules. The app's own
-// deploy.yaml shopping lists are NOT build inputs (they drive the render, not the
+// deploy.yaml app manifests are NOT build inputs (they drive the render, not the
 // image), so a config-only edit re-renders without a rebuild.
 func buildAffected(changed []string, t buildTarget, deployFiles []string) bool {
 	skip := make(map[string]bool, len(deployFiles))

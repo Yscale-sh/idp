@@ -1,6 +1,6 @@
 {{- /*
 Platform-provisioned PersistentVolumeClaims. The renderer puts one entry in
-.Values.provisionedClaims for every `type: pvc` volume in the shopping list that
+.Values.provisionedClaims for every `type: pvc` volume in the app manifest that
 requested a `size:` (rather than referencing an existing `claim:`). Each PVC
 carries helm.sh/resource-policy: keep so app upgrades/teardown never delete the
 data — the dev's persistent storage outlives the workload.

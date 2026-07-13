@@ -2,7 +2,7 @@
 # placeholders (RFC 5737 documentation addresses). Replace them with your own
 # values before rendering.
 # yscale-media — single-manifest, multi-component (api + scanner + transcode + ui).
-# One shopping list for the whole product. The top level is the shared BASE;
+# One app manifest for the whole product. The top level is the shared BASE;
 # each entry under components: carries only that part's deltas.
 app: yscale-media
 

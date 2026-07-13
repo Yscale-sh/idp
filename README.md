@@ -1,85 +1,115 @@
 # Jakes Developer Platform
 
-> Turn one small `deploy.yaml` into repeatable Kubernetes deployments managed by Flux.
+> A Linux-like application layer for Kubernetes.
 
-Jakes Developer Platform (JDP) is an opinionated application delivery layer for teams that already
-operate Kubernetes. It validates an app contract, renders the required Helm and Flux resources,
-wires optional platform services, and commits desired state for Flux to reconcile.
+Bring a running Kubernetes cluster. Declare apps in `deploy.yaml`. Commit the rendered state. Flux
+keeps the cluster running what Git says should be installed.
 
-**Assumption:** you already have a working Kubernetes cluster and administrative access for the
-initial bootstrap. JDP does not create nodes, install Kubernetes, configure the control plane, or
-choose your cloud, network, storage, or DNS provider.
+JDP does not create Kubernetes clusters. It starts where Kubernetes distributions stop: installing,
+configuring, connecting, updating, promoting, and removing applications consistently.
 
-## What JDP owns
+## The model
 
-- The `deploy.yaml` application contract and schema.
-- Validation, policy checks, planning, rendering, removal, and promotion through `idpctl`.
-- One Flux umbrella `HelmRelease` per environment.
-- Per-app Deployments, ClusterIP Services, probes, resource limits, autoscaling, secret references,
-  optional stores, routes, and observability wiring.
-- Optional in-cluster build and ship automation.
-- A read-only catalog and `doctor` checks for declared platform capabilities.
-
-## What you own
-
-- A Kubernetes cluster, access control, upgrades, node lifecycle, and network policy.
-- A default StorageClass when you enable PVC-backed stores or volumes.
-- A LoadBalancer, ingress, or tunnel implementation when applications need external traffic.
-- DNS zones and provider accounts used by optional public-routing integrations.
-- An image registry and its pull or push credentials.
-- Secret backends, workload identity, and every credential value supplied to the platform.
-- Backup, recovery, and availability policies appropriate for your workloads.
-
-## Required dependencies
-
-| Dependency | Why it is required |
+| Linux concept | JDP concept |
 |---|---|
-| Existing Kubernetes cluster | JDP deploys applications to Kubernetes; it does not provision the cluster. |
-| `kubectl` access | Required for bootstrap and cluster-facing commands such as `doctor` and `build`. |
-| Git repository | Stores environment configuration and rendered desired state. |
-| Flux Operator and Flux controllers | Reconcile the repository into the cluster. |
-| Image registry | Stores application and platform images reachable by cluster nodes. |
-| Go toolchain | Required only when building `idpctl` from source. The module pins its supported Go version. |
-| Default StorageClass | Required only for PVC-backed databases, caches, or application volumes. |
+| Machine and kernel | Your existing Kubernetes cluster |
+| Distribution userland | JDP charts, policy, modules, and CLI |
+| Package or service manifest | `deploy.yaml` |
+| Installed package database | `clusters/<env>/platform.yaml` |
+| Package repository | Your Git repository and image registry |
+| Service manager and reconciler | Flux |
+| System services | Optional modules such as databases, cache, autoscaling, and observability |
+| Application process | Kubernetes Deployment created from the app manifest |
 
-## Optional integrations
+The unit of deployment is an **app**, not a pile of Kubernetes YAML. An app declares what it needs;
+the platform supplies the standard Kubernetes implementation.
 
-Enable only what your environment provides.
+## What you need
 
-| Integration | Needed when |
+### Required
+
+| Dependency | Purpose |
 |---|---|
-| External Secrets Operator | Secrets should be synchronized from a SecretStore or ClusterSecretStore. |
-| AWS SSM Parameter Store | `secrets.backend: ssm` is selected. Prefer workload identity over static AWS keys. |
-| KEDA and KEDA HTTP add-on | Applications declare event autoscaling or scale-to-zero. |
-| MetalLB or another LoadBalancer implementation | LAN or direct LoadBalancer exposure is enabled. |
-| Cloudflare DNS, Tunnel, or Access | Public routes use Cloudflare-managed DNS, tunnels, or access policy. |
-| CloudNativePG | PostgreSQL is provisioned through the CNPG module. |
-| Redis | Applications declare an in-cluster cache. |
-| Loki or another compatible endpoint | Platform-managed log shipping is enabled. |
-| Tailscale | A workload explicitly needs tailnet egress. |
-| GitHub and `idp-shipper` | Push-to-deploy, in-cluster builds, or automated platform commits are enabled. |
+| Existing Kubernetes cluster | Runs JDP and its apps. You manage nodes, networking, upgrades, and the control plane. |
+| Cluster-admin bootstrap access | Installs Flux and the initial platform resources. |
+| `kubectl` | Bootstrap and cluster diagnostics. |
+| Git repository | Stores the installed app set and environment configuration. |
+| Flux Operator and Flux controllers | Reconcile Git into Kubernetes. |
+| Image registry | Stores images reachable by cluster nodes. |
+| Go | Needed only to build `idpctl` from source. |
 
-## Credentials and keys
+A default StorageClass is required only when an app or module requests persistent storage.
 
-Local `validate`, `plan`, `render`, `catalog`, and scaffold commands do not require cloud
-credentials. Cluster and provider credentials are needed only by the features you enable.
+### Optional system services
 
-| Key or secret | Owner | Purpose |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` or `CF_API_TOKEN` | Operator | Cloudflare DNS, Tunnel, and Access API operations. Scope it to the required account and zones. |
-| `CLOUDFLARE_ACCOUNT_ID` or `CF_ACCOUNT_ID` | Operator | Selects the Cloudflare account for tunnel operations. |
-| `CLOUDFLARE_ZONE_ID` or `CF_ZONE_ID` | Operator | Selects a DNS zone when it cannot be derived from configuration. |
-| `GITHUB_TOKEN` or the shipper `gitToken` Secret | Operator | Reads application repositories and, when enabled, pushes rendered platform commits. |
-| Registry pull Secret | Operator | Docker `config.json` or `dockerconfigjson` used by workloads to pull private images. |
-| Registry push Secret | Operator | Used only by the optional in-cluster image builder. |
-| AWS authentication | Operator | Lets External Secrets read SSM. Workload identity is preferred; static keys are a fallback. |
-| `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` | Service owner | Authenticate `connectsTo.type: serviceToken` calls through Cloudflare Access. |
-| `TUNNEL_TOKEN` | Platform automation | Connector token retrieved and reconciled by tunnel automation. Do not commit it. |
-| `DATABASE_URL` and `PRIMARY_DATABASE_URL` | Store module or secret backend | PostgreSQL connection values injected into an app. Declare both for a `primary` database. |
-| `REDIS_URL` | Store module or secret backend | Redis connection value injected into an app. |
-| Application keys | Application owner | Declare key names in `secrets[]`; store values in the selected backend, never in Git. |
+| Service | Enable it when |
+|---|---|
+| External Secrets Operator | Secret values come from a SecretStore or ClusterSecretStore. |
+| AWS SSM | An environment uses `secrets.backend: ssm`. |
+| KEDA | Apps use event autoscaling or scale-to-zero. |
+| MetalLB or another LoadBalancer controller | Apps need direct or LAN LoadBalancer addresses. |
+| Cloudflare DNS, Tunnel, or Access | Apps use Cloudflare-managed public routes or access policy. |
+| CloudNativePG | The platform should provision PostgreSQL through CNPG. |
+| Redis | Apps declare an in-cluster cache. |
+| Loki | Apps ship logs through the platform logging contract. |
+| Tailscale | An app explicitly needs tailnet egress. |
+| `idp-shipper` and image builder | Git pushes should build images and update the installed app set automatically. |
 
-## The application contract
+## Install JDP on an existing cluster
+
+### 1. Fork and configure the platform repository
+
+```bash
+git clone https://github.com/YOUR_ORG/idp.git
+cd idp
+
+# Build the CLI.
+make build
+
+# Set your registry and repository in idp.yaml, then create an environment.
+./idpctl init --env dev
+```
+
+Edit these files:
+
+- `idp.yaml`: your image registry prefix and platform repository URL.
+- `environments/dev/cluster.yaml`: secret backend, route zones, modules, resource limits, and Flux branch.
+- `clusters/dev/flux-instance.yaml`: the repository and path Flux should reconcile.
+
+### 2. Install Flux
+
+```bash
+helm install flux-operator \
+  oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system \
+  --create-namespace
+
+kubectl apply -f clusters/dev/flux-instance.yaml
+```
+
+This is the bootstrap exception. After Flux is running, Git is the writer for platform and app
+state.
+
+### 3. Install enabled system services
+
+```bash
+./idpctl infra render --env dev
+git add clusters/dev/platform.yaml
+git commit -m "platform: configure dev services"
+git push
+```
+
+Flux reads the commit and installs the enabled modules.
+
+## Install an app
+
+### 1. Create the app manifest
+
+```bash
+./idpctl new app --name myapp --dir ./myapp
+```
+
+A minimal `deploy.yaml`:
 
 ```yaml
 app: myapp
@@ -95,7 +125,8 @@ sizing:
   profile: minimal
   replicas: 2
 db:
-  - { name: primary, type: postgres }
+  - name: primary
+    type: postgres
 secrets:
   - DATABASE_URL
   - PRIMARY_DATABASE_URL
@@ -103,93 +134,164 @@ env:
   LOG_LEVEL: info
 ```
 
-The image repository is tagless. A deployment supplies the immutable tag or digest. JDP derives
-the namespace, workload, ClusterIP Service, probes, limits, store wiring, and secret references.
+The image value is the repository only. The deploy command supplies the tag or digest.
 
-## Local render-only quickstart
-
-This path exercises the contract without contacting a cluster or cloud provider.
+### 2. Validate and inspect it
 
 ```bash
-git clone https://github.com/yscale-sh/idp.git
-cd idp
-make build
-./idpctl validate --file examples/carshowdb/deploy.yaml
-./idpctl plan --env dev --file examples/carshowdb/deploy.yaml \
-  --image ghcr.io/your-org/carshowdb-api:dev-example
-./idpctl render --env dev --file examples/carshowdb/deploy.yaml \
-  --image ghcr.io/your-org/carshowdb-api:dev-example
+./idpctl validate --file myapp/deploy.yaml
+./idpctl plan \
+  --env dev \
+  --file myapp/deploy.yaml \
+  --image ghcr.io/your-org/myapp:abc1234
 ```
 
-## Bootstrap into an existing cluster
+`validate` checks the app manifest. `plan` applies environment policy and prints the desired state
+without changing Git or Kubernetes.
 
-1. Fork this repository.
-2. Edit `idp.yaml` with your registry prefix and fork URL.
-3. Run `idpctl init --env <env>` and configure `environments/<env>/cluster.yaml`.
-4. Install the Flux Operator and controllers in your cluster.
-5. Point `clusters/<env>/flux-instance.yaml` at your fork and branch.
-6. Configure only the SecretStores, modules, storage, routes, and provider integrations you use.
-7. Apply the Flux bootstrap resource once. Flux is the only ongoing writer.
-8. Render an application, commit `clusters/<env>/platform.yaml`, and push the environment branch.
-
-Do not use `kubectl apply` or `helm upgrade` for application deployments. Commit desired state and
-let Flux reconcile it.
-
-## Common commands
+### 3. Install it
 
 ```bash
-idpctl init --env dev
-idpctl validate --file deploy.yaml
-idpctl plan --env dev --file deploy.yaml --image <image:tag>
-idpctl render --env dev --file deploy.yaml --image <image:tag>
-idpctl promote <app> prod --from dev --file deploy.yaml
-idpctl remove --env dev --app <app>
-idpctl infra render --env dev
+./idpctl render \
+  --env dev \
+  --file myapp/deploy.yaml \
+  --image ghcr.io/your-org/myapp:abc1234
+
+git add clusters/dev/platform.yaml
+git commit -m "app: install myapp abc1234"
+git push
+```
+
+Flux reconciles the app. JDP derives the namespace, Deployment, ClusterIP Service, probes, resource
+limits, secret references, store wiring, routes, and optional autoscaling.
+
+Do not deploy apps with `kubectl apply` or `helm upgrade`. Change the app manifest or environment,
+render it, commit it, and let Flux reconcile it.
+
+## App manifest fields
+
+| Field | Meaning |
+|---|---|
+| `app`, `component` | Product and optional component identity. |
+| `runtime` | Image repository and listening port. Port `0` creates a worker without a Service. |
+| `routes` | Hostnames, exposure, and access policy. |
+| `probes` | HTTP, TCP, or disabled health checks. |
+| `sizing` | Resource profile, replica count, and autoscaling. |
+| `db`, `cache` | PostgreSQL and Redis requirements. |
+| `secrets` | Secret key names the app expects. Values remain outside Git. |
+| `env` | Non-secret application configuration committed to Git. |
+| `volumes` | PVC, NFS, Secret, and temporary mounts. |
+| `connectsTo` | Addresses and credentials for app-to-app connections. |
+| `build` | Image build context, Dockerfile, and submodule requirements. |
+| `components` | Several workloads described by one app manifest. |
+
+## Multi-component apps
+
+One app manifest can install an API, UI, worker, and router as one product:
+
+```yaml
+app: suite
+runtime:
+  image: ghcr.io/your-org/suite-api
+  port: 8080
+components:
+  - component: api
+    db: [{ name: primary, type: postgres }]
+  - component: worker
+    port: 0
+  - component: ui
+    runtime: { image: ghcr.io/your-org/suite-ui, port: 80 }
+  - component: router
+    runtime: { image: ghcr.io/your-org/suite-router, port: 80 }
+    routes: [{ host: suite, public: true }]
+```
+
+The router is the single public front component. Sibling components communicate through generated
+in-cluster service addresses.
+
+## Secrets and keys
+
+Local `validate`, `plan`, `render`, and `catalog` commands require no provider credentials.
+Credentials are needed only for enabled services.
+
+| Key or Secret | Used by |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` or `CF_API_TOKEN` | Cloudflare DNS, Tunnel, and Access operations. |
+| `CLOUDFLARE_ACCOUNT_ID` or `CF_ACCOUNT_ID` | Cloudflare tunnel account selection. |
+| `CLOUDFLARE_ZONE_ID` or `CF_ZONE_ID` | Cloudflare DNS zone selection. |
+| `GITHUB_TOKEN` or shipper `gitToken` | Reading app repositories and pushing the platform repository. |
+| Registry pull `dockerconfigjson` | Pulling private app images. |
+| Registry push `dockerconfigjson` | Optional in-cluster image builds. |
+| AWS workload identity or credentials | Reading SSM through External Secrets. |
+| `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | Service-to-service calls protected by Cloudflare Access. |
+| `TUNNEL_TOKEN` | Generated and reconciled by tunnel automation. Never commit it. |
+| `DATABASE_URL`, `PRIMARY_DATABASE_URL` | Supplied by the selected PostgreSQL implementation or secret backend. |
+| `REDIS_URL` | Supplied by the selected Redis implementation or secret backend. |
+
+App-specific credentials are declared by name in `secrets[]`. Store their values in the configured
+secret backend under `/apps/<app>/<env>/<KEY>` or an explicitly shared group.
+
+## Update, promote, and remove apps
+
+```bash
+# Update an installed app.
+idpctl render --env dev --file deploy.yaml --image ghcr.io/your-org/myapp:def5678
+
+# Install the same artifact in another environment.
+idpctl promote myapp prod --from dev --file deploy.yaml
+
+# Uninstall an app or one component.
+idpctl remove --env dev --app myapp
+idpctl remove --env dev --app suite --component worker
+```
+
+Promotion is digest-forward: it installs the artifact selected in the source environment without
+rebuilding it. Production rejects mutable tags. Rollback is a Git revert.
+
+## Inspect the system
+
+```bash
+# Installed apps from committed desired state.
+idpctl catalog --env dev
 idpctl catalog --all --out-dir public
+
+# Check whether the cluster provides the capabilities declared by the environment.
 idpctl doctor --env dev
+
+# Reconcile optional Cloudflare resources.
 idpctl dns sync --env prod
 idpctl tunnel up --env prod --file deploy.yaml
 ```
 
-## Environment and promotion model
+## Files on disk
 
-Environment behavior is data in `environments/<env>/cluster.yaml`: Flux branch, route zones,
-secret backend, enabled modules, resource bounds, and supported seams. Promotion reads the image
-already selected in a source environment and renders the same artifact for the target environment.
-It never rebuilds the image.
-
-Production rejects mutable tags. Rollback is a Git revert of the desired-state commit.
-
-## Repository layout
-
-| Path | Purpose |
+| Path | Role |
 |---|---|
-| `cmd/idpctl`, `internal/` | CLI and render, policy, catalog, provider, and cluster logic. |
-| `cmd/idp-shipper` | Optional in-cluster build and delivery automation. |
-| `schemas/deploy.schema.json` | Machine-readable application contract. |
-| `charts/app` | Shared application chart. |
-| `charts/cluster` | Environment umbrella chart. |
-| `charts/infra`, `modules/` | Optional platform modules and their registry. |
-| `environments/` | Reference environment inputs. |
-| `clusters/` | Flux bootstrap skeletons; `platform.yaml` is generated per operational fork. |
-| `examples/` | Generic application contracts. |
-| `docs/` | Architecture, environments, secrets, CLI, and operating guides. |
+| `idp.yaml` | Platform identity and registry. |
+| `environments/<env>/cluster.yaml` | System profile for an environment. |
+| `clusters/<env>/flux-instance.yaml` | Flux bootstrap for that environment. |
+| `clusters/<env>/platform.yaml` | Generated installed app and module set. |
+| `deploy.yaml` | One app manifest. |
+| `charts/app` | Standard implementation for apps. |
+| `charts/cluster` | Expands the installed app set into isolated HelmReleases. |
+| `charts/infra`, `modules/registry.yaml` | Optional system services. |
+| `cmd/idpctl`, `internal/` | CLI and platform implementation. |
+| `cmd/idp-shipper` | Optional automatic build and install loop. |
+| `schemas/deploy.schema.json` | App manifest schema. |
 
-## Security rules
+## Safety rules
 
-- Never commit credentials, provider exports, `.env` files, kubeconfigs, or rendered Secrets.
-- Keep generated operational `clusters/*/platform.yaml` in the deployment fork, not this reference repository.
-- Prefer workload identity and narrowly scoped tokens.
-- Treat Git write credentials and registry push credentials as privileged.
-- Review the rendered plan before committing changes to an environment branch.
-
-See [SECURITY.md](SECURITY.md), [docs/SECRETS.md](docs/SECRETS.md), and
-[docs/USAGE.md](docs/USAGE.md).
+- Git contains desired state and secret names, never secret values.
+- Use immutable image tags or digests outside development.
+- Give provider tokens only the permissions required by enabled services.
+- Keep registry push and Git write credentials away from application containers.
+- Review `idpctl plan` before changing an environment.
+- Roll back by reverting the Git commit.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CONVENTIONS.md](CONVENTIONS.md). Pull requests must not
-contain live endpoints, private topology, credentials, or rendered operational state.
+Issues and pull requests are welcome. Changes must preserve the app manifest contract and must not
+include credentials, private endpoints, personal infrastructure, or generated operational state.
 
 ## License
 

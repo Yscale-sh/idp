@@ -36,7 +36,7 @@ type Spec struct {
 	Image      string   // fully-qualified target image repo:tag to push
 	Context    string   // build context subdir relative to repo root ("." for root)
 	Dockerfile string   // Dockerfile name within the context (default "Dockerfile")
-	Submodules []string // private submodules to init before building (shopping-list-driven)
+	Submodules []string // private submodules to init before building (app-manifest-driven)
 	Namespace  string   // image-builder namespace (defaults to "image-builder")
 }
 

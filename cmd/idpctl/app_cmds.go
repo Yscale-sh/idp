@@ -211,7 +211,7 @@ func resolveImage(image string, a appconfig.App, multi bool) string {
 }
 
 // componentErr prefixes an error with the component name (for multi-component
-// shopping lists) so a failure points at the offending part, not just the app.
+// app manifests) so a failure points at the offending part, not just the app.
 func componentErr(a appconfig.App, err error) error {
 	if a.Component != "" {
 		return fmt.Errorf("component %q: %w", a.Component, err)

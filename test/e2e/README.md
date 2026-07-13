@@ -7,7 +7,7 @@ HelmRelease that installs `charts/cluster`, which fans out one HelmRelease per a
 its Postgres and each enabled module), proves the workloads, and **always tears the
 cluster down**.
 
-The platform's contract is the per-app `deploy.yaml` shopping list: a developer declares
+The platform's contract is the per-app `deploy.yaml` app manifest: a developer declares
 a small app contract and the platform derives every Kubernetes object from it. This test
 exercises that derivation end to end. It proves the **post-ArgoCD Flux platform** actually
 reconciles on a real cluster, which the layer unit/golden tests cannot cover, and answers

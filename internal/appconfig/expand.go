@@ -2,7 +2,7 @@ package appconfig
 
 // Expand turns a multi-component App (App.Components non-empty) into one full App
 // per component — each the shared base merged with that component's deltas — so a
-// single shopping list authors a whole product. A plain single-component App (no
+// single app manifest authors a whole product. A plain single-component App (no
 // Components) returns just itself, so every caller can uniformly
 // `for _, a := range app.Expand()`. See Component for the merge rules.
 //

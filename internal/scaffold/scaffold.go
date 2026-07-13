@@ -1,5 +1,5 @@
 // Package scaffold generates starter files for onboarding a new app: a minimal
-// deploy.yaml (the developer shopping list). Output is deterministic and
+// deploy.yaml (the developer app manifest). Output is deterministic and
 // OSS-clean (no secrets).
 //
 // The image registry prefix is REQUIRED input (from idp.yaml or --registry):
@@ -81,7 +81,7 @@ func render(tmpl string, o Options) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-const deployTmpl = `# {{.Name}} — deploy.yaml (developer shopping list).
+const deployTmpl = `# {{.Name}} — deploy.yaml (developer app manifest).
 # Render:  idpctl render --env dev --file deploy.yaml --image {{.Registry}}/{{.Name}}:<tag>
 # Ship:    register this app in the idp-shipper registry; every push to the
 #          watched branch then builds, renders, and deploys it automatically.

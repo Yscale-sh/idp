@@ -18,7 +18,7 @@ registry:
   platformBranch: main
   platformRoot: /platform
   intervalSeconds: 45
-  # Apps to ship: where each app's deploy.yaml shopping lists live. Build detail
+  # Apps to ship: where each app's deploy.yaml app manifests live. Build detail
   # (context/dockerfile/submodules) stays in each deploy.yaml `build:` block.
   # - name: my-app
   #   repo: my-org/my-app

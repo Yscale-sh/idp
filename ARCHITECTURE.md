@@ -1,7 +1,6 @@
 # Architecture
 
-Jakes Developer Platform is an application delivery layer for an existing Kubernetes cluster. It
-starts at the application contract and ends at reconciled Kubernetes resources. Cluster creation,
+Jakes Developer Platform treats an existing Kubernetes cluster as the machine and each `deploy.yaml` as an installable app. It provides the system layer that validates, configures, installs, updates, and removes those apps. Cluster creation,
 node management, networking, and provider infrastructure stay outside its boundary.
 
 ## Logical flow

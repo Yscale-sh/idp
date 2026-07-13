@@ -2,7 +2,7 @@
 
 This is the **Yscale IDP** platform. You describe your app in ONE `deploy.yaml` and the platform
 derives all the Kubernetes for you: it builds the image, wires secrets, DBs, cache, and
-routing, then ships it via GitOps (Flux). The `deploy.yaml` shopping list IS the product:
+routing, then ships it via GitOps (Flux). The `deploy.yaml` app manifest IS the product:
 you declare a small app contract (app, runtime, routes, sizing, db, cache, volumes,
 connectsTo) and the platform produces the namespaces, Deployment, ClusterIP Service, secret
 refs, env vars, probes, resource limits, autoscaling, and observability. **You never write a
@@ -10,7 +10,7 @@ Deployment, Service, or LoadBalancer.** This file is the fast path. Deeper docs 
 the end.
 
 > **Bundled agent skill.** This repo ships `.claude/skills/idp/SKILL.md`, which Claude Code
-> auto-loads in any session here. It covers the idpctl command surface, the shopping-list
+> auto-loads in any session here. It covers the idpctl command surface, the app-manifest
 > contract, the dev and prod lifecycle, and the fail-closed rails. Read it before running idpctl.
 
 ## The model in one breath
@@ -129,7 +129,7 @@ The in-cluster **idp-shipper** realizes "push to your branch, it deploys." It is
 infra-owned, in-cluster, and enabled per environment (dev and prod each run their own instance;
 prod commits the `prod` branch). Per registered app, every interval it reads the GitHub
 head SHA for the app's repo and branch; if it changed, it derives the build set from the
-shopping lists (deduped by image), builds only the images whose inputs
+app manifests (deduped by image), builds only the images whose inputs
 (`build.context`/`dockerfile`/`submodules`) changed via the in-cluster image-builder, renders
 each component into `clusters/dev/platform.yaml` using idpctl's render core, then commits and
 pushes the platform branch (`main`). Flux reconciles. Unchanged images reuse the tag already

@@ -1,5 +1,5 @@
 // Package appconfig defines the deploy.yaml contract: the small "developer
-// shopping list" a repo submits to platformctl. These types are the load-bearing
+// app manifest" a repo submits to platformctl. These types are the load-bearing
 // interface every other package (render, policy, secrets, scaffold) implements
 // against, so they are deliberately minimal, stable, and dependency-free.
 //
@@ -47,7 +47,7 @@ type App struct {
 	// Build describes HOW the platform builds this component's image — the build
 	// context subdir, the Dockerfile name, and any private submodules to init
 	// (e.g. a vendored transcoder). Optional; defaults to context ".", Dockerfile
-	// "Dockerfile", no submodules. It lives in the shopping list so a developer
+	// "Dockerfile", no submodules. It lives in the app manifest so a developer
 	// self-serves bundling (and new components) with NO platform/registry change.
 	Build BuildConfig `json:"build,omitempty" yaml:"build,omitempty"`
 
@@ -109,7 +109,7 @@ type App struct {
 	// reaching an out-of-cluster DB). Most apps leave this false once in-cluster.
 	TailscaleEgress bool `json:"tailscaleEgress,omitempty" yaml:"tailscaleEgress,omitempty"`
 
-	// Components turns this file into a MULTI-COMPONENT app: one shopping list for
+	// Components turns this file into a MULTI-COMPONENT app: one app manifest for
 	// a whole product (api + scanner + ui + …) instead of one file per component.
 	// Everything above is the shared BASE (app/product, image, build, db/cache/
 	// storage, volumes, env, …); each Component carries only its deltas. Expand()
@@ -185,7 +185,7 @@ type Runtime struct {
 }
 
 // BuildConfig is the developer-declared "how to build me" for a component. All
-// fields are optional with sane defaults, so most shopping lists omit it.
+// fields are optional with sane defaults, so most app manifests omit it.
 type BuildConfig struct {
 	// Context is the build context subdir relative to the repo root. Default ".".
 	Context string `json:"context,omitempty" yaml:"context,omitempty"`

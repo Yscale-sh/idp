@@ -7,7 +7,7 @@ command surface, package layout, and app contract are described against the real
 ## Goal
 
 Build deployment around a versioned Go CLI instead of shell scripts. The product is the per-app
-`deploy.yaml` shopping list. A developer declares a small app contract (app, runtime, routes, sizing,
+`deploy.yaml` app manifest. A developer declares a small app contract (app, runtime, routes, sizing,
 db, cache, storage, connectsTo, ...) and the platform derives every Kubernetes object from it:
 namespaces, Deployment, ClusterIP Service, secret refs, env vars (`DATABASE_URL`, `REDIS_URL`, ...),
 probes, resource limits, autoscaling, and observability. The developer never writes a Deployment, a
@@ -184,7 +184,7 @@ Dev realizes "push to your branch, it deploys." The in-cluster `idp-shipper` (`c
 infra-owned, in-cluster, and enabled per environment (dev's instance uses `registry.env=dev`). Per registered app, every interval it:
 
 1. reads the GitHub head SHA for the app's repo and branch;
-2. if the SHA changed, derives the build set from the shopping lists (dedup by image);
+2. if the SHA changed, derives the build set from the app manifests (dedup by image);
 3. builds ONLY images whose inputs (`build.context` / `build.dockerfile` / `build.submodules`)
    changed, via the in-cluster image-builder (rootless BuildKit to GHCR, tag `<image>:<short-sha>`);
    unchanged images reuse the tag already pinned in the umbrella;
@@ -245,7 +245,7 @@ false`).
 
 ## App contract
 
-The app contract is the product. It reads like a developer shopping list, not like Kubernetes. A
+The app contract is the product. It reads like a developer app manifest, not like Kubernetes. A
 developer says what the app needs; the platform decides how to wire it. The schema lives at
 `schemas/deploy.schema.json`; `app` and `runtime` are the only required fields.
 
@@ -302,7 +302,7 @@ runtime behavior, not Kubernetes resources and not a mutable build artifact.
 
 ### Multi-component apps (one file, many parts)
 
-A product that ships several workloads (api + scanner + ui ...) declares them in ONE shopping list
+A product that ships several workloads (api + scanner + ui ...) declares them in ONE app manifest
 via `components:`, instead of one file per part. The top level is the shared **base**; each
 component carries only its deltas:
 

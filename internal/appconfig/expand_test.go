@@ -2,7 +2,7 @@ package appconfig
 
 import "testing"
 
-// A plain shopping list (no components:) expands to just itself — the backward-
+// A plain app manifest (no components:) expands to just itself — the backward-
 // compatible path every existing single-component file takes.
 func TestExpand_SingleComponentIsIdentity(t *testing.T) {
 	a := App{App: "x", Runtime: Runtime{Image: "img", Port: 8080}}
