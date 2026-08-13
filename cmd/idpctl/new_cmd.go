@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/scaffold"
 	"github.com/yscale-sh/idp/internal/tenant"
-	"github.com/spf13/cobra"
 )
 
 func newNewCmd() *cobra.Command {

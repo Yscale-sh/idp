@@ -267,9 +267,9 @@ func TestImageTag(t *testing.T) {
 		"ghcr.io/yscale-sh/app:prod-abc": "prod-abc",
 		"ghcr.io/yscale-sh/app:latest":   "latest",
 		"ghcr.io/yscale-sh/app":          "",
-		"registry:5000/app:v1":            "v1",
-		"registry:5000/app":               "",
-		"app@sha256:deadbeef":             "sha256:deadbeef",
+		"registry:5000/app:v1":           "v1",
+		"registry:5000/app":              "",
+		"app@sha256:deadbeef":            "sha256:deadbeef",
 	}
 	for in, want := range cases {
 		if got := imageTag(in); got != want {

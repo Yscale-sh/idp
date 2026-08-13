@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/builder"
 	"github.com/yscale-sh/idp/internal/kube"
-	"github.com/spf13/cobra"
 )
 
 // build triggers the in-cluster image-builder to build + push a container image

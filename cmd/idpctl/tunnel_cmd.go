@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clouddns"
-	"github.com/spf13/cobra"
 )
 
 // newTunnelCmd is the AUTO-REGISTRATION command: from just the app's deploy.yaml
