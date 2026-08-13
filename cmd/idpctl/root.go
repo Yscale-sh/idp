@@ -37,6 +37,7 @@ idpctl never runs helm/kubectl against the cluster on the default path.`,
 		newRemoveCmd(),
 		newDNSCmd(),
 		newTunnelCmd(),
+		newSecretsCmd(),
 		newInfraCmd(),
 		newNewCmd(),
 	)

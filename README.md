@@ -163,7 +163,8 @@ git push
 ```
 
 Flux reconciles the app. JDP derives the namespace, Deployment, ClusterIP Service, probes, resource
-limits, secret references, store wiring, routes, and optional autoscaling.
+limits, real variable wiring, secret references, provisioned stores, opt-in managed buckets,
+routes, and optional autoscaling.
 
 Do not deploy apps with `kubectl apply` or `helm upgrade`. Change the app manifest or environment,
 render it, commit it, and let Flux reconcile it.
@@ -178,6 +179,7 @@ render it, commit it, and let Flux reconcile it.
 | `probes` | HTTP, TCP, or disabled health checks. |
 | `sizing` | Resource profile, replica count, and autoscaling. |
 | `db`, `cache` | PostgreSQL and Redis requirements. |
+| `storage` | Existing R2/S3 buckets, or opt-in retained Crossplane bucket provisioning. |
 | `secrets` | Secret key names the app expects. Values remain outside Git. |
 | `env` | Non-secret application configuration committed to Git. |
 | `volumes` | PVC, NFS, Secret, and temporary mounts. |

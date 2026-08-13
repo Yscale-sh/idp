@@ -198,6 +198,12 @@
           },
           "public": {
             "type": "boolean",
+            "description": "Reserved for provider-specific public policy provisioning; true is currently rejected.",
+            "default": false
+          },
+          "provision": {
+            "type": "boolean",
+            "description": "Create the bucket through the environment's Crossplane storage profile. Defaults false for existing-bucket compatibility.",
             "default": false
           }
         }

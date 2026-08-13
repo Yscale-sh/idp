@@ -344,9 +344,18 @@ type Storage struct {
 	// Bucket is the bucket name.
 	Bucket string `json:"bucket,omitempty" yaml:"bucket,omitempty"`
 
-	// Public marks the bucket as publicly readable (drives URL/base config).
+	// Public is reserved for future bucket-policy provisioning. Validation rejects
+	// true until the platform can create the provider-specific public policy.
 	Public bool `json:"public,omitempty" yaml:"public,omitempty"`
+
+	// Provision controls whether the platform STANDS UP this bucket. Default false
+	// for backward compatibility with existing externally-created buckets. Set true
+	// to create a Crossplane managed resource through the environment profile.
+	Provision *bool `json:"provision,omitempty" yaml:"provision,omitempty"`
 }
+
+// Provisioned reports whether this bucket should be stood up by the platform.
+func (s Storage) Provisioned() bool { return s.Provision != nil && *s.Provision }
 
 // Volume is one extra pod volume plus where it mounts. Type selects the source:
 //

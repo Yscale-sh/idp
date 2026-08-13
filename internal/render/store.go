@@ -1,6 +1,8 @@
 package render
 
 import (
+	"fmt"
+
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clusterenv"
 )
@@ -38,7 +40,7 @@ type StoreRelease struct {
 // external/managed and DATABASE_URL comes from SSM — so this returns nil.
 // Redis dev provisioning lands here too once a dev-redis chart exists.
 func BuildStoreReleases(app appconfig.App, env string, c *clusterenv.Config) []StoreRelease {
-	if !isLocalBackend(c) {
+	if c != nil && !c.EffectiveSeams().StatefulStores {
 		return nil
 	}
 	var out []StoreRelease
@@ -215,4 +217,83 @@ func storeLabels(app, env, tool string) map[string]string {
 		"platform/component":         tool,
 		"platform/managed-by":        "platformctl",
 	}
+}
+
+// ManagedResource remains unstructured so provider-specific fields survive an
+// unrelated app's umbrella read/modify/write cycle.
+type ManagedResource map[string]any
+
+// BuildBuckets renders Crossplane managed resources for explicitly provisioned
+// object storage. It is deterministic and performs no cloud or Kubernetes writes.
+func BuildBuckets(app appconfig.App, env string, c *clusterenv.Config) ([]ManagedResource, error) {
+	var out []ManagedResource
+	for _, storage := range app.Storage {
+		if !storage.Provisioned() {
+			continue
+		}
+
+		var profile clusterenv.StorageProfile
+		var ok bool
+		if c != nil {
+			profile, ok = c.StorageProfiles[storage.Type]
+		}
+		if !ok {
+			return nil, fmt.Errorf("app %q requests storage bucket %q (type %q) with provision=true, but env %q has no storage profile for that type", app.App, storage.Name, storage.Type, env)
+		}
+		if storage.Public {
+			return nil, fmt.Errorf("app %q requests public storage bucket %q, but public bucket policy provisioning is not supported; use public=false or provision=false", app.App, storage.Name)
+		}
+
+		name := appconfig.SanitizeDNSLabel(app.App + "-" + env + "-" + storage.Name)
+		physicalName := StorageBucketName(app, env, storage)
+		forProvider := make(map[string]any, len(profile.ForProvider)+1)
+		for key, value := range profile.ForProvider {
+			forProvider[key] = value
+		}
+		if profile.BucketNameField != "" {
+			forProvider[profile.BucketNameField] = physicalName
+		}
+
+		metadata := map[string]any{
+			"name": name,
+			"annotations": map[string]string{
+				"crossplane.io/external-name": physicalName,
+			},
+			"labels": map[string]string{
+				"app.kubernetes.io/name":     name,
+				"app.kubernetes.io/instance": name,
+				"platform/app":               app.App,
+				"platform/env":               env,
+				"platform/component":         "storage",
+				"platform/managed-by":        "platformctl",
+			},
+		}
+		if profile.Namespace != "" {
+			metadata["namespace"] = profile.Namespace
+		}
+		providerConfigRef := map[string]any{"name": profile.ProviderConfigRef.Name}
+		if profile.ProviderConfigRef.Kind != "" {
+			providerConfigRef["kind"] = profile.ProviderConfigRef.Kind
+		}
+		out = append(out, ManagedResource{
+			"apiVersion": profile.APIVersion,
+			"kind":       profile.Kind,
+			"metadata":   metadata,
+			"spec": map[string]any{
+				"providerConfigRef":  providerConfigRef,
+				"managementPolicies": []string{"Create", "Observe", "Update", "LateInitialize"},
+				"forProvider":        forProvider,
+			},
+		})
+	}
+	return out, nil
+}
+
+// StorageBucketName resolves the physical bucket name shared by the managed
+// resource and the application's non-secret <NAME>_BUCKET variable.
+func StorageBucketName(app appconfig.App, env string, storage appconfig.Storage) string {
+	if storage.Bucket != "" {
+		return storage.Bucket
+	}
+	return appconfig.SanitizeDNSLabel(app.App + "-" + env + "-" + storage.Name)
 }

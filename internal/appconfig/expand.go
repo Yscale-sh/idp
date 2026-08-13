@@ -17,6 +17,7 @@ func (a App) Expand() []App {
 	}
 	seenDB := map[string]bool{}
 	seenCache := map[string]bool{}
+	seenStorage := map[string]bool{}
 	out := make([]App, 0, len(a.Components))
 	for _, c := range a.Components {
 		m := a // value copy of the shared base
@@ -75,8 +76,29 @@ func (a App) Expand() []App {
 		// App-level stores: first user provisions, the rest share.
 		m.DB = provisionOnce(m.DB, seenDB)
 		m.Cache = provisionOnce(m.Cache, seenCache)
+		m.Storage = provisionStorageOnce(m.Storage, seenStorage)
 
 		out = append(out, m)
+	}
+	return out
+}
+
+// provisionStorageOnce applies the same app-level ownership rule to buckets as
+// provisionOnce applies to data stores. Only an explicitly provisioned first
+// occurrence creates the managed resource; sibling components only consume it.
+func provisionStorageOnce(storage []Storage, seen map[string]bool) []Storage {
+	if storage == nil {
+		return nil
+	}
+	out := make([]Storage, len(storage))
+	for i, s := range storage {
+		if seen[s.Name] {
+			no := false
+			s.Provision = &no
+		} else {
+			seen[s.Name] = true
+		}
+		out[i] = s
 	}
 	return out
 }

@@ -99,6 +99,33 @@ type Config struct {
 
 	// Modules is the platform module registry for this env.
 	Modules map[string]Module `json:"modules,omitempty"`
+
+	// StorageProfiles configures Crossplane provisioning profiles for object
+	// storage, keyed by deploy.yaml storage type (r2 or s3).
+	StorageProfiles map[string]StorageProfile `json:"storageProfiles,omitempty"`
+}
+
+// StorageProfile configures one Crossplane Bucket provider without leaking
+// provider-specific fields into application manifests.
+type StorageProfile struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	// Namespace is required by modern Crossplane v2 namespaced resources. Leave
+	// empty only for a provider whose Bucket kind is cluster-scoped.
+	Namespace string `json:"namespace,omitempty"`
+	// BucketNameField receives the physical name under spec.forProvider. Leave it
+	// empty for providers that use crossplane.io/external-name alone.
+	BucketNameField string `json:"bucketNameField,omitempty"`
+	// Endpoint is non-secret S3-compatible configuration injected into the app.
+	Endpoint          string                  `json:"endpoint,omitempty"`
+	ProviderConfigRef ProviderConfigReference `json:"providerConfigRef"`
+	ForProvider       map[string]any          `json:"forProvider,omitempty"`
+}
+
+// ProviderConfigReference selects the provider credentials used by Crossplane.
+type ProviderConfigReference struct {
+	Name string `json:"name"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // Seams declares the platform capabilities ("seams" — the interfaces apps
@@ -139,8 +166,8 @@ type ResolvedSeams struct {
 // EffectiveSeams resolves the declared Seams against derivation defaults so
 // callers (policy, doctor) get concrete booleans. Derivation: PublicRoutes
 // follows whether zones are declared; Autoscale follows the keda module;
-// StatefulStores / LANExpose / Volumes default true (the historical behavior —
-// envs opt OUT to tighten, e.g. prod).
+// StatefulStores follows the secrets backend (local=true, SSM=false) while
+// LANExpose / Volumes default true.
 func (c *Config) EffectiveSeams() ResolvedSeams {
 	kedaOn := false
 	if m, ok := c.Modules["keda"]; ok && m.Enabled {
@@ -157,7 +184,7 @@ func (c *Config) EffectiveSeams() ResolvedSeams {
 		s = &Seams{}
 	}
 	return ResolvedSeams{
-		StatefulStores: pick(s.StatefulStores, true),
+		StatefulStores: pick(s.StatefulStores, c.Secrets.Backend != BackendSSM),
 		LANExpose:      pick(s.LANExpose, true),
 		Tunnel:         pick(s.Tunnel, c.Secrets.Backend == BackendSSM),
 		PublicRoutes:   pick(s.PublicRoutes, len(c.Zones) > 0),
@@ -441,6 +468,23 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("module %q: source %q must be %q or %q", name, m.Source, SourceLocalChart, SourceChartRepo)
 		}
 	}
+	for storageType, profile := range c.StorageProfiles {
+		if storageType != "r2" && storageType != "s3" {
+			return fmt.Errorf("storageProfiles key %q must be %q or %q", storageType, "r2", "s3")
+		}
+		if profile.APIVersion == "" {
+			return fmt.Errorf("storageProfiles.%s.apiVersion is required", storageType)
+		}
+		if profile.Kind == "" {
+			return fmt.Errorf("storageProfiles.%s.kind is required", storageType)
+		}
+		if profile.ProviderConfigRef.Name == "" {
+			return fmt.Errorf("storageProfiles.%s.providerConfigRef.name is required", storageType)
+		}
+		if strings.Contains(profile.BucketNameField, ".") {
+			return fmt.Errorf("storageProfiles.%s.bucketNameField must be one top-level forProvider field", storageType)
+		}
+	}
 
 	// Seam coherence: an env may only DECLARE a seam it actually backs. (The
 	// resolver derives sensible defaults; these checks catch a declaration that
@@ -453,6 +497,9 @@ func (c *Config) Validate() error {
 		if m, ok := c.Modules["keda"]; !ok || !m.Enabled {
 			return fmt.Errorf("seams.autoscale is on but the keda module is not enabled — apps could request autoscaling with nothing to drive it")
 		}
+	}
+	if c.Secrets.Backend == BackendSSM && seams.StatefulStores {
+		return fmt.Errorf("seams.statefulStores cannot be on with secrets.backend=%q: the in-cluster store charts use the local credential path; use managed DATABASE_URL/REDIS_URL values from SSM", BackendSSM)
 	}
 	// Logs are a UNIVERSAL seam — every app logs, so lokiURL is required. OTLP
 	// (traces/metrics) is OPTIONAL: not every cluster runs a collector. Declare

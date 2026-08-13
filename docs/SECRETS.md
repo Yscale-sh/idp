@@ -18,6 +18,11 @@ A local environment may use a Kubernetes-provider SecretStore. A remote backend 
 be used when External Secrets and the required workload identity are configured. Backend names and
 provider accounts are environment configuration, never platform defaults.
 
+Use `idpctl secrets plan -f deploy.yaml --env <env>` to list the exact backend paths and missing
+parameters. `idpctl secrets create --from-env KEY` writes only declared keys, uses encrypted SSM
+SecureStrings by default, and never prints secret values. Existing parameters are not overwritten
+without the explicit `--overwrite` flag.
+
 ## Store credentials
 
 A PostgreSQL store named `primary` exposes both `DATABASE_URL` and `PRIMARY_DATABASE_URL`. A Redis
@@ -29,6 +34,10 @@ or the configured backend may supply them. Applications declare the expected key
 Cloudflare, GitHub, registry, object-storage, and tailnet credentials are required only by their
 optional integrations. Scope each token to the smallest useful account, repository, zone, or action.
 Do not reuse platform write credentials as application credentials.
+
+An explicit `storage[].provision: true` emits a retained Crossplane Bucket resource. The bucket name
+and configured endpoint are injected as non-secret variables. Access keys remain in the runtime
+Secret; the provider's own credentials stay behind its ProviderConfig reference and never enter Git.
 
 `TUNNEL_TOKEN` is retrieved and reconciled by tunnel automation when enabled. Access service tokens
 use `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`. Neither belongs in Git.

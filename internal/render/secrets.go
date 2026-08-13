@@ -73,6 +73,18 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 			RemoteRef: map[string]string{"key": ref.RemoteKey},
 		})
 	}
+	// R2 storage credentials are platform-owned and stored once under the shared
+	// Cloudflare group. Bucket names/endpoints are non-secret rendered config.
+	for _, storage := range app.Storage {
+		if storage.Type != "" && storage.Type != appconfig.DefaultStorageType {
+			continue
+		}
+		prefix := appconfig.EnvPrefix(storage.Name)
+		ev.RemoteRefs = append(ev.RemoteRefs,
+			RemoteRefValues{SecretKey: prefix + "_ACCESS_KEY_ID", RemoteRef: map[string]string{"key": sharedR2AccessKeyID}},
+			RemoteRefValues{SecretKey: prefix + "_SECRET_ACCESS_KEY", RemoteRef: map[string]string{"key": sharedR2SecretAccessKey}},
+		)
+	}
 	// An app with CF-eligible public routes in a tunnel env runs the cloudflared
 	// sidecar, whose TUNNEL_TOKEN is a per-app, PLATFORM-provisioned secret (the
 	// developer never puts it in deploy.yaml). Pin it EXPLICITLY so the dependency
@@ -109,6 +121,11 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 // tailscaleEgress app pulls into its runtime Secret as TS_AUTHKEY (the on-prem
 // cluster already provisions it; same /shared/<group>/* convention as stripe etc.).
 const sharedTailscaleAuthKey = "/shared/tailscale/auth-key"
+
+const (
+	sharedR2AccessKeyID     = "/shared/cloudflare/r2-access-key-id"
+	sharedR2SecretAccessKey = "/shared/cloudflare/r2-secret-access-key"
+)
 
 func hasServiceToken(app appconfig.App) bool {
 	for _, r := range app.Routes {

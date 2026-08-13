@@ -198,6 +198,12 @@ func (a *App) Validate() error {
 		if s.Type != "" && !validStorageType[s.Type] {
 			add(field+".type", "must be one of "+keysOf(validStorageType))
 		}
+		if !s.Provisioned() && s.Bucket == "" {
+			add(field+".bucket", "is required unless provision is true")
+		}
+		if s.Public {
+			add(field+".public", "public bucket policy provisioning is not supported yet")
+		}
 	}
 
 	// metrics path.

@@ -36,6 +36,15 @@ type StoreEntry struct {
 	Values      any    `json:"values,omitempty"`
 }
 
+// BucketEntry is one isolated child HelmRelease that applies a single provider
+// resource through charts/infra/managed-resource. The raw map preserves unknown
+// provider-specific fields during umbrella round trips.
+type BucketEntry struct {
+	Namespace   string          `json:"namespace"`
+	ReleaseName string          `json:"releaseName"`
+	Resource    ManagedResource `json:"resource"`
+}
+
 // PostgresEntry is the LEGACY single-Postgres shape an older idpctl wrote. New
 // renders use Stores[] instead; this type is retained ONLY so reading and
 // re-writing a platform.yaml that still has a .postgres entry preserves it
@@ -54,12 +63,13 @@ type PostgresEntry struct {
 // collide. The umbrella chart templates an app HelmRelease (chart ./charts/app,
 // targetNamespace = Namespace) plus a HelmRelease per dedicated data store.
 type AppEntry struct {
-	Name        string       `json:"name"`
-	Namespace   string       `json:"namespace"`
-	ReleaseName string       `json:"releaseName"`
-	Component   string       `json:"component,omitempty"`
-	Values      any          `json:"values"`
-	Stores      []StoreEntry `json:"stores,omitempty"`
+	Name        string        `json:"name"`
+	Namespace   string        `json:"namespace"`
+	ReleaseName string        `json:"releaseName"`
+	Component   string        `json:"component,omitempty"`
+	Values      any           `json:"values"`
+	Stores      []StoreEntry  `json:"stores,omitempty"`
+	Buckets     []BucketEntry `json:"buckets,omitempty"`
 	// Postgres is the LEGACY single-store field. New renders leave it nil and use
 	// Stores; it is kept so an old entry round-trips (read+write) without losing its
 	// Postgres. Migrate an entry by re-rendering its app (moves it into Stores).
@@ -183,9 +193,19 @@ func ReadPlatform(root, env string, c *clusterenv.Config) (*PlatformRelease, err
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", p, err)
 	}
+	pr, err := ParsePlatform(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", p, err)
+	}
+	return pr, nil
+}
+
+// ParsePlatform parses an umbrella release while preserving unstructured
+// provider-managed resources nested under app bucket entries.
+func ParsePlatform(data []byte) (*PlatformRelease, error) {
 	var pr PlatformRelease
 	if err := yaml.Unmarshal(data, &pr); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", p, err)
+		return nil, err
 	}
 	if pr.Spec.Values.Apps == nil {
 		pr.Spec.Values.Apps = []AppEntry{}
@@ -241,6 +261,19 @@ func (r *Result) ToAppEntry() AppEntry {
 			ReleaseName: s.HelmRelease.Spec.ReleaseName,
 			Chart:       s.HelmRelease.Spec.Chart.Spec.Chart,
 			Values:      s.HelmRelease.Spec.Values,
+		})
+	}
+	for _, bucket := range r.Buckets {
+		metadata, _ := bucket["metadata"].(map[string]any)
+		name, _ := metadata["name"].(string)
+		namespace, _ := metadata["namespace"].(string)
+		if namespace == "" {
+			namespace = r.HelmRelease.Metadata.Namespace
+		}
+		e.Buckets = append(e.Buckets, BucketEntry{
+			Namespace:   namespace,
+			ReleaseName: appconfig.SanitizeDNSLabel(name + "-bucket"),
+			Resource:    bucket,
 		})
 	}
 	return e

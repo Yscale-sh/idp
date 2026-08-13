@@ -97,3 +97,14 @@ func StorageEnvKeys(app appconfig.App) []string {
 	}
 	return keys
 }
+
+// StorageSecretEnvKeys is the secret subset of StorageEnvKeys. Bucket names and
+// endpoints are ordinary rendered configuration; only credentials are secret.
+func StorageSecretEnvKeys(app appconfig.App) []string {
+	var keys []string
+	for _, storage := range app.Storage {
+		prefix := appconfig.EnvPrefix(storage.Name)
+		keys = append(keys, prefix+"_ACCESS_KEY_ID", prefix+"_SECRET_ACCESS_KEY")
+	}
+	return keys
+}

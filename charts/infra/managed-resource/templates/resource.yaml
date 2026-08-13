@@ -1,0 +1,2 @@
+{{- $resource := required "resource is required" .Values.resource -}}
+{{- toYaml $resource }}

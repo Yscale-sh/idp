@@ -125,6 +125,31 @@ func TestValidate_ModuleRules(t *testing.T) {
 	}
 }
 
+func TestValidate_StorageProfilesAndStoreBackend(t *testing.T) {
+	c := validConfig()
+	c.StorageProfiles = map[string]StorageProfile{
+		"r2": {
+			APIVersion: "r2.example.io/v1alpha1", Kind: "Bucket",
+			ProviderConfigRef: ProviderConfigReference{Name: "default", Kind: "ProviderConfig"},
+		},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid storage profile rejected: %v", err)
+	}
+	c.StorageProfiles["r2"] = StorageProfile{APIVersion: "r2.example.io/v1", Kind: "Bucket"}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "providerConfigRef.name") {
+		t.Fatalf("missing provider config accepted: %v", err)
+	}
+
+	c = validConfig()
+	c.Secrets.Backend = BackendSSM
+	on := true
+	c.Seams = &Seams{StatefulStores: &on}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "statefulStores") {
+		t.Fatalf("ssm-backed local stores accepted: %v", err)
+	}
+}
+
 func TestHostInZone(t *testing.T) {
 	c := &Config{Zones: []string{"carshowdb.local", "*.example.com"}}
 	cases := map[string]bool{

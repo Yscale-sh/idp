@@ -54,6 +54,7 @@ sizing:
 | `runtime.port` | the container port your server binds (`0` makes a worker: Deployment only, no Service or probes). |
 | `routes[]` | `{host, public, access}`. `host` is a bare label composed under the env zone, or a full FQDN. `public: true` -> Cloudflare Tunnel (prod) / MetalLB LAN LoadBalancer (dev). |
 | `db` / `cache` | `[{name, type: postgres\|redis}]` -> injects `DATABASE_URL` / `REDIS_URL` (from SSM in prod, in-cluster dev-postgres/dev-redis in dev). |
+| `storage[]` | Existing R2/S3 bucket wiring, or `provision: true` for a retained Crossplane-managed bucket through the environment profile. |
 | `secrets[]` | list of KEY names -> synced from SSM `/apps/<app>/<env>/<KEY>` into your env. Shared values live at `/shared/<group>/<KEY>`. |
 | `env{}` | plain non-secret config (committed; reserved keys are dropped). |
 | `probes` | `{path: /health}` (HTTP) or `{type: tcp}` (no HTTP health route) or `{type: none}`. A wrong path CrashLoops the pod. |
@@ -79,10 +80,15 @@ Your `runtime.image` is **tagless**. The platform builds and tags it:
 - Declare secret KEY names in `secrets:`, then seed the values in **SSM** at
   `/apps/<app>/<env>/<KEY>` (the platform syncs them via external-secrets). Shared creds live
   at `/shared/<group>/*`.
+- `idpctl secrets plan -f deploy.yaml --env prod` shows exact SSM paths and missing keys;
+  `idpctl secrets create --from-env KEY` writes only declared keys as encrypted SecureStrings.
 - `db: postgres` -> `DATABASE_URL` (plus `PRIMARY_DATABASE_URL`); `cache: redis` -> `REDIS_URL`.
   In prod these come from the SSM secrets backend (DATABASE_URL points at the in-cluster CNPG
   service; prod stays PVC-free by contract). In dev they're spun up in-cluster automatically.
   **Don't hardcode connection strings: declare the store.**
+- Existing buckets declare `bucket:` and omit `provision`. Set `provision: true` to create one;
+  the environment must have a matching `storageProfiles.<type>` Crossplane profile. Bucket names
+  and endpoints are plain config, credentials remain secret, and app removal retains bucket data.
 
 ## Multi-component apps (api + ui + worker)
 

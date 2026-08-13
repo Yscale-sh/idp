@@ -24,6 +24,8 @@ type Result struct {
 	// the dev per-app Postgres) rendered alongside the app, each into its OWN
 	// namespace. Empty in prod (external/managed stores).
 	StoreReleases []StoreRelease
+	// Buckets are provider-managed resources rendered as isolated child releases.
+	Buckets []ManagedResource
 	// Connections is the resolved connectsTo set (for the plan summary).
 	Connections []ResolvedConnection
 	// SecretKeys is the canonical list of secret-backed env keys the app needs.
@@ -48,10 +50,14 @@ func Render(app appconfig.App, env string, c *clusterenv.Config, image, deployTi
 	}
 	hr := BuildHelmRelease(app, env, c, values)
 	stores := BuildStoreReleases(app, env, c)
+	buckets, err := BuildBuckets(app, env, c)
+	if err != nil {
+		return nil, fmt.Errorf("build buckets: %w", err)
+	}
 
 	var secretKeys []string
 	secretKeys = append(secretKeys, DataStoreEnvKeys(app)...)
-	secretKeys = append(secretKeys, StorageEnvKeys(app)...)
+	secretKeys = append(secretKeys, StorageSecretEnvKeys(app)...)
 	secretKeys = append(secretKeys, app.Secrets...)
 
 	return &Result{
@@ -60,6 +66,7 @@ func Render(app appconfig.App, env string, c *clusterenv.Config, image, deployTi
 		Values:        values,
 		HelmRelease:   hr,
 		StoreReleases: stores,
+		Buckets:       buckets,
 		Connections:   conns,
 		SecretKeys:    secretKeys,
 	}, nil

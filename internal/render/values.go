@@ -362,7 +362,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 		ProvisionedClaims: claims,
 		Env: EnvValues{
 			TierA: TierAEnv(app, env, obs, deployTime),
-			Extra: buildAppEnv(app),
+			Extra: buildAppEnv(app, env, c),
 		},
 		ExternalSecret:        BuildExternalSecret(app, env, c),
 		Keda:                  buildKeda(app),
@@ -511,13 +511,22 @@ var reservedEnvKeys = map[string]bool{
 
 // buildAppEnv is the app's arbitrary NON-SECRET env (deploy.yaml env{}), minus any
 // platform-reserved key. connectsTo addresses are merged on top by BuildValues.
-func buildAppEnv(app appconfig.App) map[string]string {
+func buildAppEnv(app appconfig.App, env string, c *clusterenv.Config) map[string]string {
 	out := map[string]string{}
 	for k, v := range app.Env {
 		if reservedEnvKeys[k] {
 			continue
 		}
 		out[k] = v
+	}
+	for _, storage := range app.Storage {
+		prefix := appconfig.EnvPrefix(storage.Name)
+		out[prefix+"_BUCKET"] = StorageBucketName(app, env, storage)
+		if c != nil {
+			if profile, ok := c.StorageProfiles[storage.Type]; ok && profile.Endpoint != "" {
+				out[prefix+"_ENDPOINT"] = profile.Endpoint
+			}
+		}
 	}
 	return out
 }
@@ -768,7 +777,7 @@ func buildDevPlaceholders(app appconfig.App, c *clusterenv.Config) []SecretPlace
 	keys := make([]string, 0, len(devAppSecretKeys)+len(app.Storage)*4+len(app.Secrets))
 	keys = append(keys, devAppSecretKeys...)
 	// Object-storage credentials per declared bucket (Tier C storage convention).
-	keys = append(keys, StorageEnvKeys(app)...)
+	keys = append(keys, StorageSecretEnvKeys(app)...)
 	// App-declared extra secret keys (e.g. a bare AWS_ACCESS_KEY_ID an SDK wants).
 	keys = append(keys, app.Secrets...)
 

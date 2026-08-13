@@ -352,6 +352,37 @@ The names become stable handles inside the app. For example, `storage: uploads` 
 Another storage entry named `exports` can produce a separate `EXPORTS_*` set, even if it uses a
 different provider.
 
+Existing buckets remain the compatibility default: declare `bucket:` and omit `provision`. Set
+`provision: true` to create the bucket through the target environment's matching Crossplane
+`storageProfiles` entry. Render fails before changing Git when provisioning is requested without a
+provider profile. Managed buckets run in isolated child HelmReleases and exclude the Delete
+management policy, so app removal retains external data.
+
+```yaml
+storage:
+  - name: uploads
+    type: r2
+    provision: true                 # name defaults to <app>-<env>-uploads
+  - name: imports
+    type: r2
+    bucket: company-existing-imports
+```
+
+The operator configures provider details once per environment; credential values remain behind the
+Crossplane ProviderConfig reference:
+
+```yaml
+storageProfiles:
+  r2:
+    apiVersion: r2.example.io/v1alpha1
+    kind: Bucket
+    namespace: crossplane-system
+    bucketNameField: name
+    endpoint: https://ACCOUNT_ID.r2.cloudflarestorage.com
+    providerConfigRef: {name: default, kind: ProviderConfig}
+    forProvider: {accountId: NON_SECRET_ACCOUNT_ID}
+```
+
 Example mixed storage:
 
 ```yaml
@@ -359,7 +390,7 @@ storage:
   - name: publicAssets
     type: r2
     bucket: dummy-public-assets
-    public: true
+    public: false
   - name: privateUploads
     type: s3
     bucket: dummy-private-uploads
@@ -647,16 +678,14 @@ debug with normal Kubernetes/GitOps tools
 
 These are worth designing around, but not necessarily implementing in the first build.
 
-### Crossplane compatibility, not day-one Crossplane
+### Crossplane buckets now; managed stores later
 
-Do not start with Crossplane. It adds a lot of machinery and composition design work before the core
-platform contract has proven itself.
+Object-storage provisioning uses an environment-configured Crossplane provider now. Crossplane core,
+the provider package, its ProviderConfig, and credentials are operator-owned prerequisites.
 
-Still, keep the generated desired-state model compatible with it later. A future `storage: r2`,
-`db: postgres`, or `cache: redis` capability could render a Crossplane claim instead of bespoke
-provider-specific resources. Crossplane composite resources are relevant because they represent a
-set of created resources behind one Kubernetes API and carry ownership metadata that can help with
-cleanup.
+A future managed `db: postgres` or `cache: redis` capability can use the same isolated-resource seam.
+Today local environments render dedicated in-cluster Helm charts while SSM-backed environments use
+externally managed connection URLs.
 
 Source: https://docs.crossplane.io/latest/composition/composite-resources/
 

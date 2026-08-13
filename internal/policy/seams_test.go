@@ -105,6 +105,10 @@ func TestEffectiveSeams_Derivation(t *testing.T) {
 	if !s.StatefulStores || !s.LANExpose || !s.Volumes {
 		t.Error("statefulStores/lanExpose/volumes should default true")
 	}
+	ssm := &clusterenv.Config{Env: "cloud", Secrets: clusterenv.SecretsConfig{Backend: clusterenv.BackendSSM}}
+	if ssm.EffectiveSeams().StatefulStores {
+		t.Error("statefulStores should default false for an SSM-backed environment")
+	}
 	// zones + keda flip the derived ones on.
 	c2 := &clusterenv.Config{Env: "full", Zones: []string{"*.x"}, Modules: map[string]clusterenv.Module{"keda": {Enabled: true}}}
 	s2 := c2.EffectiveSeams()

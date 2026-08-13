@@ -82,6 +82,20 @@ func TestValidate_Table(t *testing.T) {
 			wantPart: "storage[0].type",
 		},
 		{
+			name:     "external storage needs bucket",
+			mutate:   func(a *App) { a.Storage = []Storage{{Name: "uploads", Type: "r2"}} },
+			wantErr:  true,
+			wantPart: "storage[0].bucket",
+		},
+		{
+			name: "provisioned storage derives bucket",
+			mutate: func(a *App) {
+				yes := true
+				a.Storage = []Storage{{Name: "uploads", Type: "r2", Provision: &yes}}
+			},
+			wantErr: false,
+		},
+		{
 			name:     "connectsTo missing target",
 			mutate:   func(a *App) { a.ConnectsTo = []Connection{{Env: "API_URL"}} },
 			wantErr:  true,
