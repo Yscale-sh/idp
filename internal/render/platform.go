@@ -40,9 +40,11 @@ type StoreEntry struct {
 // BucketEntry is one isolated child HelmRelease that creates a single
 // S3-compatible bucket through charts/infra/bucket-provisioner.
 type BucketEntry struct {
-	Namespace   string       `json:"namespace"`
-	ReleaseName string       `json:"releaseName"`
-	Values      BucketValues `json:"values"`
+	Namespace   string `json:"namespace"`
+	ReleaseName string `json:"releaseName"`
+	// Values stays untyped so an umbrella written by a newer idpctl keeps
+	// provider-neutral fields this version does not yet understand.
+	Values any `json:"values,omitempty"`
 
 	// Resource is the LEGACY Crossplane managed resource an older idpctl wrote
 	// here. It is parsed and retained so a read/modify/write of an umbrella that
@@ -269,10 +271,11 @@ func WritePlatform(root, env string, pr *PlatformRelease) (string, error) {
 			"clusters/%s/platform.yaml still has Crossplane-era bucket entries (%s): "+
 				"those `resource:` blocks are no longer rendered, and dropping them silently would "+
 				"orphan the provider objects they track. To migrate: confirm the buckets themselves "+
-				"exist at the endpoint, delete those `resource:` blocks from platform.yaml (and the "+
-				"provider's Bucket objects) by hand, then re-render each owning app "+
+				"exist at the endpoint, remove those `resource:` blocks from platform.yaml, then "+
+				"re-render each owning app "+
 				"(`idpctl render --env %s --file <deploy.yaml> --image <image>`) to recreate the "+
-				"entries as bucket-provisioner values. Every listed entry must be cleared before "+
+				"entries as bucket-provisioner values. Legacy provider objects are not deleted "+
+				"automatically. Every listed entry must be cleared before "+
 				"any render can write this file again",
 			env, strings.Join(stale, ", "), env)
 	}

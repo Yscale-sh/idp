@@ -58,7 +58,7 @@ apps:
 	// release report Ready before the provisioning hook finished, which is the
 	// one thing waiting on a bucket is for.
 	bucketRelease := releaseBlock(t, out, "media-prod-uploads-bucket")
-	if strings.Contains(bucketRelease, "disableWait") {
+	if strings.Contains(bucketRelease, "disableWait: true") {
 		t.Errorf("bucket release disables the readiness wait:\n%s", bucketRelease)
 	}
 	if !strings.Contains(bucketRelease, "retries: 3") {

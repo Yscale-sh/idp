@@ -48,7 +48,7 @@ storageProfiles:
     endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
     region: auto                      # R2 uses "auto"; AWS S3 wants a real region
     namespace: platform-storage       # where the provisioner Job runs
-    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     credentials:
       storeRef:
         name: platform-ssm

@@ -53,7 +53,7 @@ storageProfiles:
     endpoint: https://minio.example.invalid   # your S3-compatible endpoint
     pathStyle: true                           # MinIO/on-prem addressing
     namespace: platform-storage               # where the provisioner Job runs
-    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     credentials:
       storeRef:
         name: platform-local

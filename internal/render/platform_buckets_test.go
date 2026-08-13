@@ -113,3 +113,28 @@ func TestWritePlatformAcceptsMigratedBucketEntry(t *testing.T) {
 		t.Fatalf("migrated umbrella lost the bucket:\n%s", body)
 	}
 }
+
+func TestParsePlatformPreservesUnknownProvisionerValues(t *testing.T) {
+	input := strings.Replace(legacyUmbrella, `resource:
+              apiVersion: example.io/v1
+              kind: Bucket
+              metadata: {name: media-prod-uploads}
+              spec:
+                initProvider: {providerField: keep-me}
+                forProvider: {name: media-prod-uploads}`, `values:
+              bucket: media-prod-uploads
+              endpoint: https://minio.example.invalid
+              image: minio/mc@sha256:`+strings.Repeat("a", 64)+`
+              futureProviderOption: keep-me`, 1)
+	platform, err := ParsePlatform([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := yaml.Marshal(platform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "futureProviderOption: keep-me") {
+		t.Fatalf("unknown provisioner value was dropped:\n%s", out)
+	}
+}

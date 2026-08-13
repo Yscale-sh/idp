@@ -42,6 +42,15 @@ func profileConfig(profiles map[string]clusterenv.StorageProfile) *clusterenv.Co
 
 func boolPointer(v bool) *bool { return &v }
 
+func builtBucketValues(t *testing.T, entry BucketEntry) BucketValues {
+	t.Helper()
+	values, ok := entry.Values.(BucketValues)
+	if !ok {
+		t.Fatalf("built bucket values type = %T, want BucketValues", entry.Values)
+	}
+	return values
+}
+
 func TestBuildStoreReleasesUsesResolvedStatefulStoreSeam(t *testing.T) {
 	app := appconfig.App{
 		App:   "checkout",
@@ -76,7 +85,7 @@ func TestBuildBucketsRendersProvisionerValues(t *testing.T) {
 	if b.ReleaseName != "media-prod-uploads-bucket" || b.Namespace != "platform-storage" {
 		t.Fatalf("isolated bucket release = %+v", b)
 	}
-	v := b.Values
+	v := builtBucketValues(t, b)
 	if v.Bucket != "media-prod-uploads" {
 		t.Fatalf("bucket = %q", v.Bucket)
 	}
@@ -117,8 +126,9 @@ func TestBuildBucketsCarriesRegionForVirtualHostProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[0].Values.Region != "auto" || got[0].Values.PathStyle {
-		t.Fatalf("r2 addressing = region %q pathStyle %v, want auto/false", got[0].Values.Region, got[0].Values.PathStyle)
+	values := builtBucketValues(t, got[0])
+	if values.Region != "auto" || values.PathStyle {
+		t.Fatalf("r2 addressing = region %q pathStyle %v, want auto/false", values.Region, values.PathStyle)
 	}
 }
 
@@ -132,8 +142,9 @@ func TestStorageWiringMatchesProvisionedBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := buildAppEnv(app, "dev", c)
-	if env["UPLOADS_BUCKET"] != buckets[0].Values.Bucket {
-		t.Fatalf("app bucket %q does not match provisioned bucket %q", env["UPLOADS_BUCKET"], buckets[0].Values.Bucket)
+	values := builtBucketValues(t, buckets[0])
+	if env["UPLOADS_BUCKET"] != values.Bucket {
+		t.Fatalf("app bucket %q does not match provisioned bucket %q", env["UPLOADS_BUCKET"], values.Bucket)
 	}
 	if env["UPLOADS_ENDPOINT"] != minioProfile().Endpoint {
 		t.Fatalf("endpoint = %q", env["UPLOADS_ENDPOINT"])
@@ -144,8 +155,8 @@ func TestStorageWiringMatchesProvisionedBucket(t *testing.T) {
 	if _, present := env["UPLOADS_REGION"]; present {
 		t.Fatalf("regionless profile emitted UPLOADS_REGION = %q", env["UPLOADS_REGION"])
 	}
-	if len(buckets[0].Values.Bucket) > 63 {
-		t.Fatalf("derived bucket name is not a DNS label: %q", buckets[0].Values.Bucket)
+	if len(values.Bucket) > 63 {
+		t.Fatalf("derived bucket name is not a DNS label: %q", values.Bucket)
 	}
 
 	// The regioned profile adds the region key and drops path-style.
@@ -343,7 +354,7 @@ func TestToAppEntryCarriesBucketIntoIsolatedRelease(t *testing.T) {
 	if entry.Buckets[0].ReleaseName != "media-prod-uploads-bucket" || entry.Buckets[0].Namespace != "platform-storage" {
 		t.Fatalf("isolated bucket release = %+v", entry.Buckets[0])
 	}
-	if entry.Buckets[0].Values.Bucket != "media-prod-uploads" {
+	if builtBucketValues(t, entry.Buckets[0]).Bucket != "media-prod-uploads" {
 		t.Fatalf("bucket values lost: %+v", entry.Buckets[0].Values)
 	}
 	if len(entry.Buckets[0].Resource) != 0 {

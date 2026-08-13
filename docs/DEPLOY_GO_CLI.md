@@ -385,7 +385,7 @@ storageProfiles:
     endpoint: https://minio.example.invalid
     pathStyle: true
     namespace: platform-storage
-    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     credentials:
       storeRef: {name: platform-local, kind: ClusterSecretStore}
       accessKeyID:     {key: example-object-storage, property: ACCESS_KEY_ID}
@@ -395,7 +395,7 @@ storageProfiles:
     endpoint: https://ACCOUNT_ID.r2.cloudflarestorage.com
     region: auto
     namespace: platform-storage
-    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     credentials:
       storeRef: {name: platform-ssm, kind: ClusterSecretStore}
       accessKeyID:     {key: /shared/objectstore/ACCESS_KEY_ID}
