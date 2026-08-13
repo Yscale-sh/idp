@@ -36,6 +36,12 @@ resources:
   requests: { cpu: 50m, memory: 64Mi }
   limits: { cpu: "1", memory: 512Mi }
 
+# Flux objects the shipper nudges after pushing and observes until the exact
+# DEPLOY_TIME stamp reaches Ready=True.
+flux:
+  namespace: flux-system
+  sourceName: flux-system
+
 cloudflare:
   # Set enabled: true + accountId to activate the in-process tunnel
   # auto-provisioner. When enabled the shipper calls EnsureTunnel / SetIngress /

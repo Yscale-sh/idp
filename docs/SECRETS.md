@@ -37,8 +37,9 @@ Do not reuse platform write credentials as application credentials.
 
 An explicit `storage[].provision: true` creates the bucket through the environment's S3-compatible
 storage profile, and never deletes one. The bucket name, endpoint, and optional region/path-style
-are injected as non-secret variables. Each bucket's access keys arrive in their own ExternalSecret
-resolved from the profile's store; only the store name and remote key names enter Git.
+are injected as non-secret variables. Each bucket's configured access-key reference arrives in its
+own ExternalSecret; only the store name and remote key names enter Git. Scope the referenced key at
+the provider: separate Kubernetes Secrets do not turn an endpoint-wide key into a bucket-only key.
 
 `TUNNEL_TOKEN` is retrieved and reconciled by tunnel automation when enabled. Access service tokens
 use `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`. Neither belongs in Git.

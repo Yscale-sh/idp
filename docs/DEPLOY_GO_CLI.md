@@ -411,6 +411,10 @@ key pair, which the pod picks up via `envFrom` as `<NAME>_ACCESS_KEY_ID` and
 `<NAME>_SECRET_ACCESS_KEY`. The non-secret settings — `<NAME>_BUCKET`, `<NAME>_ENDPOINT`, and
 `<NAME>_REGION` / `<NAME>_S3_PATH_STYLE` when the profile sets them — stay plain env.
 
+The Secret is isolated per bucket, but its provider permissions are whatever the referenced key
+has. Use bucket-scoped keys for application runtime access. A shared administrative key is suitable
+for provisioning, not as proof of least-privilege application access.
+
 Example mixed storage:
 
 ```yaml

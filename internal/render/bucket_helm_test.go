@@ -49,10 +49,15 @@ apps:
 		"name: media-prod-uploads-bucket",
 		"chart: ./charts/infra/bucket-provisioner",
 		"targetNamespace: platform-storage",
+		"dependsOn:",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cluster output missing %q:\n%s", want, out)
 		}
+	}
+	appRelease := releaseBlock(t, out, "media")
+	if !strings.Contains(appRelease, "dependsOn:") || !strings.Contains(appRelease, "name: media-prod-uploads-bucket") {
+		t.Errorf("app release does not wait for its bucket release:\n%s", appRelease)
 	}
 	// Bucket releases keep the NORMAL Helm wait. disableWait would let the
 	// release report Ready before the provisioning hook finished, which is the
@@ -63,6 +68,32 @@ apps:
 	}
 	if !strings.Contains(bucketRelease, "retries: 3") {
 		t.Errorf("bucket release lost its remediation retries:\n%s", bucketRelease)
+	}
+}
+
+func TestClusterChartFailsClosedOnLegacyBucketResource(t *testing.T) {
+	requireHelm(t)
+	values := `
+env: prod
+source: {name: flux-system, namespace: flux-system}
+modules: []
+apps:
+  - name: media
+    namespace: media-prod
+    releaseName: media
+    values: {}
+    buckets:
+      - namespace: legacy-provider
+        releaseName: media-prod-uploads-bucket
+        resource: {apiVersion: example.io/v1, kind: Bucket}
+`
+	cmd := exec.Command("helm", "template", "platform-prod", "../../charts/cluster", "-f", writeHelmValues(t, values))
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("legacy resource rendered instead of failing closed:\n%s", output)
+	}
+	if !strings.Contains(string(output), "legacy bucket resource entry") {
+		t.Fatalf("legacy render error is not actionable:\n%s", output)
 	}
 }
 

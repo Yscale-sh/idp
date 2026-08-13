@@ -1,5 +1,11 @@
 {{- $env := .Values.env -}}
 {{- range .Values.apps }}
+{{- $releaseName := .releaseName -}}
+{{- range .buckets }}
+{{- if .resource }}
+{{- fail (printf "app %s has a legacy bucket resource entry; migrate it with the current idpctl before upgrading the umbrella chart" $releaseName) }}
+{{- end }}
+{{- end }}
 ---
 # app: {{ .name }} -> its own HelmRelease (chart ./charts/app) in {{ .namespace }}
 apiVersion: helm.toolkit.fluxcd.io/v2
@@ -11,6 +17,13 @@ metadata:
     {{- include "cluster.appLabels" (dict "name" .name "app" .name "env" $env "component" (.component | default "app")) | nindent 4 }}
 spec:
   interval: 10m
+  {{- with .buckets }}
+  # The workload cannot reconcile before every declared bucket hook succeeds.
+  dependsOn:
+    {{- range . }}
+    - name: {{ .releaseName }}
+    {{- end }}
+  {{- end }}
   releaseName: {{ .releaseName }}
   targetNamespace: {{ .namespace }}
   storageNamespace: {{ .namespace }}

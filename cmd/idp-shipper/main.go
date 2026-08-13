@@ -145,7 +145,7 @@ func main() {
 				continue
 			}
 			logf("[%s] new commit %s on %s — shipping", app.Name, short(sha), app.Branch)
-			if err := shipApp(ctx, reg, app, sha, last[app.Name], token, b); err != nil {
+			if err := shipApp(ctx, reg, app, sha, last[app.Name], token, b, k); err != nil {
 				logf("[%s] ship FAILED @ %s: %v", app.Name, short(sha), redact(err.Error()))
 				continue
 			}
@@ -164,7 +164,7 @@ func main() {
 // (and, in a multi-component repo, a change confined to one component's context)
 // no longer spins a build Job for every image. base is the last-shipped sha ("" on
 // first ship / after a restart with no seed → rebuild everything, the safe default).
-func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token string, b *builder.Builder) error {
+func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token string, b *builder.Builder, k *kube.Client) error {
 	tag := short(sha)
 	comps, err := fetchComponents(ctx, app, sha, token)
 	if err != nil {
@@ -217,7 +217,11 @@ func shipApp(ctx context.Context, reg *Registry, app AppSpec, sha, base, token s
 	}
 
 	// Render + commit + push, retrying on a concurrent-writer push rejection.
-	return renderCommitPush(ctx, reg, app, comps, tag, tagByImage)
+	rolloutTargets, err := renderCommitPush(ctx, reg, app, comps, tag, tagByImage)
+	if err != nil {
+		return err
+	}
+	return waitForReleaseTargets(ctx, k, reg, rolloutTargets)
 }
 
 // fetchComponents downloads and parses every app manifest for the app at sha.
@@ -284,38 +288,38 @@ func deriveBuildTargets(comps []component) []buildTarget {
 // origin (discarding any leftover writes from a prior partial failure or a local
 // commit a rejected push left behind), so there is no ff-only wedge and no stale
 // half-shipped umbrella swept into a later commit.
-func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []component, tag string, tagByImage map[string]string) error {
+func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []component, tag string, tagByImage map[string]string) ([]rolloutTarget, error) {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := syncToRemote(ctx, reg); err != nil {
-			return fmt.Errorf("sync platform repo: %w", err)
+			return nil, fmt.Errorf("sync platform repo: %w", err)
 		}
 		targets, err := renderComponents(reg, comps, tag, tagByImage)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := git(ctx, reg.PlatformRoot, "add", "-A"); err != nil {
-			return err
+			return nil, err
 		}
 		if err := git(ctx, reg.PlatformRoot, "diff", "--cached", "--quiet"); err == nil {
 			logf("  [%s] no umbrella change; skipping commit", app.Name)
-			return nil
+			return targets, nil
 		}
 		msg := fmt.Sprintf("ship(%s): %s @ %s", reg.Env, app.Name, tag)
 		if err := git(ctx, reg.PlatformRoot,
 			"-c", "user.name=idp-shipper", "-c", "user.email=idp-shipper@noreply",
 			"commit", "-m", msg); err != nil {
-			return err
+			return nil, err
 		}
 		if err := git(ctx, reg.PlatformRoot, "push", "origin", "HEAD:"+branch(reg)); err == nil {
 			logRolloutTargets(app.Name, targets)
-			return nil
+			return targets, nil
 		} else {
 			lastErr = err
 			logf("  [%s] push rejected (attempt %d/3); re-syncing", app.Name, attempt)
 		}
 	}
-	return fmt.Errorf("push failed after retries: %w", lastErr)
+	return nil, fmt.Errorf("push failed after retries: %w", lastErr)
 }
 
 // renderComponents upserts each parsed component into the umbrella with image
@@ -348,7 +352,13 @@ func renderComponents(reg *Registry, comps []component, defaultTag string, tagBy
 		}
 		entries = append(entries, plan.Result.ToAppEntry())
 	}
-	return rolloutTargets(entries), nil
+	targets := rolloutTargets(entries)
+	for i := range targets {
+		if targets[i].RequiresWorkload {
+			targets[i].DeployTime = deployTime
+		}
+	}
+	return targets, nil
 }
 
 // rolloutTarget is one Flux HelmRelease whose health is part of a ship.
@@ -356,6 +366,7 @@ type rolloutTarget struct {
 	ReleaseName string
 	Namespace   string
 	Kind        string // app | bucket
+	DeployTime  string // app release stamp proving Flux observed this ship
 	// RequiresWorkload marks a target whose health means "a Deployment rolled at
 	// this ship's DEPLOY_TIME". Bucket releases set it FALSE: a bucket release
 	// owns no Deployment and carries no DEPLOY_TIME — its Helm hook Job creates
@@ -406,6 +417,113 @@ func logRolloutTargets(appName string, targets []rolloutTarget) {
 			note = "workload rollout"
 		}
 		logf("  [%s] rollout target %s/%s (%s, %s)", appName, t.Namespace, t.ReleaseName, t.Kind, note)
+	}
+}
+
+type releaseCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+type releaseReadiness struct {
+	Metadata struct {
+		Generation int64 `json:"generation"`
+	} `json:"metadata"`
+	Status struct {
+		ObservedGeneration int64              `json:"observedGeneration"`
+		Conditions         []releaseCondition `json:"conditions"`
+	} `json:"status"`
+	Spec struct {
+		Values struct {
+			Env struct {
+				TierA map[string]string `json:"tierA"`
+			} `json:"env"`
+		} `json:"values"`
+	} `json:"spec"`
+}
+
+func releaseIsReady(release releaseReadiness, target rolloutTarget) bool {
+	if release.Metadata.Generation == 0 || release.Status.ObservedGeneration != release.Metadata.Generation {
+		return false
+	}
+	if target.RequiresWorkload && release.Spec.Values.Env.TierA["DEPLOY_TIME"] != target.DeployTime {
+		return false
+	}
+	for _, condition := range release.Status.Conditions {
+		if condition.Type == "Ready" {
+			return strings.EqualFold(condition.Status, "true")
+		}
+	}
+	return false
+}
+
+// waitForReleaseTargets closes the GitOps loop. App HelmReleases wait for their
+// Deployments, and app releases now dependOn bucket releases; bucket releases in
+// turn wait for the post-install/post-upgrade mc hook. Requiring every target's
+// observed Ready condition therefore proves the whole declared slice converged.
+func waitForReleaseTargets(ctx context.Context, k *kube.Client, reg *Registry, targets []rolloutTarget) error {
+	if len(targets) == 0 {
+		return fmt.Errorf("ship produced no rollout targets")
+	}
+	cluster, err := loadCluster(reg.PlatformRoot, reg.Env)
+	if err != nil {
+		return fmt.Errorf("load cluster for rollout wait: %w", err)
+	}
+	if cluster == nil {
+		return fmt.Errorf("cluster config for env %q not found", reg.Env)
+	}
+	controlNamespace := cluster.Flux.Namespace
+	if controlNamespace == "" {
+		controlNamespace = "flux-system"
+	}
+
+	// Best effort only: a failed annotation falls back to Flux's polling loop.
+	requestedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	annotation := "reconcile.fluxcd.io/requestedAt=" + requestedAt
+	for _, resource := range []string{
+		"gitrepository/" + cluster.Flux.SourceName,
+		"kustomization/" + cluster.Flux.SourceName,
+	} {
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, requestErr := k.Run(requestCtx, "annotate", "-n", controlNamespace, resource, annotation, "--overwrite")
+		cancel()
+		if requestErr != nil {
+			logf("  rollout reconcile request for %s failed; using Flux polling: %v", resource, requestErr)
+		}
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	lastProblem := "release status not observed"
+	for {
+		allReady := true
+		for _, target := range targets {
+			raw, getErr := k.Run(waitCtx, "get", "helmrelease", target.ReleaseName,
+				"-n", controlNamespace, "-o", "json", "--request-timeout=8s")
+			if getErr != nil {
+				allReady = false
+				lastProblem = fmt.Sprintf("HelmRelease %s/%s not ready: %v", controlNamespace, target.ReleaseName, getErr)
+				continue
+			}
+			var release releaseReadiness
+			if err := json.Unmarshal(raw, &release); err != nil {
+				allReady = false
+				lastProblem = fmt.Sprintf("decode HelmRelease %s/%s: %v", controlNamespace, target.ReleaseName, err)
+				continue
+			}
+			if !releaseIsReady(release, target) {
+				allReady = false
+				lastProblem = fmt.Sprintf("HelmRelease %s/%s has not observed Ready=True", controlNamespace, target.ReleaseName)
+			}
+		}
+		if allReady {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("rollout did not converge within 5m: %s", lastProblem)
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 

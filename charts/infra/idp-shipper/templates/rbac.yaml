@@ -28,6 +28,67 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: idp-shipper
+---
+# Rollout verification reads HelmReleases by exact name after the Git push.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: idp-shipper-rollout-reader
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-shipper-rollout-reader
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-shipper-rollout-reader
+subjects:
+  - kind: ServiceAccount
+    name: idp-shipper
+    namespace: {{ .Release.Namespace }}
+---
+# Reconcile requests are scoped to this environment's Flux source.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idp-shipper-flux-reconciler
+  namespace: {{ .Values.flux.namespace }}
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories"]
+    resourceNames: [{{ .Values.flux.sourceName | quote }}]
+    verbs: ["get", "patch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    resourceNames: [{{ .Values.flux.sourceName | quote }}]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-shipper-flux-reconciler
+  namespace: {{ .Values.flux.namespace }}
+  labels:
+    {{- include "idp-shipper.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-shipper-flux-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: idp-shipper
+    namespace: {{ .Release.Namespace }}
 {{- if .Values.cloudflare.enabled }}
 ---
 # When the CF tunnel auto-provisioner is enabled the shipper must write the

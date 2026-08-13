@@ -64,3 +64,32 @@ func TestRolloutTargetsSkipEmptyReleases(t *testing.T) {
 		t.Fatalf("entry with no release name produced targets: %+v", got)
 	}
 }
+
+func TestReleaseIsReadyRequiresObservedReadyCondition(t *testing.T) {
+	var release releaseReadiness
+	target := rolloutTarget{RequiresWorkload: true, DeployTime: "2026-08-13T12:00:00Z"}
+	release.Metadata.Generation = 3
+	release.Status.ObservedGeneration = 2
+	release.Status.Conditions = []releaseCondition{{Type: "Ready", Status: "True"}}
+	release.Spec.Values.Env.TierA = map[string]string{"DEPLOY_TIME": target.DeployTime}
+	if releaseIsReady(release, target) {
+		t.Fatal("stale observedGeneration reported ready")
+	}
+	release.Status.ObservedGeneration = 3
+	if !releaseIsReady(release, target) {
+		t.Fatal("observed Ready=True release reported unready")
+	}
+	release.Spec.Values.Env.TierA["DEPLOY_TIME"] = "old"
+	if releaseIsReady(release, target) {
+		t.Fatal("previous ship stamp reported ready")
+	}
+	release.Spec.Values.Env.TierA["DEPLOY_TIME"] = target.DeployTime
+	release.Status.Conditions[0].Status = "False"
+	if releaseIsReady(release, target) {
+		t.Fatal("Ready=False release reported ready")
+	}
+	release.Status.Conditions[0].Status = "True"
+	if !releaseIsReady(release, rolloutTarget{Kind: "bucket"}) {
+		t.Fatal("ready bucket release incorrectly required an app deploy stamp")
+	}
+}

@@ -565,8 +565,9 @@ func buildAppEnv(app appconfig.App, env string, c *clusterenv.Config) map[string
 // buildStorage returns one entry per PROFILE-BACKED bucket — the buckets whose
 // credentials the platform can locate in the env's secret backend. Each gets
 // its own ExternalSecret (chart template storage-externalsecret.yaml) rather
-// than folding the key pair into the app-wide runtime Secret, so one bucket's
-// credentials never widen another's blast radius. A bucket with no matching
+// than folding the key pair into the app-wide runtime Secret. This isolates
+// materialization and env naming; the provider policy attached to the referenced
+// key determines its actual bucket permissions. A bucket with no matching
 // profile is omitted and keeps the legacy shared-credential wiring.
 func buildStorage(app appconfig.App, c *clusterenv.Config) []StorageValues {
 	var out []StorageValues
