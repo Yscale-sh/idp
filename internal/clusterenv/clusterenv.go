@@ -100,32 +100,79 @@ type Config struct {
 	// Modules is the platform module registry for this env.
 	Modules map[string]Module `json:"modules,omitempty"`
 
-	// StorageProfiles configures Crossplane provisioning profiles for object
-	// storage, keyed by deploy.yaml storage type (r2 or s3).
+	// StorageProfiles configures object-storage provisioning profiles, keyed by
+	// deploy.yaml storage type (r2 or s3).
 	StorageProfiles map[string]StorageProfile `json:"storageProfiles,omitempty"`
 }
 
-// StorageProfile configures one Crossplane Bucket provider without leaking
-// provider-specific fields into application manifests.
+// StorageProfile describes one S3-COMPATIBLE endpoint the platform can create
+// buckets against. It is provider-neutral on purpose: MinIO, Cloudflare R2 and
+// AWS S3 differ only in endpoint, region and addressing style, so the platform
+// speaks the S3 API through the MinIO client instead of modelling each provider.
+//
+// No credential VALUE lives here. Credentials names the remote entries that the
+// bucket provisioner and the consuming apps pull through external-secrets, so
+// cluster.yaml stays safe to publish.
 type StorageProfile struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-	// Namespace is required by modern Crossplane v2 namespaced resources. Leave
-	// empty only for a provider whose Bucket kind is cluster-scoped.
-	Namespace string `json:"namespace,omitempty"`
-	// BucketNameField receives the physical name under spec.forProvider. Leave it
-	// empty for providers that use crossplane.io/external-name alone.
-	BucketNameField string `json:"bucketNameField,omitempty"`
-	// Endpoint is non-secret S3-compatible configuration injected into the app.
-	Endpoint          string                  `json:"endpoint,omitempty"`
-	ProviderConfigRef ProviderConfigReference `json:"providerConfigRef"`
-	ForProvider       map[string]any          `json:"forProvider,omitempty"`
+	// Endpoint is the S3-compatible API endpoint (scheme required), e.g.
+	// https://minio.example.internal or https://ACCOUNT_ID.r2.cloudflarestorage.com.
+	Endpoint string `json:"endpoint"`
+
+	// Region is optional: S3 needs it, MinIO ignores it, R2 uses "auto".
+	Region string `json:"region,omitempty"`
+
+	// PathStyle forces path-style addressing (endpoint/bucket) instead of
+	// virtual-host style (bucket.endpoint) — the usual MinIO/on-prem setting.
+	PathStyle bool `json:"pathStyle,omitempty"`
+
+	// Credentials locates the access-key pair in the env's secret backend.
+	Credentials StorageCredentials `json:"credentials"`
+
+	// Namespace is where the provisioner Job and its pulled credential Secret
+	// run. It is a platform namespace, not the app's.
+	Namespace string `json:"namespace"`
+
+	// Image is the MinIO client (mc) image the provisioner Job runs. It MUST be
+	// digest-pinned: the Job holds credentials for every bucket in the env, so a
+	// mutable tag would let a re-pull silently change what runs with them.
+	Image string `json:"image"`
 }
 
-// ProviderConfigReference selects the provider credentials used by Crossplane.
-type ProviderConfigReference struct {
+// StorageCredentials points at the two halves of one S3-compatible key pair in
+// the env's secret backend. Only REFERENCES are stored; the values are resolved
+// in-cluster by external-secrets.
+type StorageCredentials struct {
+	// StoreRef is the SecretStore/ClusterSecretStore holding the key pair.
+	StoreRef StoreReference `json:"storeRef"`
+
+	// AccessKeyID / SecretAccessKey are the remote entries for each half.
+	AccessKeyID     RemoteSecretRef `json:"accessKeyID"`
+	SecretAccessKey RemoteSecretRef `json:"secretAccessKey"`
+
+	// RefreshInterval overrides the generated ExternalSecrets' refresh cadence.
+	RefreshInterval string `json:"refreshInterval,omitempty"`
+}
+
+// StoreReference selects an external-secrets store by name and kind.
+type StoreReference struct {
 	Name string `json:"name"`
-	Kind string `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"` // ClusterSecretStore (default) | SecretStore
+}
+
+// RemoteSecretRef is one entry in the secret backend: a key, plus the property
+// within it for backends whose key addresses a multi-entry object (e.g. ESO's
+// Kubernetes provider, where key is a Secret name and property selects a field).
+type RemoteSecretRef struct {
+	Key      string `json:"key"`
+	Property string `json:"property,omitempty"`
+}
+
+// StoreRefKind resolves the store kind, defaulting to ClusterSecretStore.
+func (s StorageCredentials) StoreRefKind() string {
+	if s.StoreRef.Kind != "" {
+		return s.StoreRef.Kind
+	}
+	return "ClusterSecretStore"
 }
 
 // Seams declares the platform capabilities ("seams" — the interfaces apps
@@ -472,17 +519,37 @@ func (c *Config) Validate() error {
 		if storageType != "r2" && storageType != "s3" {
 			return fmt.Errorf("storageProfiles key %q must be %q or %q", storageType, "r2", "s3")
 		}
-		if profile.APIVersion == "" {
-			return fmt.Errorf("storageProfiles.%s.apiVersion is required", storageType)
+		if profile.Endpoint == "" {
+			return fmt.Errorf("storageProfiles.%s.endpoint is required (the S3-compatible API endpoint)", storageType)
 		}
-		if profile.Kind == "" {
-			return fmt.Errorf("storageProfiles.%s.kind is required", storageType)
+		if !strings.HasPrefix(profile.Endpoint, "http://") && !strings.HasPrefix(profile.Endpoint, "https://") {
+			return fmt.Errorf("storageProfiles.%s.endpoint %q must include a scheme (http:// or https://)", storageType, profile.Endpoint)
 		}
-		if profile.ProviderConfigRef.Name == "" {
-			return fmt.Errorf("storageProfiles.%s.providerConfigRef.name is required", storageType)
+		if profile.Namespace == "" {
+			return fmt.Errorf("storageProfiles.%s.namespace is required (where the bucket provisioner Job runs)", storageType)
 		}
-		if strings.Contains(profile.BucketNameField, ".") {
-			return fmt.Errorf("storageProfiles.%s.bucketNameField must be one top-level forProvider field", storageType)
+		if profile.Image == "" {
+			return fmt.Errorf("storageProfiles.%s.image is required (a digest-pinned MinIO client image)", storageType)
+		}
+		// The provisioner Job runs with credentials for every bucket in this env,
+		// so what it runs must be immutable — a tag can be repointed, a digest can't.
+		if !strings.Contains(profile.Image, "@sha256:") {
+			return fmt.Errorf("storageProfiles.%s.image %q must be digest-pinned (repository@sha256:...)", storageType, profile.Image)
+		}
+		if profile.Credentials.StoreRef.Name == "" {
+			return fmt.Errorf("storageProfiles.%s.credentials.storeRef.name is required", storageType)
+		}
+		switch profile.Credentials.StoreRef.Kind {
+		case "", "ClusterSecretStore", "SecretStore":
+		default:
+			return fmt.Errorf("storageProfiles.%s.credentials.storeRef.kind %q must be %q or %q",
+				storageType, profile.Credentials.StoreRef.Kind, "ClusterSecretStore", "SecretStore")
+		}
+		if profile.Credentials.AccessKeyID.Key == "" {
+			return fmt.Errorf("storageProfiles.%s.credentials.accessKeyID.key is required", storageType)
+		}
+		if profile.Credentials.SecretAccessKey.Key == "" {
+			return fmt.Errorf("storageProfiles.%s.credentials.secretAccessKey.key is required", storageType)
 		}
 	}
 

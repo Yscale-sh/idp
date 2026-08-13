@@ -1,0 +1,87 @@
+{{/*
+Create the bucket, idempotently.
+
+HOOK, not a plain resource: as a post-install/post-upgrade hook Helm waits for
+this Job to complete before reporting the release deployed, so the HelmRelease
+only goes Ready once the bucket actually exists. An app that depends on the
+bucket therefore cannot be declared healthy ahead of its storage.
+
+The Job NAME carries a hash of the provisioning identity — bucket, endpoint,
+addressing, and the credential REFS (see bucketProvisioner.identity). A Job's
+pod template is immutable, so a changed identity must become a differently-named
+Job; reusing the name with a new spec would wedge the release.
+
+hook-delete-policy is before-hook-creation ONLY: a completed Job is left in
+place for inspection and reaped by ttlSecondsAfterFinished instead of vanishing
+the moment it succeeds.
+
+The container runs `mc mb --ignore-existing` and nothing else. There is no
+delete path in this chart by design: removing an app must never destroy its
+data, so an uninstall leaves the bucket and its contents alone.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "bucketProvisioner.jobName" . }}
+  labels:
+    {{- include "bucketProvisioner.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished | default 3600 }}
+  # The credential Secret is materialized by the ExternalSecret above; until it
+  # lands the kubelet cannot start the container. The retries cover that window.
+  backoffLimit: {{ .Values.backoffLimit | default 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bucketProvisioner.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: mc
+          image: {{ required "image is required (a digest-pinned MinIO client image)" .Values.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy | default "IfNotPresent" }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: BUCKET
+              value: {{ required "bucket is required" .Values.bucket | quote }}
+            - name: ENDPOINT
+              value: {{ required "endpoint is required" .Values.endpoint | quote }}
+            {{- with .Values.region }}
+            - name: REGION
+              value: {{ . | quote }}
+            {{- end }}
+          # ACCESS_KEY_ID / SECRET_ACCESS_KEY come from the ExternalSecret-backed
+          # Secret. No credential value is ever templated into this manifest.
+          envFrom:
+            - secretRef:
+                name: {{ include "bucketProvisioner.secretName" . }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              mc --config-dir /tmp/mc alias set target \
+                "$ENDPOINT" "$ACCESS_KEY_ID" "$SECRET_ACCESS_KEY" \
+                --api S3v4 --path {{ if .Values.pathStyle }}on{{ else }}auto{{ end }}
+              mc --config-dir /tmp/mc mb --ignore-existing{{ with .Values.region }} --region "$REGION"{{ end }} "target/$BUCKET"
+              echo "bucket $BUCKET present at $ENDPOINT"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: mc-config
+              mountPath: /tmp
+      volumes:
+        # mc writes its alias config under --config-dir; the root filesystem is
+        # read-only, so give it a scratch dir.
+        - name: mc-config
+          emptyDir: {}

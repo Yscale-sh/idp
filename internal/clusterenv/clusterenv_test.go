@@ -125,23 +125,76 @@ func TestValidate_ModuleRules(t *testing.T) {
 	}
 }
 
-func TestValidate_StorageProfilesAndStoreBackend(t *testing.T) {
-	c := validConfig()
-	c.StorageProfiles = map[string]StorageProfile{
-		"r2": {
-			APIVersion: "r2.example.io/v1alpha1", Kind: "Bucket",
-			ProviderConfigRef: ProviderConfigReference{Name: "default", Kind: "ProviderConfig"},
+// validStorageProfile is a complete provider-neutral profile. PLACEHOLDERS ONLY.
+func validStorageProfile() StorageProfile {
+	return StorageProfile{
+		Endpoint:  "https://minio.example.invalid",
+		PathStyle: true,
+		Namespace: "platform-storage",
+		Image:     "minio/mc@sha256:" + strings.Repeat("a", 64),
+		Credentials: StorageCredentials{
+			StoreRef:        StoreReference{Name: "platform-local", Kind: "ClusterSecretStore"},
+			AccessKeyID:     RemoteSecretRef{Key: "example-object-storage", Property: "ACCESS_KEY_ID"},
+			SecretAccessKey: RemoteSecretRef{Key: "example-object-storage", Property: "SECRET_ACCESS_KEY"},
 		},
 	}
+}
+
+func TestValidate_StorageProfiles(t *testing.T) {
+	c := validConfig()
+	c.StorageProfiles = map[string]StorageProfile{"s3": validStorageProfile()}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("valid storage profile rejected: %v", err)
 	}
-	c.StorageProfiles["r2"] = StorageProfile{APIVersion: "r2.example.io/v1", Kind: "Bucket"}
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "providerConfigRef.name") {
-		t.Fatalf("missing provider config accepted: %v", err)
+
+	// Each required field fails closed with a message naming the field, so an
+	// operator fixes cluster.yaml instead of debugging a half-rendered release.
+	for _, tc := range []struct {
+		name   string
+		mutate func(*StorageProfile)
+		want   string
+	}{
+		{"no endpoint", func(p *StorageProfile) { p.Endpoint = "" }, "endpoint is required"},
+		{"schemeless endpoint", func(p *StorageProfile) { p.Endpoint = "minio.example.invalid" }, "must include a scheme"},
+		{"no namespace", func(p *StorageProfile) { p.Namespace = "" }, "namespace is required"},
+		{"no image", func(p *StorageProfile) { p.Image = "" }, "image is required"},
+		{"unpinned image", func(p *StorageProfile) { p.Image = "minio/mc:latest" }, "must be digest-pinned"},
+		{"no store", func(p *StorageProfile) { p.Credentials.StoreRef.Name = "" }, "credentials.storeRef.name is required"},
+		{"bad store kind", func(p *StorageProfile) { p.Credentials.StoreRef.Kind = "Vault" }, "storeRef.kind"},
+		{"no access key ref", func(p *StorageProfile) { p.Credentials.AccessKeyID.Key = "" }, "credentials.accessKeyID.key is required"},
+		{"no secret key ref", func(p *StorageProfile) { p.Credentials.SecretAccessKey.Key = "" }, "credentials.secretAccessKey.key is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validConfig()
+			p := validStorageProfile()
+			tc.mutate(&p)
+			c.StorageProfiles = map[string]StorageProfile{"s3": p}
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate() = %v, want error containing %q", err, tc.want)
+			}
+		})
 	}
 
 	c = validConfig()
+	c.StorageProfiles = map[string]StorageProfile{"gcs": validStorageProfile()}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "must be") {
+		t.Fatalf("unknown storage type accepted: %v", err)
+	}
+}
+
+func TestStorageCredentialsStoreRefKindDefaults(t *testing.T) {
+	var cred StorageCredentials
+	if got := cred.StoreRefKind(); got != "ClusterSecretStore" {
+		t.Fatalf("StoreRefKind() = %q, want ClusterSecretStore", got)
+	}
+	cred.StoreRef.Kind = "SecretStore"
+	if got := cred.StoreRefKind(); got != "SecretStore" {
+		t.Fatalf("StoreRefKind() = %q, want SecretStore", got)
+	}
+}
+
+func TestValidate_StoreBackend(t *testing.T) {
+	c := validConfig()
 	c.Secrets.Backend = BackendSSM
 	on := true
 	c.Seams = &Seams{StatefulStores: &on}

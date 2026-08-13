@@ -350,7 +350,8 @@ type Storage struct {
 
 	// Provision controls whether the platform STANDS UP this bucket. Default false
 	// for backward compatibility with existing externally-created buckets. Set true
-	// to create a Crossplane managed resource through the environment profile.
+	// to create it through the target environment's matching storage profile
+	// (any S3-compatible endpoint: MinIO, R2, S3).
 	Provision *bool `json:"provision,omitempty" yaml:"provision,omitempty"`
 }
 

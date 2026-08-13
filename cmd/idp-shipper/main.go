@@ -37,6 +37,7 @@ import (
 	"github.com/yscale-sh/idp/internal/clusterenv"
 	"github.com/yscale-sh/idp/internal/deploy"
 	"github.com/yscale-sh/idp/internal/kube"
+	"github.com/yscale-sh/idp/internal/render"
 )
 
 var (
@@ -289,7 +290,8 @@ func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []c
 		if err := syncToRemote(ctx, reg); err != nil {
 			return fmt.Errorf("sync platform repo: %w", err)
 		}
-		if err := renderComponents(reg, comps, tag, tagByImage); err != nil {
+		targets, err := renderComponents(reg, comps, tag, tagByImage)
+		if err != nil {
 			return err
 		}
 		if err := git(ctx, reg.PlatformRoot, "add", "-A"); err != nil {
@@ -306,6 +308,7 @@ func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []c
 			return err
 		}
 		if err := git(ctx, reg.PlatformRoot, "push", "origin", "HEAD:"+branch(reg)); err == nil {
+			logRolloutTargets(app.Name, targets)
 			return nil
 		} else {
 			lastErr = err
@@ -320,12 +323,13 @@ func renderCommitPush(ctx context.Context, reg *Registry, app AppSpec, comps []c
 // Each component pins its image at tagByImage[image] — the freshly-built sha tag
 // for rebuilt images, or the reused existing tag for ones the build step skipped;
 // defaultTag covers any image not in the map (e.g. an imageless component).
-func renderComponents(reg *Registry, comps []component, defaultTag string, tagByImage map[string]string) error {
+func renderComponents(reg *Registry, comps []component, defaultTag string, tagByImage map[string]string) ([]rolloutTarget, error) {
 	cluster, err := loadCluster(reg.PlatformRoot, reg.Env)
 	if err != nil {
-		return fmt.Errorf("load cluster: %w", err)
+		return nil, fmt.Errorf("load cluster: %w", err)
 	}
 	deployTime := time.Now().UTC().Format(time.RFC3339)
+	var entries []render.AppEntry
 	for _, c := range comps {
 		tag := tagByImage[c.cfg.Runtime.Image]
 		if tag == "" {
@@ -337,13 +341,72 @@ func renderComponents(reg *Registry, comps []component, defaultTag string, tagBy
 			Cluster: cluster, Root: reg.PlatformRoot,
 		})
 		if err != nil {
-			return fmt.Errorf("render %s: %w", c.file, err)
+			return nil, fmt.Errorf("render %s: %w", c.file, err)
 		}
 		if _, err := plan.Result.UpsertApp(reg.PlatformRoot, cluster); err != nil {
-			return fmt.Errorf("upsert %s: %w", c.file, err)
+			return nil, fmt.Errorf("upsert %s: %w", c.file, err)
+		}
+		entries = append(entries, plan.Result.ToAppEntry())
+	}
+	return rolloutTargets(entries), nil
+}
+
+// rolloutTarget is one Flux HelmRelease whose health is part of a ship.
+type rolloutTarget struct {
+	ReleaseName string
+	Namespace   string
+	Kind        string // app | bucket
+	// RequiresWorkload marks a target whose health means "a Deployment rolled at
+	// this ship's DEPLOY_TIME". Bucket releases set it FALSE: a bucket release
+	// owns no Deployment and carries no DEPLOY_TIME — its Helm hook Job creates
+	// the bucket and then the release is done. A health check keyed on a rolled
+	// Deployment would either skip buckets or wait on a workload that will never
+	// exist, so the distinction is carried here rather than inferred later.
+	RequiresWorkload bool
+}
+
+// rolloutTargets folds a ship's rendered umbrella entries into the releases that
+// ship expects to reach Ready: each workload release, plus each provisioned
+// bucket release. Buckets are included because the app depends on them — a ship
+// that leaves a bucket un-provisioned is not healthy — but they are marked as
+// workload-free (see RequiresWorkload). Deduped by release name and ordered
+// deterministically: workload first, then its buckets in render order.
+func rolloutTargets(entries []render.AppEntry) []rolloutTarget {
+	var out []rolloutTarget
+	seen := map[string]bool{}
+	add := func(t rolloutTarget) {
+		if t.ReleaseName == "" || seen[t.ReleaseName] {
+			return
+		}
+		seen[t.ReleaseName] = true
+		out = append(out, t)
+	}
+	for _, e := range entries {
+		add(rolloutTarget{
+			ReleaseName: e.ReleaseName, Namespace: e.Namespace,
+			Kind: "app", RequiresWorkload: true,
+		})
+		for _, b := range e.Buckets {
+			add(rolloutTarget{
+				ReleaseName: b.ReleaseName, Namespace: b.Namespace,
+				Kind: "bucket", RequiresWorkload: false,
+			})
 		}
 	}
-	return nil
+	return out
+}
+
+// logRolloutTargets records what this ship expects to become healthy, so an
+// operator watching the shipper can see the bucket releases alongside the
+// workloads instead of wondering why a release with no pods is in the set.
+func logRolloutTargets(appName string, targets []rolloutTarget) {
+	for _, t := range targets {
+		note := "no workload (Helm hook)"
+		if t.RequiresWorkload {
+			note = "workload rollout"
+		}
+		logf("  [%s] rollout target %s/%s (%s, %s)", appName, t.Namespace, t.ReleaseName, t.Kind, note)
+	}
 }
 
 // umbrellaHasImagesAtTag reports whether the committed umbrella already pins every

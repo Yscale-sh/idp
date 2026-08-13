@@ -353,10 +353,10 @@ Another storage entry named `exports` can produce a separate `EXPORTS_*` set, ev
 different provider.
 
 Existing buckets remain the compatibility default: declare `bucket:` and omit `provision`. Set
-`provision: true` to create the bucket through the target environment's matching Crossplane
-`storageProfiles` entry. Render fails before changing Git when provisioning is requested without a
-provider profile. Managed buckets run in isolated child HelmReleases and exclude the Delete
-management policy, so app removal retains external data.
+`provision: true` to create the bucket through the target environment's matching `storageProfiles`
+entry. Render fails before changing Git when provisioning is requested without a profile, and a
+`public: true` provisioned bucket is rejected outright. In a multi-component app the first component
+to declare a bucket provisions it; its siblings share it.
 
 ```yaml
 storage:
@@ -368,20 +368,48 @@ storage:
     bucket: company-existing-imports
 ```
 
-The operator configures provider details once per environment; credential values remain behind the
-Crossplane ProviderConfig reference:
+Provisioning is provider-neutral. MinIO, Cloudflare R2 and AWS S3 all speak the S3 API, so the
+platform talks to them through the MinIO client rather than a provider-specific operator. Each
+bucket becomes its own child HelmRelease running `charts/infra/bucket-provisioner`, whose
+post-install/post-upgrade hook Job runs `mc mb --ignore-existing`. Because the Job is a Helm hook,
+the release only reports Ready once the bucket exists. There is no delete path: removing an app
+leaves the bucket and its contents alone.
+
+The operator configures each endpoint once per environment. No credential value goes in Git — the
+profile names the store and the remote keys, and external-secrets resolves them in-cluster:
 
 ```yaml
 storageProfiles:
+  # MinIO / on-prem: path-style addressing, no region.
+  s3:
+    endpoint: https://minio.example.invalid
+    pathStyle: true
+    namespace: platform-storage
+    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    credentials:
+      storeRef: {name: platform-local, kind: ClusterSecretStore}
+      accessKeyID:     {key: example-object-storage, property: ACCESS_KEY_ID}
+      secretAccessKey: {key: example-object-storage, property: SECRET_ACCESS_KEY}
+  # Cloudflare R2: virtual-host addressing, region "auto".
   r2:
-    apiVersion: r2.example.io/v1alpha1
-    kind: Bucket
-    namespace: crossplane-system
-    bucketNameField: name
     endpoint: https://ACCOUNT_ID.r2.cloudflarestorage.com
-    providerConfigRef: {name: default, kind: ProviderConfig}
-    forProvider: {accountId: NON_SECRET_ACCOUNT_ID}
+    region: auto
+    namespace: platform-storage
+    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    credentials:
+      storeRef: {name: platform-ssm, kind: ClusterSecretStore}
+      accessKeyID:     {key: /shared/objectstore/ACCESS_KEY_ID}
+      secretAccessKey: {key: /shared/objectstore/SECRET_ACCESS_KEY}
 ```
+
+`image` must be digest-pinned: the provisioner Job holds credentials for every bucket on that
+endpoint, so a mutable tag would let a re-pull change what runs with them. `idpctl` rejects an
+unpinned profile image.
+
+Each app consuming a profile-backed bucket gets its own ExternalSecret holding only that bucket's
+key pair, which the pod picks up via `envFrom` as `<NAME>_ACCESS_KEY_ID` and
+`<NAME>_SECRET_ACCESS_KEY`. The non-secret settings — `<NAME>_BUCKET`, `<NAME>_ENDPOINT`, and
+`<NAME>_REGION` / `<NAME>_S3_PATH_STYLE` when the profile sets them — stay plain env.
 
 Example mixed storage:
 
@@ -678,16 +706,16 @@ debug with normal Kubernetes/GitOps tools
 
 These are worth designing around, but not necessarily implementing in the first build.
 
-### Crossplane buckets now; managed stores later
+### S3-compatible buckets now; managed stores later
 
-Object-storage provisioning uses an environment-configured Crossplane provider now. Crossplane core,
-the provider package, its ProviderConfig, and credentials are operator-owned prerequisites.
+Object-storage provisioning talks the S3 API directly, so the only operator-owned prerequisites are
+an endpoint, a key pair in the environment's secret store, and external-secrets. There is no
+provider package or CRD to install, and the same seam serves MinIO, R2 and S3.
 
-A future managed `db: postgres` or `cache: redis` capability can use the same isolated-resource seam.
-Today local environments render dedicated in-cluster Helm charts while SSM-backed environments use
+A future managed `db: postgres` or `cache: redis` capability can use the same isolated-release seam:
+one child HelmRelease per resource, provisioned by a hook the release's readiness waits on. Today
+local environments render dedicated in-cluster Helm charts while SSM-backed environments use
 externally managed connection URLs.
-
-Source: https://docs.crossplane.io/latest/composition/composite-resources/
 
 ### Flux roots
 

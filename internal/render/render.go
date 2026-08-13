@@ -24,8 +24,9 @@ type Result struct {
 	// the dev per-app Postgres) rendered alongside the app, each into its OWN
 	// namespace. Empty in prod (external/managed stores).
 	StoreReleases []StoreRelease
-	// Buckets are provider-managed resources rendered as isolated child releases.
-	Buckets []ManagedResource
+	// Buckets are provisioned object-storage buckets, each rendered as its own
+	// isolated child release (charts/infra/bucket-provisioner).
+	Buckets []BucketEntry
 	// Connections is the resolved connectsTo set (for the plan summary).
 	Connections []ResolvedConnection
 	// SecretKeys is the canonical list of secret-backed env keys the app needs.
@@ -57,7 +58,7 @@ func Render(app appconfig.App, env string, c *clusterenv.Config, image, deployTi
 
 	var secretKeys []string
 	secretKeys = append(secretKeys, DataStoreEnvKeys(app)...)
-	secretKeys = append(secretKeys, StorageSecretEnvKeys(app)...)
+	secretKeys = append(secretKeys, StorageSecretEnvKeys(app, c)...)
 	secretKeys = append(secretKeys, app.Secrets...)
 
 	return &Result{

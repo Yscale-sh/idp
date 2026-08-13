@@ -179,7 +179,7 @@ render it, commit it, and let Flux reconcile it.
 | `probes` | HTTP, TCP, or disabled health checks. |
 | `sizing` | Resource profile, replica count, and autoscaling. |
 | `db`, `cache` | PostgreSQL and Redis requirements. |
-| `storage` | Existing R2/S3 buckets, or opt-in retained Crossplane bucket provisioning. |
+| `storage` | Existing R2/S3 buckets, or opt-in provisioning against any S3-compatible endpoint (MinIO, R2, S3). |
 | `secrets` | Secret key names the app expects. Values remain outside Git. |
 | `env` | Non-secret application configuration committed to Git. |
 | `volumes` | PVC, NFS, Secret, and temporary mounts. |

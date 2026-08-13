@@ -75,8 +75,16 @@ func BuildExternalSecret(app appconfig.App, env string, c *clusterenv.Config) Ex
 	}
 	// R2 storage credentials are platform-owned and stored once under the shared
 	// Cloudflare group. Bucket names/endpoints are non-secret rendered config.
+	//
+	// This is the LEGACY path, for buckets the env has no storage profile for.
+	// A profile-backed bucket instead gets its own ExternalSecret pointing at the
+	// profile's store (see buildStorage) — pinning the shared keys here as well
+	// would source one bucket's credentials from two places.
 	for _, storage := range app.Storage {
 		if storage.Type != "" && storage.Type != appconfig.DefaultStorageType {
+			continue
+		}
+		if _, ok := StorageProfileFor(c, storage); ok {
 			continue
 		}
 		prefix := appconfig.EnvPrefix(storage.Name)

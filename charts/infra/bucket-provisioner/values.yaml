@@ -1,0 +1,67 @@
+# bucket-provisioner — create ONE S3-compatible bucket, idempotently.
+#
+# The platform speaks the S3 API through the MinIO client (mc) rather than a
+# provider-specific operator, so the same chart serves MinIO, Cloudflare R2 and
+# AWS S3. idpctl fills every value below from the target env's
+# storageProfiles.<type> entry (environments/<env>/cluster.yaml) plus the app's
+# storage[] declaration — nothing here is authored by hand.
+#
+# The Job is a post-install/post-upgrade HOOK: Helm waits for it, so the
+# HelmRelease only reports Ready once the bucket exists. It runs
+# `mc mb --ignore-existing` and NOTHING else — this chart never removes a
+# bucket, so tearing down an app leaves its data intact.
+
+# bucket is the physical bucket name to create.
+bucket: ""
+
+# endpoint is the S3-compatible API endpoint (scheme required).
+endpoint: ""
+
+# region is optional: S3 needs it, MinIO ignores it, R2 uses "auto".
+region: ""
+
+# pathStyle forces path-style addressing (endpoint/bucket) instead of
+# virtual-host style — the usual MinIO/on-prem setting.
+pathStyle: false
+
+# image is the MinIO client image. It MUST be digest-pinned: this Job holds
+# credentials for the whole endpoint, so a mutable tag would let a re-pull
+# change what runs with them. idpctl rejects an unpinned profile image.
+image: ""
+
+imagePullPolicy: IfNotPresent
+
+# credentials names the remote entries holding the S3 key pair. NO credential
+# value appears in this chart or in the rendered umbrella — external-secrets
+# resolves them in-cluster into the Secret the Job envFroms.
+credentials:
+  storeRef:
+    name: ""                          # the env's SecretStore/ClusterSecretStore
+    kind: ClusterSecretStore          # ClusterSecretStore | SecretStore
+  refreshInterval: 1h
+  accessKeyID:
+    key: ""                           # remote key holding the access key id
+    property: ""                      # optional: field within that key
+  secretAccessKey:
+    key: ""
+    property: ""
+
+# ttlSecondsAfterFinished cleans up the completed hook Job. The Job is kept
+# (not deleted on success) so a failed provision stays inspectable until it
+# ages out.
+ttlSecondsAfterFinished: 3600
+
+# backoffLimit covers the window between the ExternalSecret being created and
+# external-secrets materializing the credential Secret.
+backoffLimit: 6
+
+# labels are the platform labels idpctl stamps on the release's objects.
+labels: {}
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

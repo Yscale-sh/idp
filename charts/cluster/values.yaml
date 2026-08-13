@@ -25,6 +25,10 @@ source:
 #       namespace: carshowdb-dev-postgres
 #       releaseName: carshowdb-postgres
 #       values: { ...charts/infra/dev-postgres values... }
+#     buckets:                          # optional, one per provisioned bucket
+#       - namespace: platform-storage
+#         releaseName: carshowdb-dev-uploads-bucket
+#         values: { ...charts/infra/bucket-provisioner values... }
 apps: []
 
 # Modules: each enabled infra module becomes a HelmRelease (chartRepo modules also

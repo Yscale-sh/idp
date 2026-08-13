@@ -25,6 +25,40 @@ secrets:
       name: platform-ssm
       kind: ClusterSecretStore
 
+# ── object-storage provisioning profiles (optional) ──────────────────────────
+# An app that sets `storage[].provision: true` needs a matching entry here, or
+# the render FAILS before touching Git. Buckets are created through the S3 API
+# by charts/infra/bucket-provisioner, so one shape serves MinIO, R2 and S3 —
+# only endpoint/region/pathStyle differ. See environments/dev/cluster.yaml for
+# the path-style (MinIO) variant.
+#
+# NOTHING SECRET LIVES HERE: `credentials` names the store and the remote SSM
+# paths, and external-secrets resolves the values in-cluster. `image` must be
+# digest-pinned — the provisioner Job holds credentials for every bucket on the
+# endpoint, so a mutable tag would let a re-pull change what runs with them.
+#
+# PLACEHOLDERS ONLY in this published sample.
+#
+# This skeleton profiles the `s3` type only. Adding an `r2:` entry moves the
+# DEFAULT storage type onto the profile path: every r2 bucket then takes its
+# credentials from the store named below instead of the legacy shared
+# Cloudflare group. Do that deliberately, after the keys exist in the store.
+storageProfiles:
+  s3:
+    endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+    region: auto                      # R2 uses "auto"; AWS S3 wants a real region
+    namespace: platform-storage       # where the provisioner Job runs
+    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    credentials:
+      storeRef:
+        name: platform-ssm
+        kind: ClusterSecretStore
+      refreshInterval: 1h
+      accessKeyID:
+        key: /shared/objectstore/ACCESS_KEY_ID
+      secretAccessKey:
+        key: /shared/objectstore/SECRET_ACCESS_KEY
+
 # ── observability (injected as Tier-A env into every app) ────────────────────
 observability:
   lokiURL: http://loki-proxy.monitoring.svc.cluster.local:8090

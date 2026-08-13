@@ -203,7 +203,7 @@
           },
           "provision": {
             "type": "boolean",
-            "description": "Create the bucket through the environment's Crossplane storage profile. Defaults false for existing-bucket compatibility.",
+            "description": "Create the bucket through the environment's S3-compatible storage profile. Defaults false for existing-bucket compatibility.",
             "default": false
           }
         }

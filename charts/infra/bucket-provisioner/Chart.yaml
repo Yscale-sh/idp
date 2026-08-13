@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bucket-provisioner
+description: Creates one S3-compatible bucket through the MinIO client, behind its own Flux HelmRelease.
+type: application
+version: 0.1.0
+appVersion: "1"

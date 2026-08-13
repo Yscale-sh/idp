@@ -31,6 +31,43 @@ secrets:
       name: platform-local
       kind: ClusterSecretStore
 
+# ── object-storage provisioning profiles (optional) ──────────────────────────
+# One entry per deploy.yaml storage type (r2 | s3). An app that sets
+# `storage[].provision: true` needs a matching entry here; without one the
+# render FAILS before touching Git. Buckets are created by
+# charts/infra/bucket-provisioner through the S3 API, so the same shape serves
+# MinIO, Cloudflare R2 and AWS S3 — only endpoint/region/pathStyle differ.
+#
+# NOTHING SECRET LIVES HERE. `credentials` names the store and the remote keys;
+# external-secrets resolves the values in-cluster. `image` must be
+# digest-pinned — the provisioner Job holds credentials for every bucket on the
+# endpoint, so a mutable tag would let a re-pull change what runs with them.
+#
+# PLACEHOLDERS ONLY in this published sample: replace the endpoint, the store
+# name, the remote keys, and the image digest with your own. Adding an `r2:`
+# entry moves the DEFAULT storage type onto the profile path — every r2 bucket
+# then takes its credentials from the store named there rather than the legacy
+# shared Cloudflare group, so do it deliberately.
+storageProfiles:
+  s3:
+    endpoint: https://minio.example.invalid   # your S3-compatible endpoint
+    pathStyle: true                           # MinIO/on-prem addressing
+    namespace: platform-storage               # where the provisioner Job runs
+    image: minio/mc@sha256:REPLACE_WITH_A_REAL_DIGEST
+    credentials:
+      storeRef:
+        name: platform-local
+        kind: ClusterSecretStore
+      refreshInterval: 1h
+      # With the ESO Kubernetes provider, `key` is a Secret name and `property`
+      # selects the entry inside it.
+      accessKeyID:
+        key: example-object-storage
+        property: ACCESS_KEY_ID
+      secretAccessKey:
+        key: example-object-storage
+        property: SECRET_ACCESS_KEY
+
 # ── observability endpoints (injected as Tier-A env into every app) ──────────
 observability:
   lokiURL: http://loki.loki.svc.cluster.local:3100

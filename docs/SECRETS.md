@@ -35,9 +35,10 @@ Cloudflare, GitHub, registry, object-storage, and tailnet credentials are requir
 optional integrations. Scope each token to the smallest useful account, repository, zone, or action.
 Do not reuse platform write credentials as application credentials.
 
-An explicit `storage[].provision: true` emits a retained Crossplane Bucket resource. The bucket name
-and configured endpoint are injected as non-secret variables. Access keys remain in the runtime
-Secret; the provider's own credentials stay behind its ProviderConfig reference and never enter Git.
+An explicit `storage[].provision: true` creates the bucket through the environment's S3-compatible
+storage profile, and never deletes one. The bucket name, endpoint, and optional region/path-style
+are injected as non-secret variables. Each bucket's access keys arrive in their own ExternalSecret
+resolved from the profile's store; only the store name and remote key names enter Git.
 
 `TUNNEL_TOKEN` is retrieved and reconciled by tunnel automation when enabled. Access service tokens
 use `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`. Neither belongs in Git.

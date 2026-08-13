@@ -268,6 +268,27 @@ externalSecret:
   #  - secretKey: STRIPE_SECRET_KEY
   #    remoteRef: { key: /shared/stripe/STRIPE_SECRET_KEY }
 
+# ── object-storage credentials (one Secret per bucket) ───────────────────────
+# One entry per bucket whose storage type is backed by an environment
+# storageProfiles entry. Each renders its OWN ExternalSecret
+# (templates/storage-externalsecret.yaml) holding just that bucket's key pair,
+# which the Deployment envFroms as <PREFIX>_ACCESS_KEY_ID and
+# <PREFIX>_SECRET_ACCESS_KEY.
+#
+# The bucket name, endpoint, region and path-style are NOT secret — they arrive
+# as plain env under env.extra (<PREFIX>_BUCKET, <PREFIX>_ENDPOINT,
+# <PREFIX>_REGION, <PREFIX>_S3_PATH_STYLE). Only references appear here; the
+# values are resolved in-cluster by external-secrets.
+storage: []
+#  - name: uploads
+#    prefix: UPLOADS
+#    secretName: myapp-storage-uploads
+#    credentials:
+#      storeRef: { name: platform-local, kind: ClusterSecretStore }
+#      refreshInterval: 1h
+#      accessKeyID:     { key: example-object-storage, property: ACCESS_KEY_ID }
+#      secretAccessKey: { key: example-object-storage, property: SECRET_ACCESS_KEY }
+
 # ── autoscaling (KEDA) ───────────────────────────────────────────────────────
 keda:
   enabled: false

@@ -219,24 +219,57 @@ func storeLabels(app, env, tool string) map[string]string {
 	}
 }
 
-// ManagedResource remains unstructured so provider-specific fields survive an
-// unrelated app's umbrella read/modify/write cycle.
+// ManagedResource is the LEGACY Crossplane managed resource an older idpctl
+// persisted under an umbrella bucket entry. It stays unstructured so a
+// provider-specific field survives an unrelated app's read/modify/write cycle;
+// nothing renders it any more (see BucketEntry.Resource / WritePlatform).
 type ManagedResource map[string]any
 
-// BuildBuckets renders Crossplane managed resources for explicitly provisioned
-// object storage. It is deterministic and performs no cloud or Kubernetes writes.
-func BuildBuckets(app appconfig.App, env string, c *clusterenv.Config) ([]ManagedResource, error) {
-	var out []ManagedResource
+// BucketValues is the charts/infra/bucket-provisioner values for one bucket.
+// Everything here is non-secret: the credentials block names remote entries,
+// it never carries their values.
+type BucketValues struct {
+	Bucket      string                 `json:"bucket"`
+	Endpoint    string                 `json:"endpoint"`
+	Region      string                 `json:"region,omitempty"`
+	PathStyle   bool                   `json:"pathStyle,omitempty"`
+	Image       string                 `json:"image"`
+	Credentials BucketCredentialValues `json:"credentials"`
+	Labels      map[string]string      `json:"labels,omitempty"`
+}
+
+// BucketCredentialValues locates one S3-compatible key pair in the env's secret
+// backend. REFERENCES ONLY — the values are resolved in-cluster by
+// external-secrets, so the rendered umbrella stays safe to commit.
+type BucketCredentialValues struct {
+	StoreRef        StoreRefValues        `json:"storeRef"`
+	RefreshInterval string                `json:"refreshInterval,omitempty"`
+	AccessKeyID     RemoteSecretRefValues `json:"accessKeyID"`
+	SecretAccessKey RemoteSecretRefValues `json:"secretAccessKey"`
+}
+
+// RemoteSecretRefValues is one entry in the secret backend: a key plus, for
+// backends whose key addresses a multi-entry object, the property within it.
+type RemoteSecretRefValues struct {
+	Key      string `json:"key"`
+	Property string `json:"property,omitempty"`
+}
+
+// BuildBuckets renders one isolated bucket-provisioner release per explicitly
+// provisioned bucket. It is deterministic and performs no cloud or Kubernetes
+// writes — the release's Helm hook does the creating, in-cluster.
+//
+// Buckets are provider-neutral: every supported backend (MinIO, R2, S3) speaks
+// the S3 API, so the env's storage profile supplies endpoint/region/addressing
+// and the credential references, and the same chart serves all of them.
+func BuildBuckets(app appconfig.App, env string, c *clusterenv.Config) ([]BucketEntry, error) {
+	var out []BucketEntry
 	for _, storage := range app.Storage {
 		if !storage.Provisioned() {
 			continue
 		}
 
-		var profile clusterenv.StorageProfile
-		var ok bool
-		if c != nil {
-			profile, ok = c.StorageProfiles[storage.Type]
-		}
+		profile, ok := StorageProfileFor(c, storage)
 		if !ok {
 			return nil, fmt.Errorf("app %q requests storage bucket %q (type %q) with provision=true, but env %q has no storage profile for that type", app.App, storage.Name, storage.Type, env)
 		}
@@ -245,52 +278,56 @@ func BuildBuckets(app appconfig.App, env string, c *clusterenv.Config) ([]Manage
 		}
 
 		name := appconfig.SanitizeDNSLabel(app.App + "-" + env + "-" + storage.Name)
-		physicalName := StorageBucketName(app, env, storage)
-		forProvider := make(map[string]any, len(profile.ForProvider)+1)
-		for key, value := range profile.ForProvider {
-			forProvider[key] = value
-		}
-		if profile.BucketNameField != "" {
-			forProvider[profile.BucketNameField] = physicalName
-		}
-
-		metadata := map[string]any{
-			"name": name,
-			"annotations": map[string]string{
-				"crossplane.io/external-name": physicalName,
-			},
-			"labels": map[string]string{
-				"app.kubernetes.io/name":     name,
-				"app.kubernetes.io/instance": name,
-				"platform/app":               app.App,
-				"platform/env":               env,
-				"platform/component":         "storage",
-				"platform/managed-by":        "platformctl",
-			},
-		}
-		if profile.Namespace != "" {
-			metadata["namespace"] = profile.Namespace
-		}
-		providerConfigRef := map[string]any{"name": profile.ProviderConfigRef.Name}
-		if profile.ProviderConfigRef.Kind != "" {
-			providerConfigRef["kind"] = profile.ProviderConfigRef.Kind
-		}
-		out = append(out, ManagedResource{
-			"apiVersion": profile.APIVersion,
-			"kind":       profile.Kind,
-			"metadata":   metadata,
-			"spec": map[string]any{
-				"providerConfigRef":  providerConfigRef,
-				"managementPolicies": []string{"Create", "Observe", "Update", "LateInitialize"},
-				"forProvider":        forProvider,
+		out = append(out, BucketEntry{
+			Namespace:   profile.Namespace,
+			ReleaseName: appconfig.SanitizeDNSLabel(name + "-bucket"),
+			Values: BucketValues{
+				Bucket:      StorageBucketName(app, env, storage),
+				Endpoint:    profile.Endpoint,
+				Region:      profile.Region,
+				PathStyle:   profile.PathStyle,
+				Image:       profile.Image,
+				Credentials: BucketCredentials(profile),
+				Labels: map[string]string{
+					"platform/app":        app.App,
+					"platform/env":        env,
+					"platform/component":  "storage",
+					"platform/managed-by": "platformctl",
+				},
 			},
 		})
 	}
 	return out, nil
 }
 
-// StorageBucketName resolves the physical bucket name shared by the managed
-// resource and the application's non-secret <NAME>_BUCKET variable.
+// StorageProfileFor resolves the env profile backing a declared bucket, if the
+// env configures one for that storage type.
+func StorageProfileFor(c *clusterenv.Config, storage appconfig.Storage) (clusterenv.StorageProfile, bool) {
+	if c == nil {
+		return clusterenv.StorageProfile{}, false
+	}
+	profile, ok := c.StorageProfiles[storage.Type]
+	return profile, ok
+}
+
+// BucketCredentials projects a profile's credential references into chart
+// values. Shared by the provisioner release and each consuming app, so both
+// pull the same key pair from the same store.
+func BucketCredentials(profile clusterenv.StorageProfile) BucketCredentialValues {
+	cred := profile.Credentials
+	return BucketCredentialValues{
+		StoreRef: StoreRefValues{
+			Name: cred.StoreRef.Name,
+			Kind: cred.StoreRefKind(),
+		},
+		RefreshInterval: cred.RefreshInterval,
+		AccessKeyID:     RemoteSecretRefValues{Key: cred.AccessKeyID.Key, Property: cred.AccessKeyID.Property},
+		SecretAccessKey: RemoteSecretRefValues{Key: cred.SecretAccessKey.Key, Property: cred.SecretAccessKey.Property},
+	}
+}
+
+// StorageBucketName resolves the physical bucket name shared by the provisioner
+// release and the application's non-secret <NAME>_BUCKET variable.
 func StorageBucketName(app appconfig.App, env string, storage appconfig.Storage) string {
 	if storage.Bucket != "" {
 		return storage.Bucket

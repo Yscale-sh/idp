@@ -58,11 +58,17 @@ type Values struct {
 	ProvisionedClaims []map[string]any     `json:"provisionedClaims,omitempty"`
 	Env               EnvValues            `json:"env"`
 	ExternalSecret    ExternalSecretValues `json:"externalSecret"`
-	Keda              KedaValues           `json:"keda"`
-	ServiceMonitor    ServiceMonitorValues `json:"serviceMonitor"`
-	Pdb               PdbValues            `json:"pdb"`
-	DB                []StoreValues        `json:"db"`
-	Cache             []StoreValues        `json:"cache"`
+	// Storage is one entry per bucket whose type is backed by an env storage
+	// profile. Each renders its OWN ExternalSecret holding just that bucket's
+	// key pair, which the pod envFroms — so a bucket's credentials are scoped to
+	// the bucket instead of being folded into the app-wide runtime Secret.
+	// Buckets with no profile are absent here and keep the legacy wiring.
+	Storage        []StorageValues      `json:"storage,omitempty"`
+	Keda           KedaValues           `json:"keda"`
+	ServiceMonitor ServiceMonitorValues `json:"serviceMonitor"`
+	Pdb            PdbValues            `json:"pdb"`
+	DB             []StoreValues        `json:"db"`
+	Cache          []StoreValues        `json:"cache"`
 	// DevSecretPlaceholders are clearly-marked dev placeholder values for
 	// app-level secret keys (JWT_SECRET, GEMINI_*, S3_*, SENDGRID_*, STRIPE_*).
 	// They are emitted ONLY for the local (dev) backend so an app boots with no
@@ -212,6 +218,18 @@ type ExternalSecretValues struct {
 	StoreRef        StoreRefValues    `json:"storeRef"`
 	DataFrom        []DataFromValues  `json:"dataFrom"`
 	RemoteRefs      []RemoteRefValues `json:"remoteRefs"`
+}
+
+// StorageValues wires one profile-backed bucket into the app. The bucket name,
+// endpoint, region and addressing style are plain env (they are not secret and
+// belong in the rendered values); ONLY the key pair goes through the dedicated
+// ExternalSecret named here, which the Deployment envFroms as
+// <PREFIX>_ACCESS_KEY_ID / <PREFIX>_SECRET_ACCESS_KEY.
+type StorageValues struct {
+	Name        string                 `json:"name"`
+	Prefix      string                 `json:"prefix"`
+	SecretName  string                 `json:"secretName"`
+	Credentials BucketCredentialValues `json:"credentials"`
 }
 
 // LoggingValues is the rendered logging block (only the retention override).
@@ -365,6 +383,7 @@ func BuildValues(app appconfig.App, env string, c *clusterenv.Config, image, dep
 			Extra: buildAppEnv(app, env, c),
 		},
 		ExternalSecret:        BuildExternalSecret(app, env, c),
+		Storage:               buildStorage(app, c),
 		Keda:                  buildKeda(app),
 		ServiceMonitor:        buildServiceMonitor(app),
 		Pdb:                   buildPDB(app),
@@ -522,11 +541,47 @@ func buildAppEnv(app appconfig.App, env string, c *clusterenv.Config) map[string
 	for _, storage := range app.Storage {
 		prefix := appconfig.EnvPrefix(storage.Name)
 		out[prefix+"_BUCKET"] = StorageBucketName(app, env, storage)
-		if c != nil {
-			if profile, ok := c.StorageProfiles[storage.Type]; ok && profile.Endpoint != "" {
-				out[prefix+"_ENDPOINT"] = profile.Endpoint
-			}
+		profile, ok := StorageProfileFor(c, storage)
+		if !ok {
+			continue
 		}
+		if profile.Endpoint != "" {
+			out[prefix+"_ENDPOINT"] = profile.Endpoint
+		}
+		// Region and addressing style are ordinary S3 client config, not secrets;
+		// they ride with the bucket/endpoint so an SDK can be configured from env
+		// alone. Emitted only when the profile sets them, so a MinIO app renders
+		// byte-identical to before on the region key.
+		if profile.Region != "" {
+			out[prefix+"_REGION"] = profile.Region
+		}
+		if profile.PathStyle {
+			out[prefix+"_S3_PATH_STYLE"] = "true"
+		}
+	}
+	return out
+}
+
+// buildStorage returns one entry per PROFILE-BACKED bucket — the buckets whose
+// credentials the platform can locate in the env's secret backend. Each gets
+// its own ExternalSecret (chart template storage-externalsecret.yaml) rather
+// than folding the key pair into the app-wide runtime Secret, so one bucket's
+// credentials never widen another's blast radius. A bucket with no matching
+// profile is omitted and keeps the legacy shared-credential wiring.
+func buildStorage(app appconfig.App, c *clusterenv.Config) []StorageValues {
+	var out []StorageValues
+	for _, storage := range app.Storage {
+		profile, ok := StorageProfileFor(c, storage)
+		if !ok {
+			continue
+		}
+		prefix := appconfig.EnvPrefix(storage.Name)
+		out = append(out, StorageValues{
+			Name:        storage.Name,
+			Prefix:      prefix,
+			SecretName:  appconfig.SanitizeDNSLabel(app.Workload() + "-storage-" + storage.Name),
+			Credentials: BucketCredentials(profile),
+		})
 	}
 	return out
 }
@@ -777,7 +832,7 @@ func buildDevPlaceholders(app appconfig.App, c *clusterenv.Config) []SecretPlace
 	keys := make([]string, 0, len(devAppSecretKeys)+len(app.Storage)*4+len(app.Secrets))
 	keys = append(keys, devAppSecretKeys...)
 	// Object-storage credentials per declared bucket (Tier C storage convention).
-	keys = append(keys, StorageSecretEnvKeys(app)...)
+	keys = append(keys, StorageSecretEnvKeys(app, c)...)
 	// App-declared extra secret keys (e.g. a bare AWS_ACCESS_KEY_ID an SDK wants).
 	keys = append(keys, app.Secrets...)
 

@@ -100,9 +100,18 @@ func StorageEnvKeys(app appconfig.App) []string {
 
 // StorageSecretEnvKeys is the secret subset of StorageEnvKeys. Bucket names and
 // endpoints are ordinary rendered configuration; only credentials are secret.
-func StorageSecretEnvKeys(app appconfig.App) []string {
+//
+// PROFILE-BACKED buckets are excluded: their key pair comes from the profile's
+// own store through a dedicated per-bucket ExternalSecret, so listing the keys
+// here too would make the app's runtime Secret claim to source credentials it
+// does not own — and, on the SSM backend, fail the ExternalSecret on a remote
+// key that was never populated.
+func StorageSecretEnvKeys(app appconfig.App, c *clusterenv.Config) []string {
 	var keys []string
 	for _, storage := range app.Storage {
+		if _, ok := StorageProfileFor(c, storage); ok {
+			continue
+		}
 		prefix := appconfig.EnvPrefix(storage.Name)
 		keys = append(keys, prefix+"_ACCESS_KEY_ID", prefix+"_SECRET_ACCESS_KEY")
 	}

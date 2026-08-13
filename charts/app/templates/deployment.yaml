@@ -88,15 +88,25 @@ spec:
                   key: {{ . }}
             {{- end }}
             {{- end }}
-          {{- if .Values.externalSecret.enabled }}
+          {{- if or .Values.externalSecret.enabled .Values.storage }}
           # Remaining secret env (shared groups + app-level keys: JWT_SECRET,
           # GEMINI_*, S3_*, SENDGRID_*, STRIPE_*) is materialized into the runtime
           # Secret <app>-runtime (dev: plain Secret; prod: ExternalSecret from SSM)
           # and pulled in wholesale via envFrom. No literal secret values live in
           # the chart. The *_URL keys above are also present in this Secret.
+          #
+          # Each profile-backed bucket adds ONE MORE Secret carrying just its own
+          # <PREFIX>_ACCESS_KEY_ID / <PREFIX>_SECRET_ACCESS_KEY. Its bucket name,
+          # endpoint, region and path-style are plain env above — not secret.
           envFrom:
+            {{- if .Values.externalSecret.enabled }}
             - secretRef:
                 name: {{ include "app.secretName" . }}
+            {{- end }}
+            {{- range .Values.storage }}
+            - secretRef:
+                name: {{ .secretName }}
+            {{- end }}
           {{- end }}
           {{- if not .Values.worker }}
           {{- $pt := .Values.probes.type | default "http" }}

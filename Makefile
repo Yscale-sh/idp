@@ -21,6 +21,7 @@ IMAGE_REPO  ?= ghcr.io/yscale-sh/idpctl
 TAG         ?= dev
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
+BUCKET_CHART := charts/infra/bucket-provisioner
 EXAMPLE     := examples/carshowdb/deploy.yaml
 ENV         ?= dev
 # Image must be an immutable tag (never :latest in prod). Override on the CLI:
@@ -90,6 +91,12 @@ helm-lint: ## Lint the app + dev-postgres charts (skips a chart that isn't prese
 	  echo ">> helm lint $(PG_CHART)"; $(HELM) lint $(PG_CHART); \
 	else \
 	  echo "SKIP helm lint $(PG_CHART): no Chart.yaml yet."; \
+	fi
+	@if [ -f "$(BUCKET_CHART)/Chart.yaml" ]; then \
+	  echo ">> helm lint $(BUCKET_CHART)"; \
+	  $(HELM) lint $(BUCKET_CHART) -f $(BUCKET_CHART)/ci/lint-values.yaml; \
+	else \
+	  echo "SKIP helm lint $(BUCKET_CHART): no Chart.yaml yet."; \
 	fi
 
 # ── drive the CLI on the example ───────────────────────────────────────────────

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clusterenv"
@@ -36,13 +37,21 @@ type StoreEntry struct {
 	Values      any    `json:"values,omitempty"`
 }
 
-// BucketEntry is one isolated child HelmRelease that applies a single provider
-// resource through charts/infra/managed-resource. The raw map preserves unknown
-// provider-specific fields during umbrella round trips.
+// BucketEntry is one isolated child HelmRelease that creates a single
+// S3-compatible bucket through charts/infra/bucket-provisioner.
 type BucketEntry struct {
-	Namespace   string          `json:"namespace"`
-	ReleaseName string          `json:"releaseName"`
-	Resource    ManagedResource `json:"resource"`
+	Namespace   string       `json:"namespace"`
+	ReleaseName string       `json:"releaseName"`
+	Values      BucketValues `json:"values"`
+
+	// Resource is the LEGACY Crossplane managed resource an older idpctl wrote
+	// here. It is parsed and retained so a read/modify/write of an umbrella that
+	// still has one does NOT silently prune somebody's persisted managed
+	// resource — that would orphan a live cluster object with no record of it.
+	// WritePlatform instead REFUSES to write while any entry carries it, with
+	// the migration command in the error; re-rendering the owning app replaces
+	// the entry with provider-neutral values.
+	Resource ManagedResource `json:"resource,omitempty"`
 }
 
 // PostgresEntry is the LEGACY single-Postgres shape an older idpctl wrote. New
@@ -200,8 +209,9 @@ func ReadPlatform(root, env string, c *clusterenv.Config) (*PlatformRelease, err
 	return pr, nil
 }
 
-// ParsePlatform parses an umbrella release while preserving unstructured
-// provider-managed resources nested under app bucket entries.
+// ParsePlatform parses an umbrella release while preserving legacy
+// provider-managed resources nested under app bucket entries (see
+// BucketEntry.Resource — retained on read, refused on write).
 func ParsePlatform(data []byte) (*PlatformRelease, error) {
 	var pr PlatformRelease
 	if err := yaml.Unmarshal(data, &pr); err != nil {
@@ -226,8 +236,46 @@ func platformHeader(env string) string {
 	)
 }
 
+// legacyBucketResources lists the bucket entries still carrying a Crossplane-era
+// managed resource, as "<app>/<release>" handles.
+func legacyBucketResources(pr *PlatformRelease) []string {
+	var stale []string
+	for _, a := range pr.Spec.Values.Apps {
+		for _, b := range a.Buckets {
+			if len(b.Resource) > 0 {
+				stale = append(stale, a.Name+"/"+b.ReleaseName)
+			}
+		}
+	}
+	sort.Strings(stale)
+	return stale
+}
+
 // WritePlatform marshals the umbrella HelmRelease to clusters/<env>/platform.yaml.
+//
+// It FAILS CLOSED on Crossplane-era bucket entries. Buckets are now provisioned
+// by charts/infra/bucket-provisioner, which does not understand a
+// `resource:` block; writing one back would leave state the umbrella cannot
+// render, and dropping it would orphan a live provider object nothing tracks.
+// Neither is safe to do quietly.
+//
+// The refusal covers the WHOLE file, not just the entry being written, so the
+// error lists every stale entry at once — and so a render cannot creep past a
+// sibling app's un-migrated state. That means the blocks are cleared by hand,
+// deliberately, before renders resume; the error says so.
 func WritePlatform(root, env string, pr *PlatformRelease) (string, error) {
+	if stale := legacyBucketResources(pr); len(stale) > 0 {
+		return "", fmt.Errorf(
+			"clusters/%s/platform.yaml still has Crossplane-era bucket entries (%s): "+
+				"those `resource:` blocks are no longer rendered, and dropping them silently would "+
+				"orphan the provider objects they track. To migrate: confirm the buckets themselves "+
+				"exist at the endpoint, delete those `resource:` blocks from platform.yaml (and the "+
+				"provider's Bucket objects) by hand, then re-render each owning app "+
+				"(`idpctl render --env %s --file <deploy.yaml> --image <image>`) to recreate the "+
+				"entries as bucket-provisioner values. Every listed entry must be cleared before "+
+				"any render can write this file again",
+			env, strings.Join(stale, ", "), env)
+	}
 	p := PlatformPath(root, env)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", fmt.Errorf("create clusters dir: %w", err)
@@ -264,17 +312,10 @@ func (r *Result) ToAppEntry() AppEntry {
 		})
 	}
 	for _, bucket := range r.Buckets {
-		metadata, _ := bucket["metadata"].(map[string]any)
-		name, _ := metadata["name"].(string)
-		namespace, _ := metadata["namespace"].(string)
-		if namespace == "" {
-			namespace = r.HelmRelease.Metadata.Namespace
+		if bucket.Namespace == "" {
+			bucket.Namespace = r.HelmRelease.Metadata.Namespace
 		}
-		e.Buckets = append(e.Buckets, BucketEntry{
-			Namespace:   namespace,
-			ReleaseName: appconfig.SanitizeDNSLabel(name + "-bucket"),
-			Resource:    bucket,
-		})
+		e.Buckets = append(e.Buckets, bucket)
 	}
 	return e
 }

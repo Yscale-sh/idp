@@ -1,0 +1,23 @@
+# Lint/CI fixture for charts/infra/bucket-provisioner. PLACEHOLDERS ONLY — this
+# file is published, so it names no real endpoint, account, or credential path.
+bucket: example-dev-uploads
+endpoint: https://minio.example.invalid
+region: ""
+pathStyle: true
+image: minio/mc@sha256:0000000000000000000000000000000000000000000000000000000000000000
+credentials:
+  storeRef:
+    name: platform-local
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  accessKeyID:
+    key: example-object-storage
+    property: ACCESS_KEY_ID
+  secretAccessKey:
+    key: example-object-storage
+    property: SECRET_ACCESS_KEY
+labels:
+  platform/app: example
+  platform/env: dev
+  platform/component: storage
+  platform/managed-by: platformctl

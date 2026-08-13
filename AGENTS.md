@@ -54,7 +54,7 @@ sizing:
 | `runtime.port` | the container port your server binds (`0` makes a worker: Deployment only, no Service or probes). |
 | `routes[]` | `{host, public, access}`. `host` is a bare label composed under the env zone, or a full FQDN. `public: true` -> Cloudflare Tunnel (prod) / MetalLB LAN LoadBalancer (dev). |
 | `db` / `cache` | `[{name, type: postgres\|redis}]` -> injects `DATABASE_URL` / `REDIS_URL` (from SSM in prod, in-cluster dev-postgres/dev-redis in dev). |
-| `storage[]` | Existing R2/S3 bucket wiring, or `provision: true` for a retained Crossplane-managed bucket through the environment profile. |
+| `storage[]` | Existing R2/S3 bucket wiring, or `provision: true` to create the bucket through the environment's S3-compatible storage profile (MinIO/R2/S3). |
 | `secrets[]` | list of KEY names -> synced from SSM `/apps/<app>/<env>/<KEY>` into your env. Shared values live at `/shared/<group>/<KEY>`. |
 | `env{}` | plain non-secret config (committed; reserved keys are dropped). |
 | `probes` | `{path: /health}` (HTTP) or `{type: tcp}` (no HTTP health route) or `{type: none}`. A wrong path CrashLoops the pod. |
@@ -87,8 +87,9 @@ Your `runtime.image` is **tagless**. The platform builds and tags it:
   service; prod stays PVC-free by contract). In dev they're spun up in-cluster automatically.
   **Don't hardcode connection strings: declare the store.**
 - Existing buckets declare `bucket:` and omit `provision`. Set `provision: true` to create one;
-  the environment must have a matching `storageProfiles.<type>` Crossplane profile. Bucket names
-  and endpoints are plain config, credentials remain secret, and app removal retains bucket data.
+  the environment must have a matching `storageProfiles.<type>` entry. Bucket names, endpoints,
+  regions and path-style are plain config; each bucket's access keys arrive in their own Secret.
+  App removal never deletes a bucket.
 
 ## Multi-component apps (api + ui + worker)
 
