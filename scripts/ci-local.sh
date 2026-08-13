@@ -65,10 +65,15 @@ step "render smoke (non-destructive --stdout)"
   || fail "render smoke failed"
 ok "render ok"
 
-step "catalog smoke (read-only -> /tmp)"
-./idpctl catalog --env dev --format json >/dev/null
-./idpctl catalog --all --out-dir /tmp/idp-ci-site
-test -f /tmp/idp-ci-site/index.html || fail "catalog did not produce index.html"
+step "catalog smoke (temporary rendered state)"
+ci_root="$(mktemp -d)"
+mkdir -p "$ci_root/environments"
+cp -R environments/dev "$ci_root/environments/dev"
+./idpctl render --env dev --root "$ci_root" --file examples/carshowdb/deploy.yaml \
+  --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000 >/dev/null
+./idpctl catalog --root "$ci_root" --env dev --format json >/dev/null
+./idpctl catalog --root "$ci_root" --all --out-dir "$ci_root/site"
+test -f "$ci_root/site/index.html" || fail "catalog did not produce index.html"
 ok "catalog ok"
 
 step "golangci-lint (optional)"

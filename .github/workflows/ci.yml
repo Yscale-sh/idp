@@ -62,14 +62,15 @@ jobs:
 
       - name: Render smoke (must not dirty tracked state unexpectedly)
         run: |
-          ./idpctl render --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000
-          ./idpctl infra render --env dev
+          mkdir -p "$RUNNER_TEMP/idp-ci-root/environments"
+          cp -R environments/dev "$RUNNER_TEMP/idp-ci-root/environments/dev"
+          ./idpctl render --root "$RUNNER_TEMP/idp-ci-root" --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000
 
       - name: Catalog smoke (read-only viewer over the rendered state)
         run: |
-          ./idpctl catalog --env dev --format json > /dev/null
-          ./idpctl catalog --all --out-dir /tmp/site
-          test -f /tmp/site/index.html
+          ./idpctl catalog --root "$RUNNER_TEMP/idp-ci-root" --env dev --format json > /dev/null
+          ./idpctl catalog --root "$RUNNER_TEMP/idp-ci-root" --all --out-dir "$RUNNER_TEMP/site"
+          test -f "$RUNNER_TEMP/site/index.html"
 
   lint:
     runs-on: ubuntu-latest
