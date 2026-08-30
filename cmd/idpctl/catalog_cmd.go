@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yscale-sh/idp/internal/catalog"
 	"github.com/spf13/cobra"
+	"github.com/yscale-sh/idp/internal/catalog"
 )
 
 // newCatalogCmd builds `idpctl catalog` — a READ-ONLY viewer over the committed

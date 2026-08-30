@@ -8,9 +8,9 @@
 image:
   # The product's published idpctl image (the idp-shipper entrypoint lives in
   # the same image). Override to pin your own build.
-  repository: ghcr.io/yscale-sh/idpctl
-  tag: v2
-  pullPolicy: Always   # mutable tag — re-pull on every Recreate
+  repository: registry.example.invalid/your-org/idpctl
+  tag: v0.0.0-replace-me
+  pullPolicy: IfNotPresent
 
 registry:
   env: ""              # REQUIRED: target environment (dev|prod|...)

@@ -25,12 +25,23 @@ spec:
         checksum/registry: {{ include (print $.Template.BasePath "/registry-configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: idp-shipper
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
         - name: {{ .Values.secrets.imagePull }}
       containers:
         - name: shipper
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command: ["idp-shipper"]
           env:
             - name: REGISTRY_PATH

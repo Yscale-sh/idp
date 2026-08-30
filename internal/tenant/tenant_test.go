@@ -49,8 +49,10 @@ func TestValidate_IdentityRequired(t *testing.T) {
 		{"no registry", "repo:\n  url: https://github.com/x/y.git\n", "registry is required"},
 		{"registry with scheme", "registry: https://ghcr.io/x\nrepo:\n  url: https://github.com/x/y.git\n", "no scheme"},
 		{"registry trailing slash", "registry: ghcr.io/x/\nrepo:\n  url: https://github.com/x/y.git\n", "slash"},
+		{"placeholder registry", "registry: registry.example.invalid/your-org\nrepo:\n  url: https://github.com/x/y.git\n", "template placeholder"},
 		{"no repo url", "registry: ghcr.io/x\n", "repo.url is required"},
 		{"bad repo url", "registry: ghcr.io/x\nrepo:\n  url: ftp://nope\n", "must be an https://"},
+		{"placeholder repo", "registry: ghcr.io/x\nrepo:\n  url: https://example.invalid/your-org/idp.git\n", "template placeholder"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

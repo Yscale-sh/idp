@@ -86,8 +86,11 @@ replicas: 1
 # ── pod scheduling / security passthrough (optional; chart-level, not in the
 #    deploy.yaml contract — platformctl may set these from env policy) ─────────
 podAnnotations: {}        # extra pod annotations (merged with the deploy stamp)
-podSecurityContext: {}    # pod-level securityContext
-securityContext: {}       # container-level securityContext
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
 nodeSelector: {}
 affinity: {}
 tolerations: []

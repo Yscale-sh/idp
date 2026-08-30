@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/scaffold"
 	"github.com/yscale-sh/idp/internal/tenant"
-	"github.com/spf13/cobra"
 )
 
 // init generates a starter environments/<env>/cluster.yaml for a platform

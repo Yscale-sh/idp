@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/deploy"
 	"github.com/yscale-sh/idp/internal/render"
-	"github.com/spf13/cobra"
 )
 
 func newValidateCmd() *cobra.Command {

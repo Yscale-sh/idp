@@ -17,15 +17,15 @@
 # ── config ───────────────────────────────────────────────────────────────────
 BINARY      := idpctl
 CMD_PKG     := ./cmd/idpctl
-IMAGE_REPO  ?= ghcr.io/yscale-sh/idpctl
+IMAGE_REPO  ?= registry.example.invalid/your-org/idpctl
 TAG         ?= dev
 APP_CHART   := charts/app
 PG_CHART    := charts/infra/dev-postgres
 EXAMPLE     := examples/carshowdb/deploy.yaml
 ENV         ?= dev
 # Image must be an immutable tag (never :latest in prod). Override on the CLI:
-#   make render IMAGE=ghcr.io/yscale-sh/carshowdb-api:dev-abc123
-IMAGE       ?= ghcr.io/yscale-sh/carshowdb-api:dev-local
+#   make render IMAGE=registry.example.invalid/your-org/carshowdb-api:dev-abc123
+IMAGE       ?= registry.example.invalid/your-org/carshowdb-api:dev-local
 
 GO          ?= go
 HELM        ?= helm
@@ -76,21 +76,14 @@ vet: ## Run go vet across the module.
 	$(GO) vet ./...
 
 .PHONY: helm-lint
-helm-lint: ## Lint the app + dev-postgres charts (skips a chart that isn't present yet).
+helm-lint: ## Lint every chart under charts/.
 	@command -v $(HELM) >/dev/null 2>&1 || { \
 	  echo "SKIP helm-lint: 'helm' not found on PATH (install Helm to lint charts)."; \
 	  exit 0; }
-	@if [ -f "$(APP_CHART)/Chart.yaml" ]; then \
-	  echo ">> helm lint $(APP_CHART)"; \
-	  $(HELM) lint $(APP_CHART) -f $(APP_CHART)/ci/carshowdb-dev-values.yaml; \
-	else \
-	  echo "SKIP helm lint $(APP_CHART): no Chart.yaml yet."; \
-	fi
-	@if [ -f "$(PG_CHART)/Chart.yaml" ]; then \
-	  echo ">> helm lint $(PG_CHART)"; $(HELM) lint $(PG_CHART); \
-	else \
-	  echo "SKIP helm lint $(PG_CHART): no Chart.yaml yet."; \
-	fi
+	@find charts -name Chart.yaml -printf '%h\n' | sort | while read -r chart; do \
+	  echo ">> helm lint $$chart"; \
+	  $(HELM) lint "$$chart" || exit 1; \
+	done
 
 # ── drive the CLI on the example ───────────────────────────────────────────────
 # These depend on `build`; they no-op gracefully if the subcommand isn't wired yet.

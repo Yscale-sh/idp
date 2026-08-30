@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/clusterenv"
 	"github.com/yscale-sh/idp/internal/deploy"
 	"github.com/yscale-sh/idp/internal/render"
-	"github.com/spf13/cobra"
 )
 
 // promote moves a workload between environments DIGEST-FORWARD: the image

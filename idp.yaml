@@ -4,14 +4,15 @@
 # is defaulted in Go code or charts: idpctl fails closed if this file is absent
 # where it's needed (e.g. `idpctl new app` without --registry).
 #
-# This is the Yscale-sh reference identity. A fork replaces these values with its own.
+# Template placeholders are deliberately invalid. Replace them before running
+# identity-dependent commands; internal/tenant rejects them fail-closed.
 
 # Image registry prefix: scaffold derives app images as <registry>/<app>.
-registry: ghcr.io/yscale-sh
+registry: registry.example.invalid/your-org
 
 # This platform repo (the fork Flux syncs from and the shipper commits to).
 # Per-env cluster.yaml flux.{repoURL,branch} stay authoritative for clusters;
 # they must match this repo.
 repo:
-  url: https://github.com/yscale-sh/idp.git
+  url: https://example.invalid/your-org/idp.git
   branch: main

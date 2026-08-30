@@ -43,13 +43,17 @@ func strictDevCluster() *clusterenv.Config {
 }
 
 func TestCheck_MutableTagProd(t *testing.T) {
-	app := baseApp()
-	vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/yscale-sh/carshowdb-api:latest"})
-	if err := vs.AsError(); err == nil {
-		t.Fatal("expected mutable-tag violation in prod")
-	}
-	if !errors.Is(vs, ErrMutableTag) {
-		t.Errorf("expected ErrMutableTag, got %v", vs)
+	for _, tag := range []string{"latest", "main", "master", "dev", "development", "edge", "canary", "nightly", "snapshot"} {
+		t.Run(tag, func(t *testing.T) {
+			app := baseApp()
+			vs := Check(Input{App: app, Env: "prod", Image: "ghcr.io/yscale-sh/carshowdb-api:" + tag})
+			if err := vs.AsError(); err == nil {
+				t.Fatal("expected mutable-tag violation in prod")
+			}
+			if !errors.Is(vs, ErrMutableTag) {
+				t.Errorf("expected ErrMutableTag, got %v", vs)
+			}
+		})
 	}
 }
 
@@ -62,10 +66,12 @@ func TestCheck_EmptyTagProd(t *testing.T) {
 }
 
 func TestCheck_MutableTagAllowedInDev(t *testing.T) {
-	app := baseApp()
-	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: devCluster()})
-	if err := vs.AsError(); err != nil {
-		t.Errorf("dev should tolerate :latest, got %v", err)
+	for _, tag := range []string{"latest", "main", "dev"} {
+		app := baseApp()
+		vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:" + tag, Cluster: devCluster()})
+		if err := vs.AsError(); err != nil {
+			t.Errorf("dev should tolerate :%s, got %v", tag, err)
+		}
 	}
 }
 
@@ -120,10 +126,12 @@ func TestCheck_ZoneOKInZone(t *testing.T) {
 
 // allowMutableTags=false in a NON-prod env must reject :latest (finding #5).
 func TestCheck_MutableTagRejectedWhenNotAllowed(t *testing.T) {
-	app := baseApp()
-	vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:latest", Cluster: strictDevCluster()})
-	if !errors.Is(vs, ErrMutableTag) {
-		t.Errorf("strict dev (allowMutableTags=false) must reject :latest, got %v", vs)
+	for _, tag := range []string{"latest", "main", "master", "dev"} {
+		app := baseApp()
+		vs := Check(Input{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:" + tag, Cluster: strictDevCluster()})
+		if !errors.Is(vs, ErrMutableTag) {
+			t.Errorf("strict dev (allowMutableTags=false) must reject :%s, got %v", tag, vs)
+		}
 	}
 }
 
@@ -267,9 +275,9 @@ func TestImageTag(t *testing.T) {
 		"ghcr.io/yscale-sh/app:prod-abc": "prod-abc",
 		"ghcr.io/yscale-sh/app:latest":   "latest",
 		"ghcr.io/yscale-sh/app":          "",
-		"registry:5000/app:v1":            "v1",
-		"registry:5000/app":               "",
-		"app@sha256:deadbeef":             "sha256:deadbeef",
+		"registry:5000/app:v1":           "v1",
+		"registry:5000/app":              "",
+		"app@sha256:deadbeef":            "sha256:deadbeef",
 	}
 	for in, want := range cases {
 		if got := imageTag(in); got != want {

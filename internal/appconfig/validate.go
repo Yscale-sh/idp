@@ -2,6 +2,7 @@ package appconfig
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -38,6 +39,7 @@ func (e ValidationErrors) Error() string {
 // dns1123Label is the Kubernetes DNS-1123 label rule (used for app/product/
 // component/capability names). Mirrors the JSON Schema pattern.
 var retentionPattern = regexp.MustCompile(`^[1-9][0-9]*[dh]$`)
+var buildPathPattern = regexp.MustCompile(`^[A-Za-z0-9._/@+-]+$`)
 
 var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
@@ -117,6 +119,29 @@ func (a *App) Validate() error {
 	}
 	if a.IsWorker() && len(a.Routes) > 0 {
 		add("routes", "a worker (runtime.port: 0) has no Service and cannot declare routes")
+	}
+
+	validateBuildPath := func(field, value string) {
+		if value == "" {
+			return
+		}
+		clean := path.Clean(value)
+		if !buildPathPattern.MatchString(value) {
+			add(field, "must contain only letters, numbers, '.', '_', '-', '+', '@', and '/'")
+			return
+		}
+		if path.IsAbs(value) || clean == ".." || strings.HasPrefix(clean, "../") {
+			add(field, "must stay within the repository")
+			return
+		}
+		if clean != value {
+			add(field, "must be a clean relative path")
+		}
+	}
+	validateBuildPath("build.context", a.Build.Context)
+	validateBuildPath("build.dockerfile", a.Build.Dockerfile)
+	for i, submodule := range a.Build.Submodules {
+		validateBuildPath(fmt.Sprintf("build.submodules[%d]", i), submodule)
 	}
 
 	// logging.retention: a duration Loki accepts in retention_stream ("90d", "12h").
