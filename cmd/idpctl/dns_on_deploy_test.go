@@ -97,11 +97,10 @@ func TestPublicTunnelHosts(t *testing.T) {
 	}
 }
 
-// TestPublicTunnelHosts_RealEnvs pins the behavior against the repo's ACTUAL
-// environment files + the real carshowdb deploy.yaml: dev only tunnels hosts under
-// cloudflareZone, so carshowdb's .local host stays off the Cloudflare DNS path,
-// while prod composes the POC host.
-func TestPublicTunnelHosts_RealEnvs(t *testing.T) {
+// TestPublicTunnelHosts_StarterEnvsFailClosed pins the template boundary: the
+// checked-in starter environments provide no public tunnel until an operator
+// explicitly configures a route zone and enables that seam.
+func TestPublicTunnelHosts_StarterEnvsFailClosed(t *testing.T) {
 	root := "../.." // cmd/idpctl -> repo root
 	app, err := loadApp(root + "/examples/carshowdb/deploy.yaml")
 	if err != nil {
@@ -120,10 +119,7 @@ func TestPublicTunnelHosts_RealEnvs(t *testing.T) {
 	if err != nil || prod == nil {
 		t.Fatalf("load prod cluster.yaml: %v", err)
 	}
-	// carshowdb's route is the bare label "api" -> api.example.com (matches
-	// the live API host); composed under the prod wildcard zone.
-	want := []string{"api.example.com"}
-	if got := publicTunnelHosts(app, prod); !reflect.DeepEqual(got, want) {
-		t.Fatalf("prod publicTunnelHosts() = %v, want %v", got, want)
+	if got := publicTunnelHosts(app, prod); got != nil {
+		t.Fatalf("starter prod must not publish tunnel hosts, got %v", got)
 	}
 }

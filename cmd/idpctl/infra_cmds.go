@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/clusterenv"
 	"github.com/yscale-sh/idp/internal/kube"
 	"github.com/yscale-sh/idp/internal/modules"
 	"github.com/yscale-sh/idp/internal/render"
-	"github.com/spf13/cobra"
 )
 
 func newInfraCmd() *cobra.Command {

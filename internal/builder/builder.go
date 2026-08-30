@@ -51,6 +51,60 @@ type Builder struct {
 func New(k *kube.Client) *Builder { return &Builder{Kube: k} }
 
 var nonDNS = regexp.MustCompile(`[^a-z0-9-]`)
+var githubRepoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/@+-]+$`)
+var imageRefPattern = regexp.MustCompile(`^[A-Za-z0-9._:/@+-]+$`)
+var buildPathPattern = regexp.MustCompile(`^[A-Za-z0-9._/@+-]+$`)
+var dnsLabelPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// ValidateSpec rejects values before a Job receives git and registry
+// credentials. These values are embedded in both YAML and a /bin/sh script, so
+// validation is a security boundary rather than only a usability check.
+func ValidateSpec(s Spec) error {
+	if !githubRepoPattern.MatchString(s.Repo) {
+		return fmt.Errorf("invalid GitHub repository %q: want owner/name", s.Repo)
+	}
+	if s.Ref == "" || !gitRefPattern.MatchString(s.Ref) || strings.Contains(s.Ref, "..") || strings.Contains(s.Ref, "@{") {
+		return fmt.Errorf("invalid git ref %q", s.Ref)
+	}
+	if s.Image == "" || !imageRefPattern.MatchString(s.Image) {
+		return fmt.Errorf("invalid target image %q", s.Image)
+	}
+	if s.Namespace != "" && !dnsLabelPattern.MatchString(s.Namespace) {
+		return fmt.Errorf("invalid builder namespace %q", s.Namespace)
+	}
+	for field, value := range map[string]string{
+		"context":    s.Context,
+		"dockerfile": s.Dockerfile,
+	} {
+		if err := validateBuildPath(field, value); err != nil {
+			return err
+		}
+	}
+	for i, submodule := range s.Submodules {
+		if err := validateBuildPath(fmt.Sprintf("submodule[%d]", i), submodule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBuildPath(field, value string) error {
+	if value == "" {
+		return nil
+	}
+	clean := path.Clean(value)
+	if !buildPathPattern.MatchString(value) {
+		return fmt.Errorf("invalid %s %q: contains unsupported characters", field, value)
+	}
+	if path.IsAbs(value) || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("invalid %s %q: must stay within the repository", field, value)
+	}
+	if clean != value {
+		return fmt.Errorf("invalid %s %q: must be a clean relative path", field, value)
+	}
+	return nil
+}
 
 func slug(s string, max int) string {
 	s = strings.ToLower(s)
@@ -66,6 +120,9 @@ func slug(s string, max int) string {
 // Build renders the build Job, applies it, streams its logs, and blocks until
 // the Job succeeds or fails. A failed build returns a non-nil error.
 func (b *Builder) Build(ctx context.Context, s Spec) error {
+	if err := ValidateSpec(s); err != nil {
+		return err
+	}
 	ns := s.Namespace
 	if ns == "" {
 		ns = "image-builder"
@@ -154,7 +211,28 @@ type jobParams struct {
 }
 
 func renderJob(p jobParams) ([]byte, error) {
-	t, err := template.New("job").Parse(jobTemplate)
+	if err := ValidateSpec(Spec{
+		Repo: p.Repo, Ref: p.Ref, Image: p.Image, Context: p.Context,
+		Dockerfile: p.Dockerfile, Submodules: p.Submodules, Namespace: p.Namespace,
+	}); err != nil {
+		return nil, err
+	}
+	if !dnsLabelPattern.MatchString(p.JobName) || !dnsLabelPattern.MatchString(p.Leaf) || !buildPathPattern.MatchString(p.WorkerSubpath) {
+		return nil, fmt.Errorf("invalid generated build identity")
+	}
+	funcs := template.FuncMap{
+		"repoURL": func(repo string) string { return "https://github.com/" + repo + ".git" },
+		"shellQuote": func(value string) string {
+			return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+		},
+		"workspacePath": func(value string) string {
+			if value == "." {
+				return "/workspace/src"
+			}
+			return "/workspace/src/" + value
+		},
+	}
+	t, err := template.New("job").Funcs(funcs).Parse(jobTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -208,21 +286,21 @@ spec:
           args:
             - |
               set -eu
-              echo "fetching {{.Repo}}@{{.Ref}} ..."
+              printf 'fetching %s@%s ...\n' {{shellQuote .Repo}} {{shellQuote .Ref}}
               # Auth every github.com fetch (incl. PRIVATE submodules) with the token
               # via insteadOf, so no credential is baked into a remote URL.
               git config --global url."https://x-access-token:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
               git init -q /workspace/src
-              git -C /workspace/src remote add origin "https://github.com/{{.Repo}}.git"
-              git -C /workspace/src fetch --depth 1 origin "{{.Ref}}"
+              git -C /workspace/src remote add origin {{shellQuote (repoURL .Repo)}}
+              git -C /workspace/src fetch --depth 1 -- origin {{shellQuote .Ref}}
               git -C /workspace/src checkout -q FETCH_HEAD
 {{- range .Submodules}}
               # NOT --depth 1: the gitlink pins a specific commit that may not be the
               # submodule's branch tip, which a shallow fetch wouldn't contain.
-              git -C /workspace/src submodule update --init {{.}} || echo "  (submodule {{.}} not present on this ref; skipping)"
+              git -C /workspace/src submodule update --init -- {{shellQuote .}} || printf '  (submodule %s not present on this ref; skipping)\n' {{shellQuote .}}
 {{- end}}
-              echo "context: /workspace/src/{{.Context}}"
-              ls -la "/workspace/src/{{.Context}}" | head
+              printf 'context: %s\n' {{shellQuote (workspacePath .Context)}}
+              ls -la {{shellQuote (workspacePath .Context)}} | head
           volumeMounts:
             - { name: workspace, mountPath: /workspace }
       containers:

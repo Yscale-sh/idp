@@ -336,7 +336,25 @@
     "build": {
       "type": "object",
       "description": "Image build hints for the in-cluster image-builder (context, dockerfile, submodules).",
-      "additionalProperties": true
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/@+-]+$",
+          "description": "Clean relative build-context path within the repository."
+        },
+        "dockerfile": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/@+-]+$",
+          "description": "Clean Dockerfile path within the build context."
+        },
+        "submodules": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._/@+-]+$" },
+          "uniqueItems": true,
+          "description": "Clean relative submodule paths within the repository."
+        }
+      }
     },
     "components": {
       "type": "array",

@@ -24,7 +24,7 @@ spec:
     type: kubernetes
   sync:
     kind: GitRepository
-    url: "https://github.com/yscale-sh/idp.git"
+    url: "https://example.invalid/your-org/idp.git"
     ref: "refs/heads/main"
     path: "clusters/dev"
     pullSecret: "github-auth"   # created out-of-band: flux-system Secret with repo credentials

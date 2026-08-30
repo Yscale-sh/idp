@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/clusterenv"
 	"github.com/yscale-sh/idp/internal/kube"
-	"github.com/spf13/cobra"
 )
 
 // doctor verifies that the SEAMS an environment declares are actually present

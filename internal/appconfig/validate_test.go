@@ -56,6 +56,26 @@ func TestValidate_Table(t *testing.T) {
 			wantPart: "runtime.port",
 		},
 		{
+			name:     "build context rejects shell input",
+			mutate:   func(a *App) { a.Build.Context = "ui; touch /tmp/pwned" },
+			wantErr:  true,
+			wantPart: "build.context",
+		},
+		{
+			name:     "dockerfile rejects traversal",
+			mutate:   func(a *App) { a.Build.Dockerfile = "../Dockerfile" },
+			wantErr:  true,
+			wantPart: "build.dockerfile",
+		},
+		{
+			name: "submodule rejects option injection",
+			mutate: func(a *App) {
+				a.Build.Submodules = []string{"--config=protocol.file.allow=always"}
+			},
+			wantErr:  true,
+			wantPart: "build.submodules[0]",
+		},
+		{
 			name:     "bad profile",
 			mutate:   func(a *App) { a.Sizing.Profile = "gigantic" },
 			wantErr:  true,

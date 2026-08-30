@@ -155,10 +155,15 @@ observability:
 # ── seams this env provides ──────────────────────────────────────────────────
 # Declare ONLY what the cluster actually backs (validation + policy + ` + "`idpctl doctor`" + `
 # enforce it). publicRoutes is off so a deploy.yaml public route is rejected
-# until you provide ingress + zones. statefulStores/lanExpose/autoscale/volumes
-# derive from the rest of this file (autoscale needs the keda module enabled).
+# until you provide ingress + zones. Every capability starts off; enable one
+# only after the target cluster actually provides it.
 seams:
+  statefulStores: false
+  lanExpose: false
+  tunnel: false
   publicRoutes: false
+  autoscale: false
+  volumes: false
 {{- if .PromoteFrom}}
 
 # ── promotion gate ───────────────────────────────────────────────────────────

@@ -54,7 +54,7 @@ func Load(root string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s — every platform instance declares its own identity; create it with at least:\n\n  registry: <your image registry prefix, e.g. ghcr.io/your-org>\n  repo:\n    url: <git URL of YOUR platform repo fork>\n", ErrNotFound, path)
+			return nil, fmt.Errorf("%w: %s — every platform instance declares its own identity; create it with at least:\n\n  registry: <your image registry prefix, e.g. ghcr.io/your-org>\n  repo:\n    url: <git URL of YOUR platform repo fork>", ErrNotFound, path)
 		}
 		return nil, fmt.Errorf("read tenant config %q: %w", path, err)
 	}
@@ -82,6 +82,8 @@ func (c *Config) Validate() error {
 	switch {
 	case c.Registry == "":
 		return fmt.Errorf("registry is required (your image registry prefix, e.g. ghcr.io/your-org)")
+	case strings.Contains(strings.ToLower(c.Registry), "example.invalid") || strings.Contains(strings.ToLower(c.Registry), "replace_me") || strings.Contains(strings.ToLower(c.Registry), "replace-me"):
+		return fmt.Errorf("registry %q is still a template placeholder; set your real image registry prefix", c.Registry)
 	case strings.Contains(c.Registry, "://"):
 		return fmt.Errorf("registry %q must be a bare registry prefix (no scheme), e.g. ghcr.io/your-org", c.Registry)
 	case strings.HasSuffix(c.Registry, "/"):
@@ -90,6 +92,8 @@ func (c *Config) Validate() error {
 	switch {
 	case c.Repo.URL == "":
 		return fmt.Errorf("repo.url is required (the git URL of YOUR platform repo fork)")
+	case strings.Contains(strings.ToLower(c.Repo.URL), "example.invalid") || strings.Contains(strings.ToLower(c.Repo.URL), "replace_me") || strings.Contains(strings.ToLower(c.Repo.URL), "replace-me"):
+		return fmt.Errorf("repo.url %q is still a template placeholder; set your fork's real git URL", c.Repo.URL)
 	case !strings.HasPrefix(c.Repo.URL, "https://") && !strings.HasPrefix(c.Repo.URL, "ssh://") && !strings.HasPrefix(c.Repo.URL, "git@"):
 		return fmt.Errorf("repo.url %q must be an https://, ssh:// or git@ URL", c.Repo.URL)
 	}

@@ -1,6 +1,8 @@
 module github.com/yscale-sh/idp
 
-go 1.25.11
+go 1.25.0
+
+toolchain go1.25.13
 
 require (
 	github.com/spf13/cobra v1.10.2

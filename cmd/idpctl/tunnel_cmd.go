@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clouddns"
-	"github.com/spf13/cobra"
 )
 
 // newTunnelCmd is the AUTO-REGISTRATION command: from just the app's deploy.yaml
@@ -105,7 +105,7 @@ func resolveCFCreds(accountID, zoneID string) (cl *clouddns.Client, account, zon
 	}
 	account = strings.TrimSpace(firstNonEmpty(accountID, os.Getenv("CLOUDFLARE_ACCOUNT_ID"), os.Getenv("CF_ACCOUNT_ID")))
 	if account == "" {
-		return nil, "", "", fmt.Errorf("Cloudflare account id is not set (pass --account-id or CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID)")
+		return nil, "", "", fmt.Errorf("cloudflare account id is not set (pass --account-id or CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID)")
 	}
 	zone = strings.TrimSpace(firstNonEmpty(zoneID, os.Getenv("CLOUDFLARE_ZONE_ID"), os.Getenv("CF_ZONE_ID")))
 	return clouddns.New(apiToken), account, zone, nil

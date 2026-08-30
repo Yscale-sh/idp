@@ -59,6 +59,13 @@ A default StorageClass is required only when an app or module requests persisten
 
 ### 1. Fork and configure the platform repository
 
+Create a repository with GitHub's **Use this template** button. Do not point
+Flux at it yet: the checked-in registry and Git URLs intentionally use
+`example.invalid`, and identity-dependent commands reject those placeholders.
+That prevents a new installation from pushing to or reconciling Yscale's
+resources by accident. See [`docs/TEMPLATE.md`](docs/TEMPLATE.md) for the
+one-time adoption and safety checklist.
+
 ```bash
 git clone https://github.com/YOUR_ORG/idp.git
 cd idp
@@ -75,6 +82,12 @@ Edit these files:
 - `idp.yaml`: your image registry prefix and platform repository URL.
 - `environments/dev/cluster.yaml`: secret backend, route zones, modules, resource limits, and Flux branch.
 - `clusters/dev/flux-instance.yaml`: the repository and path Flux should reconcile.
+
+Before installing Flux, confirm no placeholder remains:
+
+```bash
+rg -n 'example\.invalid|your-org|replace-me' idp.yaml environments clusters
+```
 
 ### 2. Install Flux
 

@@ -6,96 +6,69 @@ on:
       - "**.go"
       - "go.mod"
       - "go.sum"
+      - ".golangci.yml"
       - "charts/**"
       - "examples/**"
       - "schemas/**"
+      - "scripts/ci-local.sh"
       - "Dockerfile"
+      - ".dockerignore"
       - "Makefile"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   push:
     branches: [main]
     paths:
       - "**.go"
       - "go.mod"
       - "go.sum"
+      - ".golangci.yml"
       - "charts/**"
       - "examples/**"
       - "schemas/**"
+      - "scripts/ci-local.sh"
       - "Dockerfile"
+      - ".dockerignore"
       - "Makefile"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IDP_CI_STRICT: "1"
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-
-      - name: Build
-        run: make build
-
-      - name: gofmt (formatting gate)
-        run: test -z "$(gofmt -l .)" || { echo 'Not gofmt-clean — run `make fmt`:'; gofmt -l .; exit 1; }
-
-      - name: Vet
-        run: make vet
-
-      - name: Unit + golden tests (race detector)
-        run: go test -race ./...
-
-      - name: Helm lint
-        run: make helm-lint
-
-      - name: Validate examples
-        run: |
-          ./idpctl validate --file examples/carshowdb/deploy.yaml
-          ./idpctl validate --file examples/yscale-media/yscale-media.deploy.yaml
-          ./idpctl validate --file examples/hello-dev/deploy.yaml
-
-      - name: Render smoke (must not dirty tracked state unexpectedly)
-        run: |
-          ./idpctl render --env dev --file examples/carshowdb/deploy.yaml --image ghcr.io/yscale-sh/carshowdb-api:dev-ci0000
-          ./idpctl infra render --env dev
-
-      - name: Catalog smoke (read-only viewer over the rendered state)
-        run: |
-          ./idpctl catalog --env dev --format json > /dev/null
-          ./idpctl catalog --all --out-dir /tmp/site
-          test -f /tmp/site/index.html
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+          cache: true
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          go-version-file: go.mod
-      # Build golangci-lint with THIS module's Go toolchain so its build-version
-      # never lags the targeted go (the prebuilt action binaries can mismatch).
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-      - name: Run golangci-lint
-        run: golangci-lint run ./...
-
-  govulncheck:
-    runs-on: ubuntu-latest
-    # Informational: stdlib advisories track the Go toolchain patch level, so a
-    # hard gate would red every PR on patch lag. Surfaces vulns without blocking.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: govulncheck
+          version: v4.2.4
+      - name: Install pinned analysis tools
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          curl -fsSLo "$RUNNER_TEMP/shellcheck.tar.gz" \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz
+          echo "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6  $RUNNER_TEMP/shellcheck.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" "$(go env GOPATH)/bin/shellcheck"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Workflow lint
+        run: actionlint .github/workflows/*.yml
+      - name: Full strict gate
+        run: make ci-local
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Build release container
+        run: docker buildx build --load --tag idpctl:ci .

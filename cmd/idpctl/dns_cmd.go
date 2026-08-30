@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clouddns"
-	"github.com/spf13/cobra"
 )
 
 // newDNSCmd is the OPTIONAL DNS step. Exposure is always the Cloudflare Tunnel

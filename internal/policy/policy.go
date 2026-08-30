@@ -361,7 +361,7 @@ func CheckHelmReleaseTarget(manifest []byte, wantNamespace string) Violations {
 }
 
 // checkImageTag enforces the immutable-tag guardrail. Prod ALWAYS rejects an
-// empty or `latest` tag. A non-prod env also rejects them UNLESS its config
+// empty or known moving tag. A non-prod env also rejects them UNLESS its config
 // opts in with allowMutableTags=true (the convenience for fast dev iteration).
 // A nil cluster (quick local checks) is treated as "mutable allowed" off-prod.
 func checkImageTag(env, image string, c *clusterenv.Config) *Violation {
@@ -378,11 +378,20 @@ func checkImageTag(env, image string, c *clusterenv.Config) *Violation {
 		return &Violation{KindMutableTag,
 			fmt.Sprintf("%s image has no tag; CI must supply an immutable --image tag", where)}
 	}
-	if strings.EqualFold(tag, "latest") {
+	if mutableImageTag(tag) {
 		return &Violation{KindMutableTag,
-			fmt.Sprintf("%s image tag is 'latest' (mutable); use an immutable tag", where)}
+			fmt.Sprintf("%s image tag %q is mutable; use a commit SHA, release version, or digest", where, tag)}
 	}
 	return nil
+}
+
+func mutableImageTag(tag string) bool {
+	switch strings.ToLower(tag) {
+	case "latest", "main", "master", "dev", "development", "edge", "canary", "nightly", "snapshot":
+		return true
+	default:
+		return false
+	}
 }
 
 // checkRoutes enforces the route-zone guardrail over the FULL declared route
