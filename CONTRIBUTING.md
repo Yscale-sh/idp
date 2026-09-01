@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for taking a look. This is a small, opinionated project. Issues and PRs are welcome,
-but read [`CONVENTIONS.md`](CONVENTIONS.md) first: it is the platform contract, and changes that
-fight it will be declined even if the code is good.
+Thanks for contributing to Yscale IDP. Issues and pull requests are welcome, but read
+[`CONVENTIONS.md`](CONVENTIONS.md) first: it is the platform contract, and changes that bypass it
+will not be accepted even if the code works in one cluster.
 
 ## Dev setup
 
@@ -22,6 +22,7 @@ review surface.
 ## Before you open a PR
 
 - `make test` and `make lint` pass.
+- `make ci-local` passes before requesting final review.
 - `make e2e` passes if you touched `internal/render`, `internal/policy`, or anything in `charts/`.
 - New `deploy.yaml` fields need all four: schema (`schemas/deploy.schema.json`), types + validation
   (`internal/appconfig`), rendering (`internal/render`), and a row in the app-contract table in
@@ -47,3 +48,6 @@ review surface.
 
 A failing `deploy.yaml` + the `idpctl` command + actual vs expected output is the perfect bug
 report. For anything security-sensitive, see [`SECURITY.md`](SECURITY.md).
+
+Maintainers cut releases from the default branch after the public release gates pass. See
+[`docs/RELEASE.md`](docs/RELEASE.md) for the artifact contract and release checklist.

@@ -1,7 +1,7 @@
 apiVersion: v2
 name: dev-redis
 description: >-
-  Minimal, single-replica Redis for platformctl dev / on-prem environments.
+  Minimal, single-replica Redis for Yscale IDP dev / on-prem environments.
   ClusterIP only (never a LoadBalancer), no persistence by default (an in-cluster
   pub/sub bus / cache), local-path PVC available if persistence is enabled. The app
   chart wires it into apps as REDIS_URL / <NAME>_REDIS_URL (ENV.md Tier D). Not for

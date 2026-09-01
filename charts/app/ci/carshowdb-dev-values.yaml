@@ -1,6 +1,6 @@
 # Hand-rendered values for `helm template carshowdb charts/app`, derived from
 # examples/carshowdb/deploy.yaml per the phase-1 contract (App.Resolve("dev")).
-# This is the shape platformctl render would write into the Argo CD Application.
+# This is the shape idpctl render would write into the Argo CD Application.
 # It also doubles as the helm-lint values file (image.tag is populated).
 #
 # Render basis:

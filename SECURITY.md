@@ -1,21 +1,29 @@
 # Security
 
-If you find a vulnerability (in the CLI, the charts, the rendered manifests, or the trust model
-described in [`docs/SECRETS.md`](docs/SECRETS.md)), please **do not open a public issue**.
+Yscale accepts vulnerability reports for the CLI, charts, rendered manifests, release artifacts,
+and the trust model described in [`docs/SECRETS.md`](docs/SECRETS.md). Please **do not open a public
+issue** for a suspected vulnerability.
 
 Report it privately via [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guided-security-vulnerability-reporting)
 on this repository (Security tab → "Report a vulnerability").
 
-You should expect an acknowledgement within a week. This is a solo-maintained project; fixes ship
-on a best-effort basis, prioritized by whether the issue affects rendered cluster state.
+Include the affected version, impact, reproduction steps, and any suggested mitigation. Yscale
+maintainers triage reports and coordinate disclosure on a best-effort basis; the project does not
+promise a response or remediation SLA. Reports that expose credentials or affect rendered cluster
+state receive the highest priority.
+
+## Supported versions
+
+Security fixes target the latest published release and the default branch. Older releases may need
+to upgrade to receive a fix.
 
 ## Scope notes
 
-- Rendered desired state lands in `clusters/<env>/` in your fork. Secret *names* and RFC1918
-  LAN addresses appearing there are by design and are not vulnerabilities — the design rule is
-  that everything rendered into `clusters/` must be secret-free (references only: ExternalSecrets
-  paths, SSM parameter names). Real credential **values** anywhere in the repo absolutely are.
-  Report those.
+- Rendered desired state lands in `clusters/<env>/` in an adopted template repository. Secret
+  *names* and operator-owned private addresses may appear there by design; they are not, by
+  themselves, vulnerabilities. Rendered state must contain references only, such as
+  `ExternalSecret` paths or parameter names. Report any real credential **value** committed or
+  rendered into the repository.
 - The platform's stance: secrets are never committed; they live in the configured secrets backend
-  (e.g. SSM) and reach pods via External Secrets. Any real credential rendered into `clusters/`
-  is a critical bug.
+  and reach pods through External Secrets. A real credential rendered into `clusters/` is a
+  critical bug.

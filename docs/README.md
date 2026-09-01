@@ -13,6 +13,8 @@ that contract, commits desired state, and leaves reconciliation to Flux.
 | [SECRETS.md](SECRETS.md) | Secrets trust model and External Secrets flow |
 | [ENV.md](ENV.md) | Generic environment-variable ownership contract |
 | [DIAGRAMS.md](DIAGRAMS.md) | Platform, promotion, secret, seam, and module diagrams |
+| [TEMPLATE.md](TEMPLATE.md) | Public template adoption and operational-state boundaries |
+| [RELEASE.md](RELEASE.md) | Release gates, artifacts, and maintainer procedure |
 
 The authoritative contracts are [CONVENTIONS.md](../CONVENTIONS.md) and
 [ARCHITECTURE.md](../ARCHITECTURE.md). Private migration inventories, live account data, rendered

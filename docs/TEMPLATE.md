@@ -1,9 +1,23 @@
 # Using this repository as a template
 
 This repository is a reusable product source and starter GitOps layout, not a
-copy of Yscale's live cluster state. A repository created from the template
+copy of Yscale's or any customer's live cluster state. A repository created from the template
 starts fail-closed: registry, shipper image, and Flux URLs use reserved
 `example.invalid` values until the operator replaces them.
+
+## Public source boundary
+
+The public repository contains the reusable CLI, charts, schemas, examples,
+placeholder environment profiles, and Flux bootstrap structure. It does not contain:
+
+- rendered `clusters/*/platform.yaml` state;
+- credentials, kubeconfigs, deploy keys, customer manifests, or account data;
+- private endpoints, production topology, or provider inventory; or
+- Yscale's operational environment configuration or deployment history.
+
+Template adopters own the generated state, access controls, release policy, and
+cluster-specific configuration in their repository. Upstream changes never grant Yscale access to
+an adopted installation.
 
 ## One-time adoption
 

@@ -46,7 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
+      artifact-metadata: write
+      attestations: write
       contents: write
+      id-token: write
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -81,6 +84,13 @@ jobs:
           done
           go list -m -json all > dist/go-modules.json
           (cd dist && sha256sum -- ./*.tar.gz go-modules.json > checksums.txt)
+      - name: Attest CLI release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/go-modules.json
+            dist/checksums.txt
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -101,9 +111,29 @@ jobs:
           build-args: SOURCE_REPOSITORY=https://github.com/${{ github.repository }}
           provenance: mode=max
           sbom: true
+      - name: Attest container image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Install pinned GitHub CLI
+        env:
+          GH_VERSION: 2.98.0
+          GH_LINUX_AMD64_SHA256: 3b8ac6b30336802fc1a858d7c084e11cdf24ac1a761ca90b68022d7d729208de
+        run: |
+          set -euo pipefail
+          archive="gh_${GH_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$archive"
+          echo "${GH_LINUX_AMD64_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/gh_${GH_VERSION}_linux_amd64/bin/gh" \
+            "$RUNNER_TEMP/gh"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --verify-tag --generate-notes --title "IDP ${{ github.ref_name }}"
+        run: gh release create "${{ github.ref_name }}" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "IDP ${{ github.ref_name }}"
       - name: Record immutable image digest
         run: echo "${IMAGE_NAME}@${{ steps.image.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

@@ -19,3 +19,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Keep patch releases flowing for pinned build/runtime images (including the
+    # Go 1.25 toolchain), while minor/major jumps remain deliberate upgrades.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
