@@ -1,8 +1,8 @@
-# Diagrams: Yscale IDP visual guide
+# Architecture diagrams
 
-Mermaid diagrams for the reference platform. These are plain GitHub-renderable `flowchart` diagrams.
+These Mermaid flowcharts describe the reference platform.
 
-## 1. The platform at a glance
+## 1. Deployment flow
 
 The per-app `deploy.yaml` is the app contract; it declares what the app needs, not Kubernetes objects. `idpctl render` upserts that contract into `clusters/<env>/platform.yaml`, the one umbrella `HelmRelease` for the environment. Flux is the only writer: it reconciles the umbrella, `charts/cluster` fans it out into a per-app `HelmRelease`, and that release creates the app namespace. The reference shape keeps app services ClusterIP by default, with exposure, data stores, and secrets supplied by environment seams.
 
@@ -18,9 +18,12 @@ flowchart LR
   Flux -. "only writer" .-> Namespace
 ```
 
-## 2. Fork model / bringup
+## 2. Template adoption
 
-The platform is meant to be forked, not installed as a black-box service. Fork the repo, edit `idp.yaml`, edit `environments/<env>/cluster.yaml`, and edit `clusters/<env>/flux-instance.yaml` so both the env config and Flux sync point at your fork. Then install the Flux Operator and apply the `FluxInstance`; from that point, Flux reconciles the platform state from your fork. App delivery stays the same: a `deploy.yaml` render changes the umbrella, and a Git commit is the deploy.
+Create a repository from the template, then update `idp.yaml`,
+`environments/<env>/cluster.yaml`, and `clusters/<env>/flux-instance.yaml` to reference it. Install
+the Flux Operator and apply the `FluxInstance`. Flux then reconciles platform state from the adopted
+repository. Application delivery remains a render followed by a Git commit.
 
 ```mermaid
 flowchart LR
@@ -33,7 +36,7 @@ flowchart LR
   Sync --> Platform["platform reconciles"]
 ```
 
-## 3. Dev -> prod promotion
+## 3. Development-to-production promotion
 
 Production promotion is digest-forward. `idpctl promote <app> prod --from dev` reads the image digest already running in dev's umbrella and re-renders the same artifact under prod policy, prod namespaces, and the prod secrets backend. It never rebuilds the artifact; prod rejects mutable tags with `allowMutableTags: false` and the hard `:latest` guard. Commit the resulting `clusters/prod/platform.yaml` on the `prod` branch so prod Flux applies it; rollback is `git revert` of that commit.
 
@@ -50,9 +53,13 @@ flowchart LR
   Commit -. "rollback: git revert" .-> Rollback["previous prod commit restored"]
 ```
 
-## 4. One route, two fulfillments (the seams)
+## 4. Route implementations
 
-A `deploy.yaml` route with `public: true` means "expose this to users"; the target environment decides how. In dev, the reference env has no tunnel path and fulfills the route through the `lanExpose` seam: the chart renders a SEPARATE `<app>-lan` MetalLB `LoadBalancer` Service that selects the pods directly, while the app's own ClusterIP Service stays unchanged for in-cluster traffic (`charts/app/templates/lan-service.yaml` — the one sanctioned LoadBalancer). In prod, the env declares the tunnel seam and disables `lanExpose`, so Cloudflare Tunnel is the ingress path and apps stay ClusterIP, never a `LoadBalancer`.
+A route with `public: true` requests user-facing exposure; the target environment chooses the
+implementation. Development uses the `lanExpose` capability: the chart renders a separate
+`<app>-lan` MetalLB `LoadBalancer` Service while retaining the app's ClusterIP Service for
+in-cluster traffic. Production uses Cloudflare Tunnel and disables `lanExpose`, so application
+Services remain ClusterIP.
 
 ```mermaid
 flowchart TB

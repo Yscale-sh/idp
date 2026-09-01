@@ -1,7 +1,7 @@
 # Documentation
 
-The per-app `deploy.yaml` app manifest is the product. The platform derives Kubernetes state from
-that contract, commits desired state, and leaves reconciliation to Flux.
+`deploy.yaml` defines an application's requirements. Yscale IDP renders those requirements into
+desired state, and Flux reconciles the result.
 
 ## Start here
 
