@@ -1,11 +1,11 @@
 # charts/app — the shared application chart VALUES CONTRACT.
 #
-# This file is the render target: `platformctl render` produces a values block of
+# This file is the render target: `idpctl render` produces a values block of
 # exactly this shape from a deploy.yaml, and writes it into the Argo CD
 # Application at environments/<env>/apps/<app>.yaml. The chart templates consume
 # only these keys. Keep this file and internal/appconfig/types.go in lockstep.
 #
-# HARD POLICY (template + platformctl policy BOTH enforce):
+# HARD POLICY (template + idpctl policy BOTH enforce):
 #   - Apps are ClusterIP ONLY. There is intentionally NO `service.type` key and
 #     the Service template hardcodes ClusterIP. A LoadBalancer can never render.
 #   - In prod, image.tag must be immutable (never "latest").
@@ -84,7 +84,7 @@ worker: false
 replicas: 1
 
 # ── pod scheduling / security passthrough (optional; chart-level, not in the
-#    deploy.yaml contract — platformctl may set these from env policy) ─────────
+#    deploy.yaml contract — idpctl may set these from env policy) ─────────
 podAnnotations: {}        # extra pod annotations (merged with the deploy stamp)
 podSecurityContext:
   seccompProfile:

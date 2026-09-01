@@ -14,5 +14,5 @@ never printed here. Read it with:
   kubectl -n {{ .Release.Namespace }} get secret {{ include "dev-postgres.secretName" . }} \
     -o jsonpath='{.data.DATABASE_URL}' | base64 -d
 
-The platformctl app chart wires DATABASE_URL into apps that declare `db: postgres`
+The idpctl app chart wires DATABASE_URL into apps that declare `db: postgres`
 (ENV.md Tier D). Do not expose this Service publicly.

@@ -1,19 +1,19 @@
-# Jakes Developer Platform
+# Yscale IDP
 
 > A Linux-like application layer for Kubernetes.
 
 Bring a running Kubernetes cluster. Declare apps in `deploy.yaml`. Commit the rendered state. Flux
 keeps the cluster running what Git says should be installed.
 
-JDP does not create Kubernetes clusters. It starts where Kubernetes distributions stop: installing,
-configuring, connecting, updating, promoting, and removing applications consistently.
+Yscale IDP does not create Kubernetes clusters. It starts where Kubernetes distributions stop:
+installing, configuring, connecting, updating, promoting, and removing applications consistently.
 
 ## The model
 
-| Linux concept | JDP concept |
+| Linux concept | Yscale IDP concept |
 |---|---|
 | Machine and kernel | Your existing Kubernetes cluster |
-| Distribution userland | JDP charts, policy, modules, and CLI |
+| Distribution userland | Yscale IDP charts, policy, modules, and CLI |
 | Package or service manifest | `deploy.yaml` |
 | Installed package database | `clusters/<env>/platform.yaml` |
 | Package repository | Your Git repository and image registry |
@@ -30,7 +30,7 @@ the platform supplies the standard Kubernetes implementation.
 
 | Dependency | Purpose |
 |---|---|
-| Existing Kubernetes cluster | Runs JDP and its apps. You manage nodes, networking, upgrades, and the control plane. |
+| Existing Kubernetes cluster | Runs Yscale IDP and its apps. You manage nodes, networking, upgrades, and the control plane. |
 | Cluster-admin bootstrap access | Installs Flux and the initial platform resources. |
 | `kubectl` | Bootstrap and cluster diagnostics. |
 | Git repository | Stores the installed app set and environment configuration. |
@@ -55,7 +55,44 @@ A default StorageClass is required only when an app or module requests persisten
 | Tailscale | An app explicitly needs tailnet egress. |
 | `idp-shipper` and image builder | Git pushes should build images and update the installed app set automatically. |
 
-## Install JDP on an existing cluster
+## Install `idpctl`
+
+Release `v1.0.0` provides CLI archives for Linux, macOS, and Windows. Download the archive for your
+platform together with [`checksums.txt`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/checksums.txt):
+
+| Platform | Archive |
+|---|---|
+| Linux amd64 | [`idpctl_v1.0.0_linux_amd64.tar.gz`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_linux_amd64.tar.gz) |
+| Linux arm64 | [`idpctl_v1.0.0_linux_arm64.tar.gz`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_linux_arm64.tar.gz) |
+| macOS Intel | [`idpctl_v1.0.0_darwin_amd64.tar.gz`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_darwin_amd64.tar.gz) |
+| macOS Apple silicon | [`idpctl_v1.0.0_darwin_arm64.tar.gz`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_darwin_arm64.tar.gz) |
+| Windows amd64 | [`idpctl_v1.0.0_windows_amd64.tar.gz`](https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_windows_amd64.tar.gz) |
+
+For example, on Linux amd64:
+
+```bash
+curl -fLO https://github.com/Yscale-sh/idp/releases/download/v1.0.0/idpctl_v1.0.0_linux_amd64.tar.gz
+curl -fLO https://github.com/Yscale-sh/idp/releases/download/v1.0.0/checksums.txt
+grep 'idpctl_v1.0.0_linux_amd64.tar.gz$' checksums.txt | sha256sum -c -
+tar -xzf idpctl_v1.0.0_linux_amd64.tar.gz
+install -m 0755 idpctl /usr/local/bin/idpctl
+idpctl --version
+```
+
+The same release is published as a multi-architecture Linux image:
+
+```bash
+docker pull ghcr.io/yscale-sh/idpctl:v1.0.0
+docker run --rm ghcr.io/yscale-sh/idpctl:v1.0.0 --version
+
+# Run the CLI against files in the current directory.
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  ghcr.io/yscale-sh/idpctl:v1.0.0 validate --file deploy.yaml
+```
+
+See [the release guide](docs/RELEASE.md) for the published artifact contract and verification gates.
+
+## Install Yscale IDP on an existing cluster
 
 ### 1. Fork and configure the platform repository
 
@@ -175,8 +212,8 @@ git commit -m "app: install myapp abc1234"
 git push
 ```
 
-Flux reconciles the app. JDP derives the namespace, Deployment, ClusterIP Service, probes, resource
-limits, secret references, store wiring, routes, and optional autoscaling.
+Flux reconciles the app. Yscale IDP derives the namespace, Deployment, ClusterIP Service, probes,
+resource limits, secret references, store wiring, routes, and optional autoscaling.
 
 Do not deploy apps with `kubectl apply` or `helm upgrade`. Change the app manifest or environment,
 render it, commit it, and let Flux reconcile it.
@@ -312,4 +349,4 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ---
 
-Created by [Jake Nesler](https://www.github.com/jakenesler).
+Created by [Jake Nesler](https://github.com/JakeNesler).

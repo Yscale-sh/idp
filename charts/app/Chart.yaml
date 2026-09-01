@@ -1,9 +1,9 @@
 apiVersion: v2
 name: app
 description: >-
-  platformctl shared application chart. Renders the desired state for a single
-  developer app onboarded via deploy.yaml: a ClusterIP Deployment + Service,
-  with optional KEDA autoscaling, ServiceMonitor, ExternalSecret, and PDB.
+  Yscale IDP shared application chart. Renders the desired state for a single
+  developer app onboarded via deploy.yaml and idpctl: a ClusterIP Deployment +
+  Service, with optional KEDA autoscaling, ServiceMonitor, ExternalSecret, and PDB.
   Apps are ClusterIP ONLY — this chart can never render a LoadBalancer, and it
   renders no Ingress (public exposure is wired by Cloudflare Tunnel out-of-chart).
 type: application
@@ -16,9 +16,9 @@ version: 0.1.0
 appVersion: "0.1.0"
 
 keywords:
-  - platformctl
+  - idpctl
   - idp
   - clusterip
-home: https://github.com/yscale-sh/platformctl
+home: https://github.com/yscale-sh/idp
 maintainers:
   - name: yscale-sh

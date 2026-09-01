@@ -1,9 +1,9 @@
 {{/*
 charts/app helpers.
 
-NAMING: per the platformctl contract one app == one namespace == one release ==
+NAMING: per the idpctl contract one app == one namespace == one release ==
 one service, all named <app>. The canonical handle is .Values.platform.app
-(rendered by platformctl from appconfig App.App). We fall back to .Release.Name
+(rendered by idpctl from appconfig App.App). We fall back to .Release.Name
 so the chart still renders sanely under `helm template <name> charts/app` with a
 bare values file.
 */}}
@@ -42,7 +42,7 @@ app.kubernetes.io/instance: {{ include "app.name" . }}
 {{- end }}
 
 {{/*
-Common labels — stamped on every generated object. This is the full platformctl
+Common labels — stamped on every generated object. This is the full IDP
 label set (app.kubernetes.io/* + platform/*) plus Helm bookkeeping labels.
 platform/* values come from .Values.platform (rendered from App.Labels(env)).
 */}}
@@ -75,7 +75,7 @@ The runtime Secret name materialized by the ExternalSecret: <app>-runtime.
 {{/*
 app.image builds "<repository>:<tag>".
 
-The real guardrails live in the platformctl policy layer (Go), which runs BEFORE
+The real guardrails live in the idpctl policy layer (Go), which runs BEFORE
 any render: it rejects an empty/mutable ("latest") tag in prod and requires a
 fully-qualified --image from CI. The chart is env-agnostic, so it must stay
 render-safe for `helm lint`/`helm template` with a bare values file. We therefore
@@ -84,8 +84,8 @@ invalid placeholder that could never be pulled, surfacing the mistake loudly
 without breaking lint/template. The renderer always supplies both.
 */}}
 {{- define "app.image" -}}
-{{- $repo := .Values.image.repository | default "ghcr.io/yscale-sh/UNSET" -}}
-{{- $tag := .Values.image.tag | default "UNSET" -}}
+{{- $repo := .Values.image.repository | default "registry.invalid/idp-image" -}}
+{{- $tag := .Values.image.tag | default "unset" -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end }}
 

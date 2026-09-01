@@ -1,7 +1,7 @@
 # charts/cluster — umbrella values (the whole environment's desired state).
-# platformctl maintains these in clusters/<env>/platform.yaml (the HelmRelease
+# idpctl maintains these in clusters/<env>/platform.yaml (the HelmRelease
 # that installs THIS chart). Hand-editing is not the workflow — run
-# `platformctl render` / `platformctl infra render`.
+# `idpctl render` / `idpctl infra render`.
 
 # env name (dev|prod|...), stamped onto generated labels.
 env: ""
