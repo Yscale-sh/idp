@@ -1,14 +1,13 @@
 # github-runners
 
-A `localChart` platform module: **scale-to-zero GitHub Actions self-hosted runner
-pools** (summerwind ARC) for one or more GitHub orgs, on the **shared** in-cluster
-ARC controller. One `RunnerDeployment` + `HorizontalRunnerAutoscaler` per org, each
-scaling **0 → N** on queued workflow runs (idle footprint is zero).
+A `localChart` module for scale-to-zero GitHub Actions self-hosted runner pools using
+summerwind ARC. Each GitHub organization gets one `RunnerDeployment` and one
+`HorizontalRunnerAutoscaler`, scaling from zero when workflows are queued.
 
-This chart deploys **only the pools**. It assumes the ARC **controller + CRDs**
+This chart deploys only the pools. It assumes the ARC controller and CRDs
 (`actions.summerwind.dev`) are already installed in the target namespace (`github`).
 
-## How it's wired (the idp way)
+## Platform integration
 
 - Cataloged in `modules/registry.yaml` (`github-runners`, `source: localChart`).
 - Enabled + given its per-org pools in `environments/dev/cluster.yaml`
@@ -16,11 +15,10 @@ This chart deploys **only the pools**. It assumes the ARC **controller + CRDs**
 - `make infra-render ENV=dev` (which runs `idpctl infra render`) writes the module's
   HelmRelease into `clusters/dev/platform.yaml`; you commit it, and Flux reconciles it.
 
-## Per-org auth (out-of-band, never templated)
+## Per-organization authentication
 
-The controller's default credentials are pinned to one org, and we do **not** make
-any GitHub App public, so each pool authenticates with its **own** fine-grained
-PAT scoped to just that org, via `githubAPICredentialsFrom` referencing Secret
+Each pool authenticates with its own fine-grained PAT scoped to one organization.
+`githubAPICredentialsFrom` references Secret
 `github-token-<org>`. Both the RunnerDeployment **and** the HRA reference it (the
 HRA's queued-runs metric query needs its own creds, or it 404s on private repos).
 

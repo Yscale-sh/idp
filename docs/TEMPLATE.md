@@ -1,7 +1,7 @@
 # Using this repository as a template
 
-This repository is a reusable product source and starter GitOps layout, not a
-copy of Yscale's or any customer's live cluster state. A repository created from the template
+This repository contains reusable source and a starter GitOps layout. It does not contain Yscale's
+or a customer's live cluster state. A repository created from the template
 starts fail-closed: registry, shipper image, and Flux URLs use reserved
 `example.invalid` values until the operator replaces them.
 
@@ -15,9 +15,8 @@ placeholder environment profiles, and Flux bootstrap structure. It does not cont
 - private endpoints, production topology, or provider inventory; or
 - Yscale's operational environment configuration or deployment history.
 
-Template adopters own the generated state, access controls, release policy, and
-cluster-specific configuration in their repository. Upstream changes never grant Yscale access to
-an adopted installation.
+Template adopters own their generated state, access controls, release policy, and cluster-specific
+configuration. Upstream changes do not grant Yscale access to an installation.
 
 ## One-time adoption
 

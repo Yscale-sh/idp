@@ -1,11 +1,9 @@
-# idpctl conventions: the human contract
+# Yscale IDP application contract
 
-The per-app `deploy.yaml` is the product. A developer declares a small app contract
-(app, runtime, routes, sizing, db, cache, volumes, connectsTo, ...) and the platform
-derives every Kubernetes object from it: namespaces, a Deployment, a ClusterIP
-Service, secret refs, env vars (`DATABASE_URL`, `REDIS_URL`, ...), probes, resource
-limits, autoscaling, and observability. The developer never writes a Deployment, a
-Service, or (by policy) a LoadBalancer.
+Each application declares runtime, routes, sizing, data stores, volumes, and connections in
+`deploy.yaml`. The platform derives namespaces, a Deployment, a ClusterIP Service, secret
+references, environment variables, probes, resource limits, autoscaling, and observability.
+Application repositories do not contain Deployments, Services, or LoadBalancers.
 
 This is the authoritative, human-readable contract that the machine-readable files
 implement:
@@ -14,16 +12,16 @@ implement:
 - `schemas/deploy.schema.json`: the JSON Schema for `idpctl validate`.
 - `charts/app/values.yaml`: the render target the chart consumes.
 
-If any of those disagree with this document, this document is the intent. Fix the
-code to match (and update this doc if the intent itself changed).
+If an implementation disagrees with this document, fix the implementation or update the contract
+as part of the same change.
 
 The flow is always:
 
-```
+```text
 deploy.yaml -> idpctl render --env <env> --file deploy.yaml --image <tag>
-            -> clusters/<env>/platform.yaml  (the ONE umbrella HelmRelease; render
-               UPSERTS this app into spec.values.apps)
-            -> Flux installs charts/cluster, which templates an ISOLATED Flux
+            -> clusters/<env>/platform.yaml  (the environment umbrella HelmRelease;
+               render upserts this app into spec.values.apps)
+            -> Flux installs charts/cluster, which templates an isolated Flux
                HelmRelease per app (+ its Postgres) and per module
             -> Flux reconciles into the cluster
 ```
@@ -32,7 +30,7 @@ Flux (Flux Operator + `HelmRelease`/`GitRepository`) is the **only writer**.
 "Deploying" is a git commit, never `kubectl`/`helm` by hand. The Flux Operator's
 embedded Web UI (operator Service `:9080`) shows reconciliation state.
 
-**Umbrella delivery model.** The rendered desired state for an env is ONE umbrella
+**Umbrella delivery model.** Each environment has one rendered umbrella
 `HelmRelease` at `clusters/<env>/platform.yaml` (in `flux-system`) that installs the
 `charts/cluster` chart. That chart fans out. It templates an isolated Flux
 `HelmRelease` per app (chart `./charts/app`, into `<app>-<env>-<purpose>`), per app
@@ -46,11 +44,11 @@ failing app so it cannot wedge its siblings.
 
 **Lifecycle.** Two paths exist, and both end in a git commit that Flux reconciles.
 
-- **dev (continuous, automatic).** The in-cluster `idp-shipper` (`cmd/idp-shipper`)
+- **Development (continuous).** The in-cluster `idp-shipper` (`cmd/idp-shipper`)
   is infra-owned and enabled per environment. It realizes "push to your branch, it deploys." Per
   registered app, every interval it reads the GitHub head SHA for the app's
   repo+branch; if the SHA changed, it derives the build set from the app manifests
-  (dedup by image), builds ONLY images whose inputs (`build.context`/`dockerfile`/
+  (deduplicated by image), builds only images whose inputs (`build.context`/`dockerfile`/
   submodules) changed via the in-cluster image-builder (rootless BuildKit to GHCR,
   tag `<image>:<short-sha>`), reuses the tag already pinned in the umbrella for
   unchanged images, renders each component into `clusters/dev/platform.yaml` with
@@ -61,11 +59,11 @@ failing app so it cannot wedge its siblings.
   `idpctl infra render`. A new or unregistered app deploys manually with
   `idpctl render --env dev --root <idp clone> -f deploy.yaml --image <ref>`, then a
   commit + push of `clusters/dev/platform.yaml` to `main`.
-- **prod (deliberate, digest-forward).** Prod promotes FROM dev directly; stage is
+- **Production (digest-forward).** Production promotes from development directly; stage is
   deferred. `idpctl promote <app> prod --from dev -f deploy.yaml` reads the image
   digest already running in dev's umbrella and re-renders the app into
   `clusters/prod/platform.yaml` with prod's policy, secrets backend, and namespaces.
-  It NEVER rebuilds the artifact. Prod refuses mutable tags (`allowMutableTags:false`,
+  It does not rebuild the artifact. Production refuses mutable tags (`allowMutableTags:false`,
   and prod is hard-rejected in code regardless). The prod cluster syncs
   `refs/heads/prod`, so you commit the promote on the `prod` branch (the command
   prints the branch). Rollback is a `git revert` of that one commit. Prod also runs its own shipper
@@ -77,9 +75,8 @@ failing app so it cannot wedge its siblings.
 
 ## 1. Naming derivation
 
-Developers never choose Kubernetes names, secret names, or SSM paths. Everything
-derives from `app`, the target `env`, and capability `name`. Single source of
-truth: the methods on `appconfig.App`.
+Kubernetes names, secret names, and SSM paths derive from `app`, the target `env`, and capability
+`name`. The methods on `appconfig.App` define the naming rules.
 
 | Thing | Value | Source method |
 |---|---|---|
@@ -94,9 +91,9 @@ truth: the methods on `appconfig.App`.
 | SSM capability path | `/apps/<app>/<env>/<capability>/<name>` | `App.SSMCapabilityPath(...)` |
 | Shared secret group | `/shared/<group>/*` | (stripe, sendgrid, storage, google-oauth) |
 
-### Namespace scheme: own namespace per workload, created from the rendered YAML
+### Namespace per workload
 
-Every rendered workload gets its OWN namespace, sanitized to an RFC1123 DNS label
+Every rendered workload gets its own namespace, sanitized to an RFC1123 DNS label
 (lowercase, `[a-z0-9-]`, no leading/trailing/double dashes, max 63) by
 `appconfig.SanitizeDNSLabel`:
 
@@ -109,11 +106,10 @@ Every rendered workload gets its OWN namespace, sanitized to an RFC1123 DNS labe
   cache yields `<app>-<env>-redis`). A second store of the same tool disambiguates
   with the store name: `<app>-<env>-<tool>-<name>`.
 
-**Create-from-yaml.** The umbrella chart templates one inner `HelmRelease` per
-app, store, and module, and reconciling each CREATES its namespace. Every inner Flux
+The umbrella chart templates one inner `HelmRelease` per app, store, and module. Each inner Flux
 `HelmRelease` (the app, each per-app store, and the shared infra modules such as
 keda) sets `spec.targetNamespace` (and `spec.storageNamespace`) to its computed
-namespace AND sets `spec.install.createNamespace: true` so Flux creates the
+namespace and sets `spec.install.createNamespace: true` so Flux creates the
 namespace on first install. The inner HelmRelease itself is templated into
 `flux-system` (the umbrella's source namespace) and references the shared
 `GitRepository` source cross-namespace; the platform inventory labels
@@ -127,12 +123,12 @@ violation. `policy.CheckHelmReleaseTarget` asserts the rendered app HelmRelease'
 
 ### Per-app dev data stores (dev only)
 
-dev-postgres is NOT a shared module. In **dev**, when an app declares
+`dev-postgres` is not a shared module. In development, when an app declares
 `db: postgres`, the render path attaches a DEDICATED dev-postgres store to the
-app's umbrella entry (`apps[].postgres`): the umbrella chart then templates a
+app's umbrella entry (`apps[].postgres`). The umbrella chart then templates a
 dev-postgres Flux `HelmRelease` (chart `./charts/infra/dev-postgres`) with
 `targetNamespace: <app>-<env>-postgres`, the per-app database name (the app name),
-a DEV PLACEHOLDER password, the configured dev Postgres node pin, and
+a development placeholder password, the configured Postgres node pin, and
 `install.createNamespace: true`. The store rides inside the same
 `clusters/<env>/platform.yaml` upserted by `idpctl render` (there is no
 separate per-store file). The same applies to `cache: redis` once a dev-redis
@@ -141,11 +137,11 @@ chart exists.
 The dev "data-store defaults" (per-app DB name, placeholder password, node pin,
 service/port) live in `internal/clusterenv` (`DevPostgres*` consts +
 `DevPostgresNamespace`/`DevPostgresService`/`DevDatabaseURL`) and
-`internal/render/store.go`, NOT in `cluster.yaml`.
+`internal/render/store.go`, not in `cluster.yaml`.
 
-**`DATABASE_URL` host (dev)** is the CROSS-NAMESPACE FQDN of the per-app Postgres:
+In development, the `DATABASE_URL` host is the cross-namespace FQDN of the per-app Postgres:
 
-```
+```text
 postgresql://<user>:<pw>@<pg-service>.<app>-<env>-postgres.svc.cluster.local:5432/<db>?sslmode=disable
 ```
 
@@ -153,7 +149,7 @@ where `<pg-service>` = `<app>-postgres-dev-postgres` (the dev-postgres chart
 fullname for release `<app>-postgres`) and `<db>` = the app name. The wiring into
 the runtime Secret / `secretKeyRef` is unchanged (Tier D).
 
-**Prod.** Prod runs the dev-store render path NOWHERE: `statefulStores:false`, so the
+Production does not run the development-store render path. With `statefulStores:false`, the
 per-app dev-postgres/dev-redis HelmReleases are never emitted and prod stays PVC-free
 by contract. `DATABASE_URL` stays a `secretKeyRef` whose value comes from the SSM
 secrets backend (the ExternalSecret path). That SSM value is a full connection string,
@@ -180,7 +176,7 @@ The **first/default** resource of each class also gets the bare alias
 (`DATABASE_URL`, `REDIS_URL`); every named resource always gets the prefixed form
 so multiple resources never collide.
 
-```
+```text
 db:   primary  -> DATABASE_URL (alias) + PRIMARY_DATABASE_URL
 db:   analytics-> ANALYTICS_DATABASE_URL
 cache:sessions -> SESSIONS_REDIS_URL
@@ -189,14 +185,14 @@ storage:uploads-> UPLOADS_BUCKET / UPLOADS_ENDPOINT / UPLOADS_ACCESS_KEY_ID / UP
 
 ---
 
-## 2. Environment variable tiers (from docs/ENV.md, verbatim intent)
+## 2. Environment variable tiers
 
 How env reaches a pod: (1) the chart injects Tier-A into every app; (2) a
 per-app `ExternalSecret` pulls the app's SSM root into the runtime Secret the pod
 `envFrom`s; (3) shared groups are referenced from `/shared/*` so a key is defined
 once.
 
-### Tier A: Platform-injected into EVERY app
+### Tier A: Platform variables
 
 The chart sets these; apps stop hard-coding them. Rendered into
 `env.tierA` in values.yaml.
@@ -255,7 +251,7 @@ releases/modules pointed at in-cluster Postgres/Redis.
 Rendered from `App.Labels(env)` into `platform.*` in values.yaml and applied by
 the chart's label helper:
 
-```
+```text
 app.kubernetes.io/name      = <app>
 app.kubernetes.io/instance  = <app>
 platform/app                = <app>
@@ -320,11 +316,11 @@ modules:
 - `chartRepo`: chart pulled from a Helm repo or OCI registry; `version` is
   required and pinned.
 
-`idpctl infra render --env <env>` SETS the ENABLED modules into the umbrella's
+`idpctl infra render --env <env>` replaces the umbrella's enabled module set in
 `spec.values.modules` (in `clusters/<env>/platform.yaml`). The `charts/cluster`
 umbrella then templates, per module, a Flux `HelmRelease` (in `flux-system`,
 `install.createNamespace: true`). A `localChart` module references the shared
-`GitRepository` source (chart = the in-repo path); a `chartRepo` module ALSO emits
+`GitRepository` source (chart = the in-repo path); a `chartRepo` module also emits
 a `HelmRepository` (`source.toolkit.fluxcd.io/v1`) for the chart's Helm repo and
 references it from `chart.spec.sourceRef`. Because the module list is fully
 re-derived from `cluster.yaml` each run, `infra render` is a set (replace), not an
@@ -345,7 +341,7 @@ LAN cluster. It is a `chartRepo` module, disabled by default.
 
 ## 6. Policy guardrails
 
-`idpctl` must fail **before mutating anything** if any of these hold. They
+`idpctl` must fail before mutating anything if any of these conditions hold. They
 are explicit policy errors, never buried Helm failures:
 
 1. A rendered Service is `LoadBalancer`. (The chart also cannot express it: there
@@ -399,8 +395,8 @@ tailscaleEgress: false
 
 ### Routing & exposure: one route, env-aware
 
-A `route` with `public: true` means **"expose this to users"**; the platform fulfills it per
-environment, so ONE deploy.yaml works everywhere:
+A route with `public: true` requests user-facing exposure. The environment supplies the
+implementation, so the same `deploy.yaml` works across environments:
 
 - **Tunnel env (prod):** a Cloudflare Tunnel + DNS for the host (cloudflared sidecar + the
   `TUNNEL_TOKEN` above).
@@ -414,11 +410,11 @@ and denied where it provides neither (fail-closed). dev currently has no Cloudfl
 (`publicRoutes:false`), so a `public:true` route reaches the LAN via `expose.lan` / MetalLB; the
 tunnel path is the prod fulfillment.
 
-`expose` is **optional, advanced pinning**. A public route already gives a LAN `LoadBalancer` in a
+`expose` is optional address pinning. A public route already gives a LAN `LoadBalancer` in a
 LAN env; set `expose.{ip,pool,host,port}` only to pin a specific address or to expose on the LAN with
-no route. `expose.lan` is the ONLY sanctioned LoadBalancer (labeled `platform/expose: lan`).
+no route. `expose.lan` is the only sanctioned LoadBalancer (labeled `platform/expose: lan`).
 
-**Multi-component apps: one file for a whole product.** The top level is the shared base; each
+**Multi-component apps.** The top level is the shared base; each
 `components:` entry carries only its deltas (pointer fields override; `env` merges; `secrets` union;
 `db`/`cache`/`volumes` inherit-or-replace, `db: []` opts out; `port:`/`logging:`/`metrics:` override).
 App-level stores provision **once** (the first component provisions, siblings auto-share). Each renders
@@ -442,27 +438,27 @@ components:
 
 - **`kind: ScaledObject`** (the default): standard `keda.sh` autoscaling on
   cpu/memory/cron/prometheus triggers. The floor (`min`) stays at or above the seeded
-  replica count; the chart REQUIRES at least one trigger, so the renderer always
+  replica count; the chart requires at least one trigger, so the renderer always
   emits one (explicit `triggers`, the `metric`/`target` pair, or a default CPU
   trigger).
 - **`kind: HTTPScaledObject`**: request-rate autoscaling via the KEDA HTTP add-on,
-  capable of scaling all the way to **0**.
+  capable of scaling to zero.
 
 **`autoscale.scaleToZero: true`** is sugar for `kind: HTTPScaledObject` + `min: 0`
 (authoritative: it overrides both `kind` and `min`). An idle app then scales
-fully to **0 replicas** and wakes on the first request:
+to zero replicas and wakes on the first request:
 
 - the app's route flows through the KEDA HTTP add-on **interceptor**
   (`keda-add-ons-http-interceptor-proxy`), which parks the first request, wakes the
-  Deployment from 0, then forwards it, so the **first request after idle eats a
-  cold start**;
+  Deployment from zero, then forwards it. The first request after an idle period waits for the
+  workload to start;
 - it requires the **`keda-http-add-on`** module (chart `keda-add-ons-http`) enabled
   in the env, in addition to the `keda` module;
-- the app's **DB does NOT scale to zero**: only the stateless app workload does.
+- the database does not scale to zero; only the stateless app workload does.
 
 `carshowdb` is the worked example (`autoscale: { enabled: true, scaleToZero: true,
-max: 5 }`): rarely hit, so it parks at 0 and wakes on demand. Best for spiky /
-rarely-hit apps; latency-sensitive services should keep `min ≥ 1`.
+max: 5 }`). It parks at zero and wakes on demand. This suits intermittent workloads;
+latency-sensitive services should keep `min ≥ 1`.
 
 ---
 
@@ -475,12 +471,12 @@ An app's `routes[]` shape determines how each host is served per environment:
 - **CF-zone host** (e.g. `litewindow-dev.yscale.sh`, matching the dev env's
   `cloudflareZone: yscale.sh`): served via Cloudflare Tunnel + the wildcard
   Access app on `*.yscale.sh`. Policy **requires** `access.humans: true` (or
-  `access.serviceToken: true`) on these routes — an unguarded CF-zone route is
+  `access.serviceToken: true`) on these routes. An unguarded CF-zone route is
   rejected at render time.
 - **Both**: an app can carry a `.local` route (LAN, unrestricted) alongside a
-  CF-zone route (tunnelled, Access-gated) — declare both in `routes[]`.
+  CF-zone route (tunnelled and Access-gated). Declare both in `routes[]`.
 
-**Flow — one-time dev tunnel bootstrap:**
+**One-time development tunnel bootstrap:**
 
 ```sh
 # 1. Create/adopt the tunnel, mint its connector token, upsert CF DNS.

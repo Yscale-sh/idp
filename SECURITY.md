@@ -1,16 +1,14 @@
 # Security
 
-Yscale accepts vulnerability reports for the CLI, charts, rendered manifests, release artifacts,
-and the trust model described in [`docs/SECRETS.md`](docs/SECRETS.md). Please **do not open a public
-issue** for a suspected vulnerability.
+Report suspected vulnerabilities in the CLI, charts, rendered manifests, release artifacts, or
+the trust model described in [`docs/SECRETS.md`](docs/SECRETS.md). Do not open a public issue.
 
 Report it privately via [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guided-security-vulnerability-reporting)
 on this repository (Security tab → "Report a vulnerability").
 
-Include the affected version, impact, reproduction steps, and any suggested mitigation. Yscale
-maintainers triage reports and coordinate disclosure on a best-effort basis; the project does not
-promise a response or remediation SLA. Reports that expose credentials or affect rendered cluster
-state receive the highest priority.
+Include the affected version, impact, reproduction steps, and any suggested mitigation. Maintainers
+coordinate disclosure on a best-effort basis; the project does not promise a response or remediation
+SLA. Reports involving credentials or rendered cluster state receive the highest priority.
 
 ## Supported versions
 

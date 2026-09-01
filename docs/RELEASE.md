@@ -1,8 +1,7 @@
 # Releases
 
-Yscale IDP publishes versioned `idpctl` binaries and a multi-architecture Linux container from a
-SemVer tag. The release workflow accepts tags shaped like `vX.Y.Z` and publishes only after its
-verification job succeeds.
+Each `vX.Y.Z` tag publishes versioned `idpctl` binaries and a multi-architecture Linux container.
+The workflow publishes only after the verification job succeeds.
 
 ## Published artifacts
 

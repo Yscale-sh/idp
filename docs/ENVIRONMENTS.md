@@ -1,6 +1,6 @@
 # Environments and promotion
 
-An environment is a policy and capability document, not a cloud account or cluster type. JDP assumes
+An environment is a policy and capability document, not a cloud account or cluster type. Yscale IDP assumes
 the target Kubernetes cluster already exists.
 
 ## Environment contract
@@ -29,7 +29,7 @@ databases, and a direct LoadBalancer implementation. These are examples, not req
 ### Production
 
 A production environment should require immutable artifacts, use a durable secret backend, define
-strict route zones and resource bounds, and declare only capabilities the cluster actually provides.
+strict route zones and resource bounds, and declare only capabilities present in the cluster.
 
 ### Additional environments
 
@@ -55,7 +55,7 @@ the target desired-state commit.
 
 ## Cluster bootstrap boundary
 
-Before JDP can reconcile an environment, the operator must provide:
+Before Yscale IDP can reconcile an environment, the operator must provide:
 
 - A reachable Kubernetes API and administrative bootstrap access.
 - Flux Operator and the required Flux controllers.
@@ -63,7 +63,7 @@ Before JDP can reconcile an environment, the operator must provide:
 - Any StorageClass, LoadBalancer, DNS, SecretStore, autoscaling, or observability implementation
   declared by the environment.
 
-JDP can install modules described in the module registry, but it does not provision the Kubernetes
+Yscale IDP can install modules described in the module registry, but it does not provision the Kubernetes
 cluster, nodes, provider network, or control plane.
 
 ## Validation and runtime checks

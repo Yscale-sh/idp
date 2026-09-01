@@ -1,7 +1,7 @@
 # Environment variable contract
 
-Application configuration is divided by ownership and sensitivity. The platform renders only
-declarations and references; credential values never belong in Git.
+Configuration is grouped by owner and sensitivity. Rendered state contains declarations and
+references, never credential values.
 
 ## Tiers
 

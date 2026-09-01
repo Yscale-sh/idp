@@ -1,6 +1,6 @@
 # Secrets and provisioning
 
-JDP stores secret declarations in Git and secret values outside Git. The selected environment
+Yscale IDP stores secret declarations in Git and secret values outside Git. The selected environment
 backend materializes values into application namespaces.
 
 ## Core rules

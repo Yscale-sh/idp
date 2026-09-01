@@ -1,6 +1,6 @@
 # Yscale IDP
 
-> A Linux-like application layer for Kubernetes.
+Manage applications on an existing Kubernetes cluster through a small app contract and GitOps.
 
 Bring a running Kubernetes cluster. Declare apps in `deploy.yaml`. Commit the rendered state. Flux
 keeps the cluster running what Git says should be installed.
@@ -21,7 +21,7 @@ installing, configuring, connecting, updating, promoting, and removing applicati
 | System services | Optional modules such as databases, cache, autoscaling, and observability |
 | Application process | Kubernetes Deployment created from the app manifest |
 
-The unit of deployment is an **app**, not a pile of Kubernetes YAML. An app declares what it needs;
+The unit of deployment is an app, not a set of Kubernetes manifests. An app declares what it needs;
 the platform supplies the standard Kubernetes implementation.
 
 ## What you need
@@ -137,7 +137,7 @@ helm install flux-operator \
 kubectl apply -f clusters/dev/flux-instance.yaml
 ```
 
-This is the bootstrap exception. After Flux is running, Git is the writer for platform and app
+This is the bootstrap exception. After Flux is running, Git is the source of platform and app
 state.
 
 ### 3. Install enabled system services
@@ -329,7 +329,7 @@ idpctl tunnel up --env prod --file deploy.yaml
 | `cmd/idp-shipper` | Optional automatic build and install loop. |
 | `schemas/deploy.schema.json` | App manifest schema. |
 
-## Safety rules
+## Operational rules
 
 - Git contains desired state and secret names, never secret values.
 - Use immutable image tags or digests outside development.

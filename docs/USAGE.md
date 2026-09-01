@@ -1,18 +1,12 @@
 # Operating the Yscale IDP
 
-Day-to-day runbooks for a Yscale IDP fork. For the command design, read
+These runbooks cover routine operations in an adopted Yscale IDP repository. For command design, read
 [`DEPLOY_GO_CLI.md`](DEPLOY_GO_CLI.md); for the target production shape, read
 [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-The unit of work everywhere below is the per-app `deploy.yaml` app manifest. A
-developer declares a small app contract (app, runtime, routes, sizing, db, cache,
-volumes, `connectsTo`), and the platform derives every Kubernetes object from it:
-namespaces, Deployment, ClusterIP Service, secret refs, env vars (`DATABASE_URL`,
-`REDIS_URL`), probes, resource limits, autoscaling, and observability. You never
-write a Deployment, a Service, or a LoadBalancer. Deploying is a Git commit, and
-Flux is the only writer: `idpctl render` upserts the app into
-`clusters/<env>/platform.yaml` (one umbrella HelmRelease), you commit on the env's
-Flux branch, and Flux reconciles it. Never `kubectl apply` or `helm upgrade`.
+Each operation starts from an application's `deploy.yaml`. `idpctl render` upserts the application
+into `clusters/<env>/platform.yaml`; commit that file on the environment's Flux branch and let Flux
+reconcile it. Do not deploy applications with `kubectl apply` or `helm upgrade`.
 
 ## 1. Deploy a brand-new app
 
@@ -52,8 +46,8 @@ the `idp-shipper` registry in `environments/dev/cluster.yaml`, run
 
 ## 2. Ship the normal daily change
 
-This is the continuous dev path: push to your branch and it deploys. The in-cluster
-`idp-shipper` realizes it. The shipper registry (which apps to ship, with repo, branch,
+The in-cluster `idp-shipper` handles continuous development delivery. Its registry (which apps to
+ship, with repo, branch,
 and deploy file paths) is infra-owned config, a ConfigMap declared in
 `environments/dev/cluster.yaml` and applied with `idpctl infra render`. A developer never
 touches the registry or the platform repo; they only edit their own `deploy.yaml`.
@@ -119,11 +113,11 @@ git push
 ## 4. Expose a dev app behind login (Cloudflare Access)
 
 By default a `public: true` route in dev is served on the LAN (a MetalLB
-LoadBalancer at `<host>.local`). To *also* give the app a **public HTTPS URL gated
-by SSO login**, add a second route under your instance's **dev Cloudflare zone**:
+LoadBalancer at `<host>.local`). To also provide a public HTTPS URL gated by SSO login, add a second
+route under the instance's development Cloudflare zone:
 it is served through a Cloudflare Tunnel and sits behind that account's wildcard
-Cloudflare Access app, so every request must authenticate. The two routes coexist
-— the LAN address stays open on `.local`, the internet-facing one is login-gated.
+Cloudflare Access app, so every request must authenticate. The two routes coexist: the LAN address
+stays open on `.local`, and the internet-facing route requires login.
 
 > **Your dev zone is per-instance.** It is the `cloudflareZone` key in
 > [`environments/dev/cluster.yaml`](../environments/dev/cluster.yaml), paired with
@@ -170,7 +164,9 @@ teammate can guess the URL:
 
    ```bash
    idpctl render --env dev --file deploy.yaml --image ghcr.io/OWNER/hello:<tag>
-   git add -A && git commit -m "expose hello in dev" && git push
+   git add deploy.yaml clusters/dev/platform.yaml
+   git commit -m "expose hello in dev"
+   git push
    ```
 
 4. **Verify the login gate.** This probes each CF-zone host and confirms it
@@ -205,7 +201,7 @@ the policy rail), read [`CONVENTIONS.md`](../CONVENTIONS.md) section 9.
    make catalog ENV=dev
    ```
 
-4. Build the whole-platform site (per-env pages plus an `index.html`) with `--all`:
+4. Build the platform catalog (one page per environment plus `index.html`) with `--all`:
 
    ```bash
    idpctl catalog --all --out-dir public
@@ -253,7 +249,7 @@ so it is a read-only view of committed git state, never a writer.
    kubectl -n <app-namespace> get events --sort-by=.lastTimestamp
    ```
 
-   A wedged release normally says exactly which rendered resource is not Ready. Inspect
+   A failed release usually identifies the rendered resource that is not Ready. Inspect
    that resource and its pod logs; do not bypass GitOps with a manual Helm install.
 3. Check the common causes:
 
@@ -272,7 +268,7 @@ so it is a read-only view of committed git state, never a writer.
    HelmRelease instead of wedging or rolling back its siblings. Keep the isolation; fix the
    child release's underlying condition.
 
-## 8. `idpctl` cheat-sheet
+## 8. `idpctl` command reference
 
 | Verb | Purpose |
 |---|---|

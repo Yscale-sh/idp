@@ -1,31 +1,24 @@
-# idp: deploying your app (agent quickstart)
+# Deploy apps with Yscale IDP
 
-This is the **Yscale IDP** platform. You describe your app in ONE `deploy.yaml` and the platform
-derives all the Kubernetes for you: it builds the image, wires secrets, DBs, cache, and
-routing, then ships it via GitOps (Flux). The `deploy.yaml` app manifest IS the product:
-you declare a small app contract (app, runtime, routes, sizing, db, cache, volumes,
-connectsTo) and the platform produces the namespaces, Deployment, ClusterIP Service, secret
-refs, env vars, probes, resource limits, autoscaling, and observability. **You never write a
-Deployment, Service, or LoadBalancer.** This file is the fast path. Deeper docs are linked at
-the end.
+Describe an app in `deploy.yaml`. Yscale IDP builds its image, connects secrets and data stores,
+renders Kubernetes resources, and commits the desired state for Flux to reconcile. Application
+repositories do not contain Deployments, Services, or LoadBalancers.
 
-> **Bundled agent skill.** This repo ships `.claude/skills/idp/SKILL.md`, which Claude Code
-> auto-loads in any session here. It covers the idpctl command surface, the app-manifest
-> contract, the dev and prod lifecycle, and the fail-closed rails. Read it before running idpctl.
+> This repository includes `.claude/skills/idp/SKILL.md`. Read it before running `idpctl`; it
+> documents the command surface, app contract, deployment lifecycle, and safety checks.
 
-## The model in one breath
+## Deployment flow
 
-`deploy.yaml` (a declaration of what your app needs) -> `idpctl render` (expands it into the
-env's ONE umbrella HelmRelease) -> git commit on the env's Flux branch -> **Flux** reconciles
-it onto the cluster. Flux is the only writer: never `kubectl apply` or `helm upgrade`. Public
-apps get a Cloudflare Tunnel in prod. DB, cache, and secret URLs are injected as env.
+`deploy.yaml` -> `idpctl render` -> environment umbrella `HelmRelease` -> Git commit -> Flux.
+Flux is the only steady-state cluster writer. Do not deploy applications with `kubectl apply` or
+`helm upgrade`. The target environment supplies routing, data stores, and secrets.
 
-## Minimal deploy.yaml
+## Minimal `deploy.yaml`
 
 ```yaml
 app: myapp                       # unique app name (lowercase)
 runtime:
-  image: ghcr.io/<owner>/myapp     # repo ONLY, NO tag (CI/--image supplies it)
+  image: ghcr.io/<owner>/myapp     # repository only; CI/--image supplies the tag
   port: 8080                     # the port your server listens on
 routes:
   - host: api                    # bare label -> api.<env-zone> (e.g. api.myapp.com in prod)
@@ -45,7 +38,7 @@ sizing:
   replicas: 2
 ```
 
-## The fields you'll use
+## Contract fields
 
 | field | what it does |
 |---|---|
@@ -62,19 +55,20 @@ sizing:
 | `metrics.enabled` | ServiceMonitor: **must be false in prod** (no Prometheus there yet). |
 | `connectsTo[]` | app-to-app wiring, resolved per env (clusterService / publicRoute / serviceToken; `scheme: none` -> bare `host:port`). |
 | `build` | `{context, dockerfile, submodules}` for building your image from a subdir/monorepo. |
-| `components[]` | multi-component product (api + ui + worker) in ONE file: see below. |
+| `components[]` | multi-component product (API + UI + worker) in one file; see below. |
 
-## Images: built for you
+## Image builds
 
 Your `runtime.image` is **tagless**. The platform builds and tags it:
+
 - **dev (idp-shipper):** push to your app's registered branch. The in-cluster idp-shipper
   reads the new head SHA, builds only the images whose inputs changed via the in-cluster
   image-builder (rootless BuildKit), pushes `ghcr.io/<owner>/<app>:<short-sha>`, renders,
   commits, and pushes the platform branch. Flux reconciles. See the lifecycle section below.
 - **Manual:** `idpctl build --repo <org>/<repo> --ref <sha> --build-context <dir> --image ghcr.io/<owner>/<app>:<sha>`
-- **prod rejects `:latest`:** always a commit-SHA or version tag.
+- Production rejects `:latest`; use a commit SHA, version tag, or digest.
 
-## Secrets and stores
+## Secrets and data stores
 
 - Declare secret KEY names in `secrets:`, then seed the values in **SSM** at
   `/apps/<app>/<env>/<KEY>` (the platform syncs them via external-secrets). Shared creds live
@@ -82,11 +76,11 @@ Your `runtime.image` is **tagless**. The platform builds and tags it:
 - `db: postgres` -> `DATABASE_URL` (plus `PRIMARY_DATABASE_URL`); `cache: redis` -> `REDIS_URL`.
   In prod these come from the SSM secrets backend (DATABASE_URL points at the in-cluster CNPG
   service; prod stays PVC-free by contract). In dev they're spun up in-cluster automatically.
-  **Don't hardcode connection strings: declare the store.**
+  Declare the store instead of hardcoding a connection string.
 
 ## Multi-component apps (api + ui + worker)
 
-A multi-component product is ONE file. The top level is the shared BASE and each
+A multi-component product uses one file. The top level is the shared base, and each
 `components[]` entry carries only its deltas. `Expand()` yields one isolated HelmRelease per
 component:
 
@@ -107,25 +101,25 @@ components:
 ```
 
 Merge rules: pointer fields (runtime/probes/sizing) override; `env` merges; `secrets` union;
-slice fields (db/cache/routes/volumes) inherit, or set `[]` to opt out. **All components of one
-app share ONE image TAG** (`--image <tag>` -> `<each component's repo>:<tag>`).
+slice fields (db/cache/routes/volumes) inherit, or set `[]` to opt out. All components of one
+app share one image tag (`--image <tag>` -> `<each component's repo>:<tag>`).
 
-> **Path-based routing** (one domain, different paths -> different components) is NOT a
+> Path-based routing (one domain, different paths -> different components) is not a
 > deploy.yaml feature: idp routes are host-to-one-service. If you need it, add a small nginx
 > `router` component that `connectsTo` its siblings with `scheme: none` (the same
 > in-front-of-an-app pattern as yscale-media's `ui`).
 
-## Deploy lifecycle
+## Deployment lifecycle
 
-Deploying is a git commit. `idpctl render` upserts your app into the env's ONE umbrella
+Deploying is a Git commit. `idpctl render` upserts the app into the environment umbrella
 HelmRelease at `clusters/<env>/platform.yaml`, whose values list every app. The
 `charts/cluster` chart templates one isolated HelmRelease per app (plus its dedicated stores
 and each enabled module). You commit `platform.yaml` on the env's Flux branch and Flux
 reconciles it. `disableWait` isolates a failing app so it cannot wedge its siblings.
 
-### dev (continuous and automatic)
+### Development: continuous delivery
 
-The in-cluster **idp-shipper** realizes "push to your branch, it deploys." It is
+The in-cluster `idp-shipper` watches registered branches and deploys new commits. It is
 infra-owned, in-cluster, and enabled per environment (dev and prod each run their own instance;
 prod commits the `prod` branch). Per registered app, every interval it reads the GitHub
 head SHA for the app's repo and branch; if it changed, it derives the build set from the
@@ -148,7 +142,7 @@ git commit ... && git push     # clusters/dev/platform.yaml on main; Flux reconc
 # public app, one-time: idpctl tunnel up --env <env> -f deploy.yaml --zone-id <cf-zone>
 ```
 
-### prod (deliberate and digest-forward)
+### Production: digest-forward promotion
 
 Prod promotes FROM dev directly. Stage is scaffolded in-repo but deferred, so the live path
 today is dev -> prod (`environments/prod/cluster.yaml` declares `promotion.from: dev`).
@@ -160,7 +154,7 @@ git commit ... && git push     # clusters/prod/platform.yaml on the prod branch
 
 `idpctl promote` reads the image digest already running in dev's umbrella and re-renders the
 app into `clusters/prod/platform.yaml` with prod's policy, secrets backend, and namespaces.
-**It never rebuilds the artifact.** Commit the promote on the **prod** branch (the command
+It does not rebuild the artifact. Commit the promotion on the `prod` branch (the command
 prints the branch); the prod cluster syncs `refs/heads/prod`. Rollback is `git revert` of that
 one commit.
 
@@ -169,7 +163,7 @@ regardless. The target production environment must provide an existing Kubernete
 only (no MetalLB); `statefulStores: false`, so apps get `DATABASE_URL` from the SSM secrets
 backend.
 
-## Gotchas (read before your first deploy)
+## Common mistakes
 
 - `db: primary` injects `DATABASE_URL` and `PRIMARY_DATABASE_URL` env but does NOT auto-add
   them to the secret. **List both in `secrets:`** and seed them in SSM.
@@ -182,7 +176,7 @@ backend.
 - The pre-built `./idpctl` binary in the repo may be wrong-arch. Build from source with
   `make build` if you need to run it.
 
-## Go deeper
+## Further reading
 
 `ARCHITECTURE.md` (target production shape) · `docs/ENV.md` + `docs/SECRETS.md` (env/secrets
 contract) · `CONVENTIONS.md` (platform contract) · `examples/` (worked deploy.yamls).

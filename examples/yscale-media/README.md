@@ -1,55 +1,44 @@
-# yscale-media: an optionally-distributed sharded media server
+# yscale-media multi-component example
 
-**yscale-media** is the platform's multi-component worked example: a self-hosted
-media server (api + scanner + ui sharing one Postgres/Redis, an iGPU, an NFS
-library, and a LAN UI) plus a fourth component — an **optionally-distributed
-sharded transcoder** — all authored as a single multi-component app manifest
-(`yscale-media.deploy.yaml`). It began as a fork of the open-source
+`yscale-media` is a self-hosted media server with four workloads in one app manifest: API, scanner,
+UI, and an optional distributed transcoder. The workloads share Postgres, Redis, an iGPU, and an
+NFS library where declared. It began as a fork of the open-source
 [Dim](https://github.com/Dusk-Labs/dim) media server.
 
-It is kept here as the worked example because it exercises essentially the whole
-contract. The per-app app manifest is the
-product: a developer declares a small app contract and the platform derives all
-of the Kubernetes (namespaces, Deployments, ClusterIP Services, secret refs, env
-vars, probes, limits, autoscaling) from it. Nobody writes a Deployment, Service,
-or LoadBalancer here.
+The example covers multi-component inheritance, shared stores, worker workloads, GPU limits,
+volumes, LAN exposure, and service connections.
 
 ## One file, four components
 
-The top level of `yscale-media.deploy.yaml` is the shared **base** (app identity,
-the api image, `build.submodules` for the vendored Rust transcoder, the app-level
+The top level of `yscale-media.deploy.yaml` is the shared base (app identity,
+the API image, `build.submodules` for the vendored Rust transcoder, the app-level
 Postgres + Redis); each entry under `components:` carries only its deltas. The
 platform `Expand()`s it into one isolated HelmRelease per component, identical to
-four separate files, with the boilerplate declared **once**.
+four separate files, with shared fields declared once.
 
 | Component | What it shows |
 |---|---|
-| **api** | the web tier (REST/WS) that inherits the base image + stores and **provisions** them (first user), `probes.type: tcp` (no `/healthz`), `sizing.profile: xlarge` + `extraLimits: gpu.intel.com/i915` (hardware transcode), three volume kinds (read-only NFS-via-FS-Cache PVC, NFS metadata, emptyDir scratch) |
-| **scanner** | a **portless worker** (`port: 0`) sharing the base image. It **auto-shares** the api's stores (no `provision: false` needed), uses `sizing.autosize` (VPA), and gets a provisioned scratch PVC (just `name + size + mountPath`) |
-| **transcode** | **the sharded scale-out**, a GPU worker pool that drains a Redis chunk queue so one stream is encoded across many pods. `replicas: 0` (the GPU-spend gate: costs nothing at rest), `extraLimits: gpu.intel.com/i915`, shares the api's stores |
-| **ui** | nginx SPA that overrides `runtime` (its own image + port 80) and `build.context: ui`, opts out of the app stores (`db: []` / `cache: []`), is the **LAN entrypoint** (`expose.lan` → MetalLB, `host: yscale.lan` → external-dns), and `connectsTo` the api's Service with `scheme: none` |
+| `api` | REST/WebSocket tier that inherits the base image and stores, provisions the stores, uses TCP probes, requests the `xlarge` profile and Intel iGPU, and mounts NFS and scratch volumes. |
+| `scanner` | Portless worker (`port: 0`) that shares the API stores, uses VPA through `sizing.autosize`, and gets a scratch PVC. |
+| `transcode` | GPU worker pool that drains a Redis chunk queue. `replicas: 0` keeps it disabled at rest; `extraLimits: gpu.intel.com/i915` requests an iGPU. |
+| `ui` | nginx SPA with its own image and build context. It opts out of stores, exposes the LAN route through MetalLB, and connects to the API Service with `scheme: none`. |
 
-What the base DRYs out: the `app` identity, the api image, the `vendor/yscale-transcode`
-submodule build, and the Postgres/Redis, each declared **once** instead of four
-times. Stores provision once (api owns them; the workers auto-share; the ui opts
-out), so there are no hand-written `provision: false` flags.
+The base declares the app identity, API image, `vendor/yscale-transcode` submodule build, and
+Postgres/Redis stores. The API provisions the stores, workers share them, and the UI opts out.
 
-## The "optionally distributed" part
+## Optional distributed transcoding
 
-The api is the **coordinator**: it chunk-plans each stream, enqueues work onto
+The API coordinates each stream: it plans chunks, enqueues work in
 Redis, and assembles the S3/MinIO-backed sharded manifest. With the transcode
-pool at `replicas: 0`, the api still transcodes in-process (the single-box
-behavior), so the burst is purely **additive and opt-in**. Turn it on by
+pool at `replicas: 0`, the API still transcodes in-process. Enable the worker pool by
 scaling the pool (or let KEDA do it on queue depth):
 
 ```sh
 kubectl -n yscale-media-<env>-transcode scale deploy/<name> --replicas=3
 ```
 
-Now one 4K stream is sharded across three iGPU workers. Scale back to 0 and
-you're a single-box media server again. That is the whole idea: **the same
-deploy.yaml contract spans a hobby media server and a distributed transcode
-farm, and you opt into the scale-out one component at a time.**
+One 4K stream can then be sharded across three iGPU workers. Scale the pool back to zero to return
+to in-process transcoding.
 
 ## Render
 

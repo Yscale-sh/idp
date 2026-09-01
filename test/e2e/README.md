@@ -1,31 +1,27 @@
-# test/e2e: ephemeral end-to-end test (Flux + umbrella platform)
+# Flux end-to-end test
 
-`run.sh` spins up a **throwaway** [k3d](https://k3d.io) cluster, installs **Flux**
-and **KEDA** (plus the HTTP add-on), serves *this* repo to Flux from an in-cluster git
-source, reconciles the **real rendered umbrella** (`clusters/dev/platform.yaml`, the
+`run.sh` creates a temporary [k3d](https://k3d.io) cluster, installs Flux and KEDA
+(including the HTTP add-on), serves this repository to Flux from an in-cluster Git
+source, and reconciles the rendered umbrella (`clusters/dev/platform.yaml`, the
 HelmRelease that installs `charts/cluster`, which fans out one HelmRelease per app plus
-its Postgres and each enabled module), proves the workloads, and **always tears the
-cluster down**.
+its Postgres and each enabled module). A cleanup trap removes the cluster after the run.
 
-The platform's contract is the per-app `deploy.yaml` app manifest: a developer declares
-a small app contract and the platform derives every Kubernetes object from it. This test
-exercises that derivation end to end. It proves the **post-ArgoCD Flux platform** actually
-reconciles on a real cluster, which the layer unit/golden tests cannot cover, and answers
-one Flux source-controller compatibility question that has no documented answer.
+The test covers the render-to-reconcile path that unit and golden tests cannot exercise. It also
+checks whether Flux source-controller accepts an in-cluster `git://` source.
 
-## THE HEADLINE: does Flux's source-controller accept a `git://` daemon?
+## Flux `git://` compatibility
 
-ArgoCD's repo-server accepted the previous in-cluster `git://` daemon pattern. Flux's docs
-only list `http(s)://` and `ssh://` for a `GitRepository`. Before relying on that source type in a
-fork, this test checks empirically whether Flux's **source-controller** will use a `git://` source.
+Argo CD's repo-server accepted the previous in-cluster `git://` daemon pattern. Flux documents
+`http(s)://` and `ssh://` for a `GitRepository`, so this test checks whether source-controller also
+accepts `git://`.
 
 `run.sh` answers it: it stands up the same kind of in-cluster git daemon
 (`buildpack-deps:bookworm-scm` running `git daemon` on `:9418`, populated by
 `kubectl cp` of a bare clone), applies a Flux `GitRepository`
 (`source.toolkit.fluxcd.io/v1`) at `git://…/platformctl.git`, waits, reads
-`status.conditions`, and prints the verdict as the headline line:
+`status.conditions`, and prints the verdict:
 
-```
+```text
 FLUX_GIT_PROTOCOL: accepted
 # or
 FLUX_GIT_PROTOCOL: rejected: <message from source-controller>
@@ -41,62 +37,55 @@ make e2e
 
 ## What it does
 
-1. **Detect k3d.** If `k3d` is not installed, print `brew install k3d` and **exit 0
-   with a SKIP**, so a machine/CI without k3d does not hard-fail.
-2. **Create** a uniquely named k3d cluster using an **isolated kubeconfig**, so it can
-   never touch a real cluster/context.
-3. **Build the CLI** (`go build -o idpctl ./cmd/idpctl`) and **render the
-   real desired state**: `idpctl render --env dev --file
+1. Detect `k3d`. If it is not installed, print `brew install k3d` and exit successfully with a
+   skip message.
+2. Create a uniquely named k3d cluster with an isolated kubeconfig.
+3. Build the CLI (`go build -o idpctl ./cmd/idpctl`) and render desired state with
+   `idpctl render --env dev --file
    examples/carshowdb/deploy.yaml --image ealen/echo-server:0.9.2` plus `idpctl
    infra render --env dev`, so `clusters/dev/platform.yaml` is current. Also assert the
-   rendered app/postgres/umbrella manifests contain **0** `type: LoadBalancer`.
-4. **Install Flux controllers.** Prefer the Flux CLI (`flux install --components
+   rendered application, Postgres, and umbrella manifests contain no `type: LoadBalancer`.
+4. Install Flux controllers. Prefer the Flux CLI (`flux install --components
    source-controller,kustomize-controller,helm-controller`) if present; otherwise
    `helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator`
-   and apply a minimal **FluxInstance** (`fluxcd.controlplane.io/v1`). Wait until
+   and apply a minimal `FluxInstance` (`fluxcd.controlplane.io/v1`). Wait until
    source-controller + helm-controller are Available.
-5. **Install KEDA** (`kedacore/keda`) **and the HTTP add-on** (`kedacore/keda-add-ons-http`
-   `0.14.1`) so the `HTTPScaledObject` CRD exists, because carshowdb is **scale-to-zero**.
-   Also install the **Prometheus Operator CRDs** (`prometheus-operator-crds`), because the
+5. Install KEDA (`kedacore/keda`), the HTTP add-on (`kedacore/keda-add-ons-http` `0.14.1`), and
+   Prometheus Operator CRDs. `carshowdb` requires `HTTPScaledObject`, and the
    rendered app chart ships a `ServiceMonitor` (a long-lived dev cluster may get
    that CRD from kube-prometheus-stack; an ephemeral k3d cluster does not, and without it the
    carshowdb HelmRelease install fails and Flux remediation tears it down).
-6. **Serve this repo in-cluster** from a single pod that runs **both** a `git://`
-   daemon (`:9418`, the thing under test) and a Flux-accepted **smart-HTTP** endpoint
+6. Serve this repository from a pod running both a `git://` daemon (`:9418`) and a smart-HTTP endpoint
    (`nginx` + `fcgiwrap` + `git-http-backend`, `:80`) off the same `kubectl cp`'d bare
    clone.
-7. **THE KEY TEST:** apply a `GitRepository` named `flux-system` in `flux-system` at
+7. Apply a `GitRepository` named `flux-system` in `flux-system` at
    `git://…/platformctl.git`, wait, and read `status.conditions[Ready]`. Print
    `FLUX_GIT_PROTOCOL: accepted` or `FLUX_GIT_PROTOCOL: rejected: <message>`.
-8. **Reconcile the umbrella:**
-   - **If `git://` accepted**, apply `clusters/dev/platform.yaml` (the umbrella
+8. Reconcile the umbrella:
+   - If `git://` is accepted, apply `clusters/dev/platform.yaml` (the umbrella
      HelmRelease) against that `git://` source and let Flux's helm-controller
      reconcile the inner releases (carshowdb, carshowdb-postgres, keda,
      keda-http-add-on).
-   - **If `git://` rejected**, re-point the **same** `GitRepository` at the
-     smart-HTTP endpoint (which Flux **does** accept) and reconcile the **same**
+   - If `git://` is rejected, point the same `GitRepository` at the smart-HTTP endpoint and
+     reconcile the same
      umbrella over `http://`. If even that source cannot go Ready, fall back to
      installing the inner charts directly via `helm` (umbrella `spec.values`
-     extracted with `python3`). **The path that ran is printed** (`platform path:
+     extracted with `python3`). The script prints the selected path (`platform path:
      …`).
-9. **PROVE the platform:** wait for the Postgres StatefulSet Ready and the
-   carshowdb HelmRelease to reconcile; assert the carshowdb **HTTPScaledObject**
-   (scale-to-zero) exists and the Service is **ClusterIP**; then run a `Job` in
+9. Wait for the Postgres StatefulSet and carshowdb HelmRelease, assert that the
+   `HTTPScaledObject` exists and the Service is ClusterIP, then run a `Job` in
    `carshowdb-dev-api` (image `postgres:16-alpine`, `DATABASE_URL` from the
    `carshowdb-runtime` Secret via `secretKeyRef`) that runs `pg_isready` plus `psql -c
-   "select 'CONNECTED ok='||1"` and **must print `CONNECTED ok=1`**, the dead-Supabase
-   fix, proven live cross-namespace.
-10. **Tear down** the cluster and tmp via a `trap` that runs on success, failure, or
+   "select 'CONNECTED ok='||1"`. The command must print `CONNECTED ok=1`.
+10. Remove the cluster and temporary directory through a `trap` that runs on success, failure, or
     Ctrl-C.
 
-## Safety / robustness
+## Isolation and cleanup
 
 - `set -euo pipefail` and a cleanup `trap` on `EXIT INT TERM`, so the cluster and tmp
   dir are never leaked, even on failure.
-- Isolated `KUBECONFIG` (a temp file) and a uniquely-named cluster, so the test only
-  ever talks to the cluster it just created. **It never touches a live/remote
-  cluster** (k3d only, it creates its own throwaway cluster).
-- `k3d` absent gives a graceful **SKIP (exit 0)**, not a failure.
+- An isolated `KUBECONFIG` and uniquely named cluster limit commands to the test cluster.
+- If `k3d` is absent, the test reports a skip and exits zero.
 
 ## Knobs (env vars)
 

@@ -1,6 +1,7 @@
 # Architecture
 
-Jakes Developer Platform treats an existing Kubernetes cluster as the machine and each `deploy.yaml` as an installable app. It provides the system layer that validates, configures, installs, updates, and removes those apps. Cluster creation,
+Yscale IDP treats an existing Kubernetes cluster as the runtime and each `deploy.yaml` as an
+installable app. It validates, configures, installs, updates, and removes those apps. Cluster creation,
 node management, networking, and provider infrastructure stay outside its boundary.
 
 ## Logical flow
@@ -82,12 +83,12 @@ Validation fails closed when an app requests a capability the target environment
 
 ## Storage and availability
 
-JDP does not prescribe a storage provider or availability topology. Operators choose StorageClasses,
+Yscale IDP does not prescribe a storage provider or availability topology. Operators choose StorageClasses,
 replica counts, backup systems, disruption policy, and recovery objectives. The reference modules
 are optional implementations, not cluster prerequisites.
 
 ## Promotion
 
-Promotion is digest-forward. JDP reads the artifact selected in the source environment, applies the
+Promotion is digest-forward. Yscale IDP reads the artifact selected in the source environment, applies the
 target environment's policy and configuration, and renders the same artifact into the target branch.
 Mutable production tags are rejected. Rollback is a Git revert.

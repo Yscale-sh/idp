@@ -1,11 +1,10 @@
-# carshowdb: the minimal single-service contract
+# carshowdb single-service example
 
-One API service (`component: api`), one public route, one platform-provisioned database. The
-simplest complete example on the platform.
+This example defines one API service, one public route, and one platform-provisioned database.
 
 | Feature | Demonstrates |
 |---|---|
-| `db: [{name: primary, type: postgres}]` | Platform provisions dev Postgres and wires `DATABASE_URL` — no connection string in the repo. Replaces a hand-wired external URL (`db: primary` is the minimal form). |
+| `db: [{name: primary, type: postgres}]` | Provisions development Postgres and injects `DATABASE_URL`; no connection string is stored in the repository. |
 | `probes: {path: /health}` | Custom probe path; the default `/healthz` returns 404 for this image. Without it, liveness kills the pod into CrashLoopBackOff. |
 | `autoscale: {enabled: false}` | `scaleToZero` is incompatible with the cloudflared sidecar model: at zero replicas the tunnel connector dies and the tunnel has no origin to forward to. Fixed `replicas: 2` keeps the tunnel alive and provides HA. |
 
