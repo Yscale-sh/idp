@@ -14,7 +14,10 @@ spec:
   releaseName: {{ .releaseName }}
   targetNamespace: {{ .namespace }}
   storageNamespace: {{ .namespace }}
-  {{- include "cluster.appRemediation" (dict "env" $env) | nindent 2 }}
+  {{- /* Env-aware remediation for EVERY app release (non-prod: fix forward via
+  disableWait; prod: strict readiness wait + rollback), plus the release's own
+  rollback declaration. Subsumes the former startupFailureThreshold-only case. */}}
+  {{- include "cluster.appRemediation" (dict "env" $env "rollback" .rollback) | nindent 2 }}
   chart:
     spec:
       chart: ./charts/app

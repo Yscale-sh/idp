@@ -276,6 +276,29 @@
         }
       }
     },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How a release of this app may be undone. A property of the revision that ships a migration, not of the app in general.",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["auto", "manual"],
+          "description": "auto (default): Flux helm-rolls a failed upgrade back. manual: a failed upgrade stays in place; the only revert is a deliberate commit. dataCompatible: false forces manual.",
+          "default": "auto"
+        },
+        "dataCompatible": {
+          "type": "boolean",
+          "description": "Can the PREVIOUS release read data written by this one? false marks a one-way migration and requires note.",
+          "default": true
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "One line shown beside the plan and promote output: what a rollback would break."
+        }
+      }
+    },
     "tailscaleEgress": {
       "type": "boolean",
       "description": "Inject Tailscale egress sidecar env only when true.",

@@ -60,10 +60,26 @@ type AppEntry struct {
 	Component   string       `json:"component,omitempty"`
 	Values      any          `json:"values"`
 	Stores      []StoreEntry `json:"stores,omitempty"`
+	// Rollback is the release's resolved rollback declaration (deploy.yaml
+	// rollback). It sits BESIDE values, not inside them: the umbrella chart reads
+	// it to set Flux upgrade remediation per commit, while charts/app never
+	// sees it. nil (the common case) omits the key
+	// so existing apps render byte-identical.
+	Rollback *RollbackEntry `json:"rollback,omitempty"`
 	// Postgres is the LEGACY single-store field. New renders leave it nil and use
 	// Stores; it is kept so an old entry round-trips (read+write) without losing its
 	// Postgres. Migrate an entry by re-rendering its app (moves it into Stores).
 	Postgres *PostgresEntry `json:"postgres,omitempty"`
+}
+
+// RollbackEntry is appconfig.Rollback with its defaults resolved, as committed
+// in the umbrella. Strategy is always auto|manual and DataCompatible always
+// set, so readers (the umbrella chart, plan and promote output) never re-derive
+// the defaults.
+type RollbackEntry struct {
+	Strategy       string `json:"strategy"`
+	DataCompatible bool   `json:"dataCompatible"`
+	Note           string `json:"note,omitempty"`
 }
 
 // ModuleEntry is one enabled infra module in the umbrella values. The umbrella
@@ -233,6 +249,9 @@ func (r *Result) ToAppEntry() AppEntry {
 		ReleaseName: r.App.ReleaseName(),
 		Component:   r.App.Purpose(),
 		Values:      r.Values,
+	}
+	if rb := r.App.Rollback; rb != nil {
+		e.Rollback = &RollbackEntry{Strategy: rb.EffectiveStrategy(), DataCompatible: rb.IsDataCompatible(), Note: rb.Note}
 	}
 	for _, s := range r.StoreReleases {
 		e.Stores = append(e.Stores, StoreEntry{

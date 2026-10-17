@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/yscale-sh/idp/internal/appconfig"
 	"github.com/yscale-sh/idp/internal/clusterenv"
 	"github.com/yscale-sh/idp/internal/deploy"
 	"github.com/yscale-sh/idp/internal/render"
@@ -110,7 +111,16 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 			if branch == "" {
 				branch = "main"
 			}
-			fmt.Fprintf(out, "next: commit %s on branch %q (the branch %s's Flux tracks); rollback = git revert that commit.\n", path, branch, toEnv)
+			rollbackNote := "rollback = git revert that commit."
+			if rb := app.Rollback; rb != nil {
+				switch {
+				case !rb.IsDataCompatible():
+					rollbackNote = fmt.Sprintf("rollback: this release declares dataCompatible=false — %s. git revert would restore code that cannot read its data; revert only together with a deliberate data restore.", rb.Note)
+				case rb.EffectiveStrategy() == appconfig.RollbackManual:
+					rollbackNote = "rollback = git revert that commit (manual strategy: Flux will not auto-roll-back a failed upgrade)."
+				}
+			}
+			fmt.Fprintf(out, "next: commit %s on branch %q (the branch %s's Flux tracks); %s\n", path, branch, toEnv, rollbackNote)
 
 			// DNS-on-deploy: when the TARGET env serves a real Cloudflare Tunnel
 			// (seams.tunnel) and the app has public routes, reconcile the tunnel

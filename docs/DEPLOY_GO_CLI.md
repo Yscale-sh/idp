@@ -216,7 +216,9 @@ idpctl promote <app> prod --from dev -f deploy.yaml
 the artifact. Prod refuses mutable tags: `allowMutableTags: false`, and prod is hard-rejected in code
 regardless of that flag. Prod's `flux.branch` is `prod`; the prod cluster syncs `refs/heads/prod`.
 Commit the promote on the prod branch (the command prints the branch). Rollback is a `git revert` of
-that one commit.
+that one commit. A revert restores code and configuration, not data; a release that ships a one-way
+migration says so with `rollback.dataCompatible: false` (see
+[CONVENTIONS.md](../CONVENTIONS.md#rollback-the-data-boundary)).
 
 Prod also runs its own shipper instance (`registry.env=prod`, `platformBranch: prod`) that builds
 from each registered app's branch and commits the `prod` branch, brought online app by app as prod

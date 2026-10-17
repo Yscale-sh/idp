@@ -215,3 +215,65 @@ func TestValidate_LoggingRetention(t *testing.T) {
 // intPtr returns a pointer to i — for setting Sizing.Replicas (a *int so an
 // explicit 0 is distinguishable from unset) in table-driven tests.
 func intPtr(i int) *int { return &i }
+
+func TestValidate_Rollback(t *testing.T) {
+	f := false
+	mk := func(r *Rollback) App {
+		a := App{App: "x", Runtime: Runtime{Image: "ghcr.io/e/x", Port: 80}, Rollback: r}
+		a.ApplyDefaults()
+		return a
+	}
+	good := []*Rollback{nil, {}, {Strategy: "auto"}, {Strategy: "manual"},
+		{DataCompatible: &f, Note: "drops users.legacy_id"}}
+	for i, r := range good {
+		a := mk(r)
+		if err := a.Validate(); err != nil {
+			t.Errorf("good[%d] rejected: %v", i, err)
+		}
+	}
+	bad := map[string]*Rollback{
+		"rollback.strategy": {Strategy: "yolo"},
+		"rollback.note":     {DataCompatible: &f},
+	}
+	for field, r := range bad {
+		a := mk(r)
+		err := a.Validate()
+		if err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("%s: want error naming field, got %v", field, err)
+		}
+	}
+	for _, note := range []string{"two\nlines", strings.Repeat("a", 201)} {
+		a := mk(&Rollback{Note: note})
+		if err := a.Validate(); err == nil || !strings.Contains(err.Error(), "rollback.note") {
+			t.Errorf("note %q should be rejected, got %v", note, err)
+		}
+	}
+	a := mk(&Rollback{DataCompatible: &f, Note: "   "})
+	if err := a.Validate(); err == nil {
+		t.Error("blank note with dataCompatible=false should be rejected")
+	}
+}
+
+func TestValidate_RollbackAutoCannotBeDataIncompatible(t *testing.T) {
+	f := false
+	a := App{App: "x", Runtime: Runtime{Image: "ghcr.io/e/x", Port: 80},
+		Rollback: &Rollback{Strategy: "auto", DataCompatible: &f, Note: "drops a table"}}
+	a.ApplyDefaults()
+	err := a.Validate()
+	if err == nil || !strings.Contains(err.Error(), "rollback.strategy") {
+		t.Fatalf("auto + dataCompatible:false must be rejected, got %v", err)
+	}
+}
+
+func TestValidate_RollbackNoteLimitCountsCharacters(t *testing.T) {
+	note := strings.Repeat("é", 150) // 150 characters, 300 bytes
+	a := App{App: "x", Runtime: Runtime{Image: "ghcr.io/e/x", Port: 80}, Rollback: &Rollback{Note: note}}
+	a.ApplyDefaults()
+	if err := a.Validate(); err != nil {
+		t.Fatalf("a 150-character note was rejected: %v", err)
+	}
+	a.Rollback.Note = strings.Repeat("é", 201)
+	if err := a.Validate(); err == nil || !strings.Contains(err.Error(), "rollback.note") {
+		t.Fatalf("a 201-character note was accepted: %v", err)
+	}
+}

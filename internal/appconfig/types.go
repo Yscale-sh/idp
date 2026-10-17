@@ -101,6 +101,14 @@ type App struct {
 	// Metrics toggles ServiceMonitor / OTEL metrics wiring. Defaults enabled.
 	Metrics Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 
+	// Rollback declares how a release of this app may be undone. nil keeps
+	// today's behaviour: Flux upgrade remediation helm-rolls a failed upgrade
+	// back to the previous release, and a git revert is assumed safe. Set it on
+	// the revision that ships a one-way migration so the platform shows the
+	// boundary beside the plan and promote output, and Flux never rolls that
+	// release back on its own.
+	Rollback *Rollback `json:"rollback,omitempty" yaml:"rollback,omitempty"`
+
 	// ConnectsTo declares app-to-app connections; the platform resolves the
 	// correct address (cluster DNS vs public route) per environment.
 	ConnectsTo []Connection `json:"connectsTo,omitempty" yaml:"connectsTo,omitempty"`
@@ -116,6 +124,55 @@ type App struct {
 	// merges base+component into one full App per component, which render the same
 	// as today's separate files. Empty = a plain single-component app (unchanged).
 	Components []Component `json:"components,omitempty" yaml:"components,omitempty"`
+}
+
+// Rollback strategies (App.Rollback.Strategy).
+const (
+	// RollbackAuto keeps Flux upgrade remediation: a failed upgrade is
+	// helm-rolled back to the previous release automatically. The default.
+	RollbackAuto = "auto"
+	// RollbackManual renders upgrade remediation retries 0: a failed upgrade is
+	// left in place and the only way back is a deliberate commit.
+	RollbackManual = "manual"
+)
+
+// Rollback is the deploy.yaml `rollback:` block. It is a property of THE
+// RELEASE that carries it (the revision that built the image), not of the
+// app in general: "can the previous release still read the data this one
+// writes?" changes per migration. It renders beside the umbrella values (not
+// inside them) so the umbrella chart reads it per commit while charts/app
+// stays untouched.
+type Rollback struct {
+	// Strategy is auto (default) or manual. DataCompatible=false forces manual.
+	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
+	// DataCompatible answers: can the PREVIOUS release read data written by this
+	// one? nil/true = yes. false marks a one-way migration; it requires Note, plan
+	// shows it, and promote warns that a git revert is not data recovery.
+	DataCompatible *bool `json:"dataCompatible,omitempty" yaml:"dataCompatible,omitempty"`
+	// Note is the one human sentence shown beside the plan and the promote output
+	// (e.g. "drops legacy_sessions; roll back only with a DB restore").
+	Note string `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+// EffectiveStrategy resolves the strategy: manual when declared OR when the
+// release is data-incompatible (an automatic helm rollback would restore code
+// that cannot read the database); auto otherwise. Safe on a nil receiver.
+func (r *Rollback) EffectiveStrategy() string {
+	if r == nil {
+		return RollbackAuto
+	}
+	if !r.IsDataCompatible() {
+		return RollbackManual
+	}
+	if r.Strategy == "" {
+		return RollbackAuto
+	}
+	return r.Strategy
+}
+
+// IsDataCompatible is DataCompatible with its default (true). Safe on nil.
+func (r *Rollback) IsDataCompatible() bool {
+	return r == nil || r.DataCompatible == nil || *r.DataCompatible
 }
 
 // Component is one part of a multi-component App: the per-component deltas over
@@ -157,6 +214,9 @@ type Component struct {
 	// from "inherit the base".
 	Logging *Logging `json:"logging,omitempty" yaml:"logging,omitempty"`
 	Metrics *Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+	// Rollback overrides the base's rollback declaration when set, otherwise
+	// the component inherits it.
+	Rollback *Rollback `json:"rollback,omitempty" yaml:"rollback,omitempty"`
 }
 
 // ProbeConfig overrides the app's liveness/readiness probes.

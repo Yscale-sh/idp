@@ -25,7 +25,10 @@ component that is externally KEDA-scaled and/or GPU-constrained never reports
 "fully available" (a desired replica stays Pending on GPU capacity), so a waiting
 Helm upgrade times out and Flux ROLLS BACK a perfectly good image — which reverted
 the yscale-media-transcode eac3 fix in a loop (2026-06-19). disableWait makes the
-upgrade fix-forward instead. Prod keeps the strict wait + rollback. Arg: dict "env" $env */}}
+upgrade fix-forward instead. Prod keeps the strict wait + rollback. Arg: dict "env" $env [, "rollback" <app .rollback>].
+A rollback.strategy of "manual" turns upgrade remediation off (retries 0,
+remediateLastFailure false) so a failed upgrade stays in place for an operator
+instead of Helm rolling back over data the new release may have migrated. */}}
 {{- define "cluster.appRemediation" -}}
 install:
   createNamespace: true
@@ -39,7 +42,12 @@ upgrade:
   disableWait: true
   {{- end }}
   remediation:
+    {{- if and .rollback (eq (default "" .rollback.strategy) "manual") }}
+    retries: 0
+    remediateLastFailure: false
+    {{- else }}
     retries: 3
+    {{- end }}
 {{- end -}}
 
 {{/* Platform labels for an app's inner releases. Arg: dict "ctx" $ "name" .name "component" .component */}}

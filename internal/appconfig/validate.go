@@ -5,6 +5,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // ValidationError is a single structural problem with a deploy.yaml. Field is a
@@ -250,10 +251,39 @@ func (a *App) Validate() error {
 		}
 	}
 
+	a.validateRollback(add)
+
 	if len(errs) > 0 {
 		return errs
 	}
 	return nil
+}
+
+func (a *App) validateRollback(add func(field, msg string)) {
+	r := a.Rollback
+	if r == nil {
+		return
+	}
+	switch r.Strategy {
+	case "", RollbackAuto, RollbackManual:
+	default:
+		add("rollback.strategy", `must be "auto" or "manual"`)
+	}
+	note := strings.TrimSpace(r.Note)
+	if !r.IsDataCompatible() && note == "" {
+		add("rollback.note", "is required when rollback.dataCompatible is false (say what a rollback would break)")
+	}
+	if strings.ContainsAny(r.Note, "\r\n") {
+		add("rollback.note", "must be a single line")
+	}
+	if utf8.RuneCountInString(r.Note) > 200 {
+		add("rollback.note", "must be at most 200 characters")
+	}
+	// An explicit auto next to a one-way migration is a contradiction, not a
+	// preference to coerce silently: Flux must never roll that release back.
+	if r.Strategy == RollbackAuto && !r.IsDataCompatible() {
+		add("rollback.strategy", `"auto" cannot be combined with dataCompatible: false (a one-way migration must not be rolled back automatically); omit strategy or set "manual"`)
+	}
 }
 
 func (a *App) validateAutoscale(add func(field, msg string)) {
