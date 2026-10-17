@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yscale-sh/idp/internal/appconfig"
+	"github.com/yscale-sh/idp/internal/compat"
 	"github.com/yscale-sh/idp/internal/deploy"
 	"github.com/yscale-sh/idp/internal/render"
 )
@@ -42,13 +43,18 @@ func newValidateCmd() *cobra.Command {
 }
 
 func newPlanCmd() *cobra.Command {
-	var file, env, image, deployTime, root string
+	var file, env, image, deployTime, root, evidencePath string
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Dry run: validate + policy + render to stdout (no writes)",
 		Long: `plan reads and validates deploy.yaml, runs policy guardrails, and renders
 the Flux HelmRelease to stdout WITHOUT writing any files or touching the
-cluster. Use it as a CI preflight and for local debugging.`,
+cluster. Use it as a CI preflight and for local debugging.
+
+--compat-evidence reads a recorded rollback-compatibility check (the previous
+image's read probe over a migrated fixture) and prints compatible, incompatible,
+or unknown for each component. plan does not run the probe and does not fail on
+an incompatible or unknown result; the operator decides.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			app, err := loadApp(file)
 			if err != nil {
@@ -58,11 +64,18 @@ cluster. Use it as a CI preflight and for local debugging.`,
 			if err != nil {
 				return err
 			}
+			var evidence *compat.Evidence
+			if evidencePath != "" {
+				if evidence, err = compat.Load(evidencePath); err != nil {
+					return err
+				}
+			}
 			out := cmd.OutOrStdout()
 			comps := app.Expand()
 			for i, a := range comps {
+				img := resolveImage(image, a, len(comps) > 1)
 				plan, err := deploy.Build(deploy.Request{
-					App: a, Env: env, Image: resolveImage(image, a, len(comps) > 1), DeployTime: deployTime, Cluster: cluster,
+					App: a, Env: env, Image: img, DeployTime: deployTime, Cluster: cluster,
 				})
 				if err != nil {
 					return componentErr(a, err)
@@ -72,6 +85,10 @@ cluster. Use it as a CI preflight and for local debugging.`,
 				}
 				fmt.Fprintln(out, "── plan ───────────────────────────────────────")
 				fmt.Fprint(out, plan.Summary())
+				if evidence != nil {
+					fmt.Fprintln(out, "── rollback compatibility evidence ────────────")
+					fmt.Fprint(out, evidence.Evaluate(a.App, a.Component, img).Summary())
+				}
 				fmt.Fprintln(out, "── rendered Flux HelmRelease ───────────────────")
 				y, err := plan.Result.HelmReleaseYAML()
 				if err != nil {
@@ -83,6 +100,7 @@ cluster. Use it as a CI preflight and for local debugging.`,
 		},
 	}
 	addRenderFlags(cmd, &file, &env, &image, &deployTime, &root)
+	cmd.Flags().StringVar(&evidencePath, "compat-evidence", "", "rollback-compatibility evidence file to report beside the plan (read-only)")
 	return cmd
 }
 

@@ -1,0 +1,20 @@
+# Hand-written sample of the external previous-image producer contract, for
+# idpctl plan --compat-evidence tests. Nothing was run or measured: the images,
+# digest, fixture, exit code, and output are invented literals. For evidence
+# derived from an actual (synthetic) run, see internal/compat/surrogate.
+kind: CompatibilityEvidence
+version: 1
+app: carshowdb
+checks:
+  - component: api
+    reader: previous-image
+    previousImage: registry.example.invalid/your-org/carshowdb-api@sha256:5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1
+    candidateImage: registry.example.invalid/your-org/carshowdb-api:v1.4.0
+    migration: 0042_add_listings_vin_index
+    fixture: synthetic/carshowdb-listings-v42
+    probe: go test ./compat -run TestPreviousImageReadsMigratedFixture
+    exitCode: 0
+    output: |
+      === RUN   TestPreviousImageReadsMigratedFixture
+      --- PASS: TestPreviousImageReadsMigratedFixture (0.41s)
+      PASS

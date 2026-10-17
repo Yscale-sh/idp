@@ -1,0 +1,24 @@
+# Hand-written sample of the external previous-image producer contract, for
+# idpctl plan --compat-evidence tests. Nothing was run or measured: the images,
+# digest, fixture, exit code, and output are invented literals. For evidence
+# derived from an actual (synthetic) run, see internal/compat/surrogate.
+# api passes, scanner fails, transcode and ui have no recorded check.
+kind: CompatibilityEvidence
+version: 1
+app: yscale-media
+checks:
+  - component: api
+    reader: previous-image
+    previousImage: ghcr.io/yscale-sh/yscale-media-api@sha256:5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1
+    candidateImage: ghcr.io/yscale-sh/yscale-media-api:v1.4.0
+    fixture: synthetic/media-library-v18
+    probe: make compat-probe COMPONENT=api
+    exitCode: 0
+  - component: scanner
+    reader: previous-image
+    previousImage: ghcr.io/yscale-sh/yscale-media-api@sha256:5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1
+    candidateImage: ghcr.io/yscale-sh/yscale-media-api:v1.4.0
+    fixture: synthetic/media-library-v18
+    probe: make compat-probe COMPONENT=scanner
+    exitCode: 2
+    output: "scan_jobs.state: unknown enum value \"deferred\""

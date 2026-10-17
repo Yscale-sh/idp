@@ -106,6 +106,7 @@ idpctl init --env dev                                          # scaffold enviro
 idpctl new app --name dummy-api --host api.dummyproducts.com --port 8080   # scaffold a starter deploy.yaml
 idpctl validate -f deploy.yaml                                 # structural, env-agnostic
 idpctl plan --env prod -f deploy.yaml --image <ref>            # validate + policy + render to stdout, no writes
+idpctl plan --env prod -f deploy.yaml --image <ref> --compat-evidence compat.yaml   # + recorded rollback-compatibility result
 idpctl render --env dev --root <idp clone> -f deploy.yaml --image <ref>    # upsert app into the env umbrella
 idpctl promote <app> prod --from dev -f deploy.yaml            # digest-forward; never rebuilds
 idpctl remove --app dummy-api --env dev                        # drop a workload/component; Flux prunes
@@ -134,6 +135,76 @@ constant writer for both dev and prod. The normal path is:
 `plan` does every read/validation/render step without mutating cluster, git, or Cloudflare state.
 That gives CI a useful preflight and makes local debugging lower-risk. `disableWait` on a module or
 app isolates a failing release so it cannot wedge its siblings.
+
+### Rollback-compatibility evidence
+
+A Git revert restores the previous image, not the data a newer release migrated. Before merging a
+migration, a producer runs a previous-version reader against a synthetic or public fixture with the
+migration applied and records the outcome in an evidence file. `plan --compat-evidence <file>`
+reports that record; it never runs the probe itself.
+
+Each check names its `reader`, and `plan` prints which one made the record:
+
+- `previous-image`: an external job (for example, CI) ran the previous container image. This is the
+  producer contract; `idpctl` cannot see that run and trusts the recorded `exitCode`.
+  `previousImage` must be pinned by digest (`repo@sha256:...`).
+- `synthetic-surrogate`: the in-repo surrogate under `internal/compat/surrogate` ran a Go stand-in
+  for the previous reader over invented data. It demonstrates the check end to end. It is not the
+  previous image, and it says nothing about any real database.
+
+```yaml
+kind: CompatibilityEvidence
+version: 1
+app: carshowdb
+checks:
+  - component: api                       # the expanded component; omit for an app without one
+    reader: previous-image               # or synthetic-surrogate
+    previousImage: ghcr.io/<owner>/carshowdb-api@sha256:<digest>   # what a revert restores
+    candidateImage: ghcr.io/<owner>/carshowdb-api@sha256:<digest>  # must equal plan's --image
+    migration: 0043_drop_listings_legacy_id
+    migrationDigest: sha256:<digest>     # optional; required for the surrogate
+    fixture: synthetic/carshowdb-listings-v43
+    fixtureDigest: sha256:<digest>       # optional; required for the surrogate
+    probe: <the command that ran the probe>
+    exitCode: 1                          # absent = the probe did not run
+    output: |                            # plan prints at most 8 lines of 160 characters
+      column "legacy_id" does not exist
+    restorePath: restore the pre-0043 snapshot with the db-restore runbook, then git revert
+```
+
+`plan` prints one result per component, between the summary and the rendered HelmRelease:
+
+- **compatible**: the recorded probe exited 0.
+- **incompatible**: the recorded probe exited non-zero. `plan` prints the `restorePath`, or says
+  that none is declared.
+- **unknown**: no check names the component, the probe did not run, a `previous-image` record has no
+  digest-pinned previous image, a surrogate record has no fixture or migration digest, the check was
+  recorded for a different candidate image, or the fixture or probe reference is missing. `plan`
+  says this is not evidence that a revert is safe.
+
+`candidateImage` is compared with `--image` as a string. When both are digests, the record is bound
+to those image bytes. When they are tags, `plan` labels a compatible result "limited: candidate
+matched by tag only": a tag can be re-pushed, so a matching tag does not show that the record
+describes the image being deployed.
+
+To produce surrogate evidence (synthetic data only):
+
+```bash
+go run ./internal/compat/surrogate/cmd/surrogate-probe --app carshowdb --component api \
+  --candidate <plan --image> \
+  --fixture internal/compat/surrogate/testdata/listings-v41.json \
+  --migration internal/compat/surrogate/testdata/0043_drop_listings_legacy_id.json > compat.yaml
+```
+
+The additive `0042_add_listings_vin` migration yields compatible, the breaking
+`0043_drop_listings_legacy_id` yields incompatible, and a missing or unreadable fixture records no
+exit code, which yields unknown.
+
+`plan` does not fail on an incompatible or unknown result; the operator decides. It does fail on a
+malformed evidence file (unknown fields, a missing or unknown `reader`, wrong `kind` or `version`,
+duplicate checks, a malformed digest). A passing probe covers that fixture only, and it does not
+cover writes made after the migration. Keep secrets and production data out of fixtures and
+recorded output. Without `--compat-evidence`, `plan` output is unchanged.
 
 ## Flux model
 
