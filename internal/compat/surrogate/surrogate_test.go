@@ -161,3 +161,58 @@ func TestEvidence_IdentityExposesStaleRecords(t *testing.T) {
 		t.Error("the same migration produced a different digest")
 	}
 }
+
+// withSuffix writes a copy of src with suffix appended and returns its path.
+func withSuffix(t *testing.T, src, suffix string) string {
+	t.Helper()
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), filepath.Base(src))
+	if err := os.WriteFile(path, append(raw, suffix...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A fixture or migration file must hold exactly one JSON value. Before this was
+// enforced, a file with extra content still ran, and with the additive
+// migration it produced a compatible record from input the probe never fully
+// read. Each case must leave the probe unrun so plan reports unknown.
+func TestProbe_RejectsDataAfterJSONValue(t *testing.T) {
+	cases := map[string]struct{ fixture, migration string }{
+		"fixture with a second JSON value":   {withSuffix(t, base, "\n{\"fixture\": \"other\"}\n"), additive},
+		"fixture with trailing garbage":      {withSuffix(t, base, "\ngarbage"), additive},
+		"migration with a second JSON value": {base, withSuffix(t, additive, "\n{}")},
+		"migration with trailing garbage":    {base, withSuffix(t, additive, "}")},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			o := Probe(tc.fixture, tc.migration)
+			if o.Ran {
+				t.Fatalf("probe ran on input with data after the JSON value: %+v", o)
+			}
+			if !strings.Contains(o.Output, "unusable") || !strings.Contains(o.Output, "unexpected data after the JSON value") {
+				t.Errorf("output should say why the input is unusable: %q", o.Output)
+			}
+			_, r := evaluate(t, Request{App: "carshowdb", Component: "api", Candidate: candidate,
+				FixturePath: tc.fixture, MigrationPath: tc.migration})
+			if r.Result != compat.Unknown || !strings.Contains(r.Reason, "did not run") {
+				t.Errorf("plan should report unknown (probe did not run), got %s (%s)", r.Result, r.Reason)
+			}
+		})
+	}
+}
+
+// Trailing whitespace after the single JSON value is still valid input: the
+// probe runs and the result comes from the reader.
+func TestProbe_AllowsTrailingWhitespace(t *testing.T) {
+	fixture := withSuffix(t, base, "\n\t  \r\n\n")
+	if o := Probe(fixture, withSuffix(t, additive, "  \n")); !o.Ran || o.ExitCode != 0 {
+		t.Errorf("additive with trailing whitespace should run and pass: %+v", o)
+	}
+	if o := Probe(fixture, withSuffix(t, breaking, "\n")); !o.Ran || o.ExitCode != 1 {
+		t.Errorf("breaking with trailing whitespace should run and fail: %+v", o)
+	}
+}

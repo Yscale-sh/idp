@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strings"
@@ -230,6 +231,11 @@ func loadJSON(path string, v any) (string, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return digest, fmt.Errorf("%s: %w", path, err)
+	}
+	// Exactly one JSON value: a second value or trailing garbage makes the
+	// input unusable rather than silently ignored. Trailing whitespace is fine.
+	if _, err := dec.Token(); err != io.EOF {
+		return digest, fmt.Errorf("%s: unexpected data after the JSON value", path)
 	}
 	return digest, nil
 }
