@@ -1,6 +1,6 @@
 module github.com/yscale-sh/idp
 
-go 1.27.2
+go 1.26.9
 
 require (
 	github.com/distribution/reference v0.6.0
