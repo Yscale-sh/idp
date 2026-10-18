@@ -1,0 +1,5 @@
+{
+  "migration": "0043_drop_listings_legacy_id",
+  "note": "Breaking: drops a column the previous reader selects.",
+  "ops": [{"op": "dropColumn", "column": "legacy_id"}]
+}

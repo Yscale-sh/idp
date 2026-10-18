@@ -1,0 +1,22 @@
+# Hand-written sample of the external previous-image producer contract, for
+# idpctl plan --compat-evidence tests. Nothing was run or measured: the images,
+# digest, fixture, exit code, and output are invented literals. For evidence
+# derived from an actual (synthetic) run, see internal/compat/surrogate.
+kind: CompatibilityEvidence
+version: 1
+app: carshowdb
+checks:
+  - component: api
+    reader: previous-image
+    previousImage: registry.example.invalid/your-org/carshowdb-api@sha256:5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1a5c0ffee5ce1
+    candidateImage: registry.example.invalid/your-org/carshowdb-api:v1.4.0
+    migration: 0043_drop_listings_legacy_id
+    fixture: synthetic/carshowdb-listings-v43
+    probe: go test ./compat -run TestPreviousImageReadsMigratedFixture
+    exitCode: 1
+    output: |
+      === RUN   TestPreviousImageReadsMigratedFixture
+          compat_test.go:31: GET /listings/7: 500: column "legacy_id" does not exist
+      --- FAIL: TestPreviousImageReadsMigratedFixture (0.38s)
+      FAIL
+    restorePath: restore the pre-0043 snapshot with the db-restore runbook, then git revert the release commit
