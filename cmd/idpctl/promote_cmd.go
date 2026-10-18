@@ -92,6 +92,16 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 			if err != nil {
 				return err
 			}
+			found := false
+			for _, component := range app.Expand() {
+				if component.Workload() == workload {
+					app, found = component, true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("workload %q is not declared in %s", workload, file)
+			}
 			if rollback != nil {
 				// A newer/older local manifest must not weaken the declaration
 				// recorded with the image that is actually being promoted.

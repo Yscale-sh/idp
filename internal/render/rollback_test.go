@@ -36,7 +36,7 @@ func TestUmbrellaRollbackRemediation(t *testing.T) {
 			t.Run(env+"/"+strategy, func(t *testing.T) {
 				entry := AppEntry{Name: "audit", Namespace: "audit-" + env, ReleaseName: "audit", Values: map[string]any{}}
 				if strategy != "" {
-					entry.Rollback = &RollbackEntry{Strategy: strategy, DataCompatible: strategy != "manual"}
+					entry.Rollback = &RollbackEntry{Strategy: strategy, DataCompatible: strategy != "manual", Note: "migration drops a column"}
 				}
 				raw, err := yaml.Marshal(map[string]any{"env": env, "apps": []AppEntry{entry}})
 				if err != nil {
@@ -66,6 +66,33 @@ func TestUmbrellaRollbackRemediation(t *testing.T) {
 					t.Fatalf("default remediation changed: %+v", rem)
 				}
 			})
+		}
+	}
+}
+
+func TestUmbrellaRejectsUnsafeRollback(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm not installed")
+	}
+	for _, rollback := range []string{
+		"{strategy: auto, dataCompatible: false, note: drops a column}",
+		"{dataCompatible: false, note: drops a column}",
+		"{strategy: typo, dataCompatible: true}",
+		"{strategy: manual, dataCompatible: false}",
+		"{strategy: manual, dataCompatible: false, note: ' '}",
+	} {
+		file := filepath.Join(t.TempDir(), "values.yaml")
+		raw := "env: prod\napps:\n  - name: audit\n    releaseName: audit\n    namespace: audit-prod\n    values: {}\n    rollback: " + rollback + "\n"
+		if err := os.WriteFile(file, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command(helm, "template", "audit", "../../charts/cluster", "-f", file).CombinedOutput()
+		if err == nil {
+			t.Fatalf("unsafe rollback accepted: %s\n%s", rollback, out)
+		}
+		if !strings.Contains(string(out), "rollback") {
+			t.Fatalf("unrelated template failure: %s", out)
 		}
 	}
 }

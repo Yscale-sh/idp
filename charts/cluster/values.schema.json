@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "apps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rollback": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "strategy",
+              "dataCompatible"
+            ],
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "manual"
+                ]
+              },
+              "dataCompatible": {
+                "type": "boolean"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200,
+                "pattern": "^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f]*$"
+              }
+            },
+            "if": {
+              "properties": {
+                "dataCompatible": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "note"
+              ],
+              "properties": {
+                "strategy": {
+                  "const": "manual"
+                },
+                "note": {
+                  "pattern": "\\S"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

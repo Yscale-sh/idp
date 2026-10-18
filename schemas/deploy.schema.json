@@ -295,7 +295,19 @@
         "note": {
           "type": "string",
           "maxLength": 200,
+          "pattern": "^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f]*$",
           "description": "One line shown beside the plan and promote output: what a rollback would break."
+        }
+      },
+      "if": {
+        "required": ["dataCompatible"],
+        "properties": {"dataCompatible": {"const": false}}
+      },
+      "then": {
+        "required": ["note"],
+        "properties": {
+          "strategy": {"const": "manual"},
+          "note": {"pattern": "\\S"}
         }
       }
     },

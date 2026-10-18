@@ -11,8 +11,12 @@ import (
 )
 
 func TestPromotePreservesSourceRollback(t *testing.T) {
-	for _, contractRollback := range []string{"", "rollback: {strategy: auto, dataCompatible: true}\n"} {
-		t.Run(contractRollback, func(t *testing.T) {
+	for _, tc := range []struct{ name, workload, contract string }{
+		{"absent local declaration", "audit", ""},
+		{"weaker local declaration", "audit", "rollback: {strategy: auto, dataCompatible: true}\n"},
+		{"component override", "audit-api", "components:\n  - component: api\n    rollback: {strategy: manual}\n  - component: ui\n    runtime: {image: ghcr.io/example/ui, port: 80}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			for _, env := range []string{"dev", "prod"} {
 				raw, err := os.ReadFile(filepath.Join("..", "..", "environments", env, "cluster.yaml"))
@@ -36,7 +40,7 @@ func TestPromotePreservesSourceRollback(t *testing.T) {
 				t.Fatal(err)
 			}
 			pr.Spec.Values.Apps = []render.AppEntry{{
-				Name: "audit", ReleaseName: "audit", Namespace: "audit-dev-api", Component: "api",
+				Name: "audit", ReleaseName: tc.workload, Namespace: "audit-dev-api", Component: "api",
 				Rollback: &render.RollbackEntry{Strategy: "manual", DataCompatible: false, Note: "drops legacy_id"},
 				Values:   map[string]any{"image": map[string]any{"repository": "ghcr.io/example/audit", "tag": "v2.0.0"}},
 			}}
@@ -44,7 +48,7 @@ func TestPromotePreservesSourceRollback(t *testing.T) {
 				t.Fatal(err)
 			}
 			file := filepath.Join(root, "deploy.yaml")
-			contract := "app: audit\nruntime: {image: ghcr.io/example/audit, port: 8080}\nmetrics: {enabled: false}\n" + contractRollback
+			contract := "app: audit\nruntime: {image: ghcr.io/example/audit, port: 8080}\nmetrics: {enabled: false}\n" + tc.contract
 			if err := os.WriteFile(file, []byte(contract), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -52,7 +56,7 @@ func TestPromotePreservesSourceRollback(t *testing.T) {
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
-			cmd.SetArgs([]string{"audit", "prod", "--from", "dev", "--root", root, "--file", file, "--skip-dns"})
+			cmd.SetArgs([]string{tc.workload, "prod", "--from", "dev", "--root", root, "--file", file, "--skip-dns"})
 			if err := cmd.Execute(); err != nil {
 				t.Fatal(err)
 			}
@@ -68,6 +72,9 @@ func TestPromotePreservesSourceRollback(t *testing.T) {
 				t.Fatalf("unexpected apps: %+v", promoted.Spec.Values.Apps)
 			}
 			rb := promoted.Spec.Values.Apps[0].Rollback
+			if got := promoted.Spec.Values.Apps[0].ReleaseName; got != tc.workload {
+				t.Fatalf("promoted wrong component: got %q want %q", got, tc.workload)
+			}
 			if rb == nil || rb.Strategy != "manual" || rb.DataCompatible || rb.Note != "drops legacy_id" {
 				t.Fatalf("promotion lost the source release rollback boundary: %+v", rb)
 			}
