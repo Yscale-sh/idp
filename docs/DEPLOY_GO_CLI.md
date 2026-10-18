@@ -202,7 +202,10 @@ exit code, which yields unknown.
 
 `plan` does not fail on an incompatible or unknown result; the operator decides. It does fail on a
 malformed evidence file (unknown fields, a missing or unknown `reader`, wrong `kind` or `version`,
-duplicate checks, a malformed digest). A passing probe covers that fixture only, and it does not
+duplicate checks, a malformed digest, or trailing YAML documents). Evidence must be a regular
+file of at most 1 MiB. Previous-image references must be valid image names pinned by SHA256;
+terminal control characters are removed and displayed metadata is bounded. A passing probe
+covers that fixture only, and it does not
 cover writes made after the migration. Keep secrets and production data out of fixtures and
 recorded output. Without `--compat-evidence`, `plan` output is unchanged.
 
