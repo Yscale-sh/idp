@@ -112,10 +112,42 @@ func TestPinned(t *testing.T) {
 		"ghcr.io/acme/api@sha256:abc":                               false,
 		"ghcr.io/acme/api@sha256:" + strings.Repeat("Z", 64):        false,
 		"@sha256:" + strings.Repeat("a", 64):                        false,
+		" @" + digestA:                                              false,
+		"https://ghcr.io/acme/api@" + digestA:                       false,
+		"ghcr.io/acme/../api@" + digestA:                            false,
+		"ghcr.io/acme/api\n@" + digestA:                             false,
 	} {
 		if got := pinned(ref); got != want {
 			t.Errorf("pinned(%q) = %v, want %v", ref, got, want)
 		}
+	}
+}
+
+func TestParseRejectsTrailingDocuments(t *testing.T) {
+	raw, err := os.ReadFile("../../cmd/idpctl/testdata/compat/compatible.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"\n---\n" + string(raw), "\n---\nmalformed: [", "\n---\n"} {
+		if _, err := Parse(append(append([]byte(nil), raw...), suffix...)); err == nil {
+			t.Errorf("accepted trailing document %q", suffix)
+		}
+	}
+	if _, err := Parse(append(raw, []byte("\n# trailing comment\n")...)); err != nil {
+		t.Fatalf("rejected trailing whitespace/comment: %v", err)
+	}
+	if _, err := Parse([]byte(strings.Repeat(" ", maxFileBytes+1))); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("Parse must enforce the byte limit: %v", err)
+	}
+}
+
+func TestSummaryRemovesDirectionalControls(t *testing.T) {
+	c := passing()
+	c.Output = "failed\u202epassed\u2066hidden\u2069"
+	c.RestorePath = "restore\u202e" + strings.Repeat("x", 1000)
+	s := (Report{Result: Incompatible, Check: &c}).Summary()
+	if strings.ContainsAny(s, "\u202e\u2066\u2069") || strings.Contains(s, strings.Repeat("x", 1000)) {
+		t.Fatal("untrusted metadata can spoof or flood terminal output")
 	}
 }
 

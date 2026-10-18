@@ -1,6 +1,7 @@
 package surrogate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +93,26 @@ func TestApply_DoesNotMutateInput(t *testing.T) {
 	}
 	if _, err := ReadPrevious(f); err != nil {
 		t.Fatalf("Apply mutated the source fixture: %v", err)
+	}
+}
+
+func TestProbeMalformedRowDoesNotRun(t *testing.T) {
+	var f Fixture
+	if _, err := loadJSON(base, &f); err != nil {
+		t.Fatal(err)
+	}
+	f.Rows = [][]any{{float64(1)}}
+	raw, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "short-row.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o := Probe(path, breaking)
+	if o.Ran || !strings.Contains(o.Output, "unusable") {
+		t.Fatalf("malformed fixture must not run: %+v", o)
 	}
 }
 

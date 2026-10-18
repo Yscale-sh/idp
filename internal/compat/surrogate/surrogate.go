@@ -62,6 +62,13 @@ type Migration struct {
 // Apply returns f with m applied. addColumn appends a nullable column; an
 // unusable migration (unknown op, duplicate or missing column) is an error.
 func Apply(f Fixture, m Migration) (Fixture, error) {
+	// Validate row widths before indexing them during a drop. An unusable
+	// fixture is not a failed read probe and must never panic the producer.
+	for i, row := range f.Rows {
+		if len(row) != len(f.Columns) {
+			return Fixture{}, fmt.Errorf("fixture row %d has %d values for %d columns", i, len(row), len(f.Columns))
+		}
+	}
 	out := Fixture{ID: f.ID, Table: f.Table, Columns: append([]Column(nil), f.Columns...)}
 	out.Rows = make([][]any, len(f.Rows))
 	for i, r := range f.Rows {

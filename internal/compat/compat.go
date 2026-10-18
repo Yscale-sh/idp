@@ -29,12 +29,17 @@
 package compat
 
 import (
+	"bytes"
+	_ "crypto/sha256" // Register SHA256 for OCI digest validation.
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/distribution/reference"
+	yamlstream "go.yaml.in/yaml/v2"
 	"sigs.k8s.io/yaml"
 )
 
@@ -62,6 +67,7 @@ const (
 	maxOutputLines    = 8
 	maxOutputLineRune = 160
 	maxFileBytes      = 1 << 20
+	maxMetadataRunes  = 512
 )
 
 // Evidence is one evidence file: the recorded read-probe checks for an app.
@@ -117,7 +123,16 @@ func Load(path string) (*Evidence, error) {
 	if info.Size() > maxFileBytes {
 		return nil, fmt.Errorf("compatibility evidence %q is larger than %d bytes", path, maxFileBytes)
 	}
-	raw, err := os.ReadFile(path)
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("compatibility evidence %q must be a regular file", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read compatibility evidence: %w", err)
+	}
+	defer f.Close()
+	// Bound the read too: a file can grow after Stat, or report size zero.
+	raw, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read compatibility evidence: %w", err)
 	}
@@ -131,6 +146,20 @@ func Load(path string) (*Evidence, error) {
 // Parse decodes evidence strictly (unknown fields and duplicate keys are
 // rejected) and validates its structure.
 func Parse(raw []byte) (*Evidence, error) {
+	if len(raw) > maxFileBytes {
+		return nil, fmt.Errorf("compatibility evidence is larger than %d bytes", maxFileBytes)
+	}
+	// UnmarshalStrict only reads the first YAML document. Require exactly one
+	// before decoding its JSON-tagged fields, including for malformed trailers.
+	dec := yamlstream.NewDecoder(bytes.NewReader(raw))
+	dec.SetStrict(true)
+	var document any
+	if err := dec.Decode(&document); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	if err := dec.Decode(&document); err != io.EOF {
+		return nil, fmt.Errorf("parse: expected exactly one YAML document")
+	}
 	var ev Evidence
 	if err := yaml.UnmarshalStrict(raw, &ev); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
@@ -225,8 +254,12 @@ func (e *Evidence) Evaluate(app, component, image string) Report {
 // pinned reports whether ref is pinned by a sha256 digest. Tags, including
 // version tags, are mutable and do not count.
 func pinned(ref string) bool {
-	repo, digest, ok := strings.Cut(ref, "@")
-	return ok && repo != "" && isDigest(digest)
+	_, digest, ok := strings.Cut(ref, "@")
+	if !ok || !isDigest(digest) {
+		return false
+	}
+	_, err := reference.Parse(ref)
+	return err == nil
 }
 
 // isDigest reports whether d is sha256:<64 lowercase hex>.
@@ -343,7 +376,11 @@ func excerpt(out string) string {
 // oneLine collapses a value to one clean line so evidence cannot forge extra
 // plan lines.
 func oneLine(s string) string {
-	return strings.Join(strings.Fields(clean(s)), " ")
+	s = strings.Join(strings.Fields(clean(s)), " ")
+	if utf8.RuneCountInString(s) > maxMetadataRunes {
+		s = string([]rune(s)[:maxMetadataRunes]) + "…"
+	}
+	return s
 }
 
 // clean drops control characters (including the ESC byte that starts a
@@ -351,9 +388,9 @@ func oneLine(s string) string {
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
-		case r == '\t', r == '\n', r == '\r':
+		case unicode.IsSpace(r):
 			return ' '
-		case unicode.IsControl(r):
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
 			return -1
 		}
 		return r
