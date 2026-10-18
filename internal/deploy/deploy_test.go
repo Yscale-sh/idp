@@ -226,3 +226,26 @@ func TestBuild_Summary(t *testing.T) {
 		}
 	}
 }
+
+func TestBuild_SummaryRollback(t *testing.T) {
+	build := func(r *appconfig.Rollback) string {
+		app := multiEnvApp()
+		app.Rollback = r
+		plan, err := Build(Request{App: app, Env: "dev", Image: "ghcr.io/yscale-sh/carshowdb-api:dev-abc", Cluster: devCluster()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plan.Summary()
+	}
+	if s := build(nil); strings.Contains(s, "rollback:") {
+		t.Errorf("no block should print no rollback line:\n%s", s)
+	}
+	f := false
+	s := build(&appconfig.Rollback{DataCompatible: &f, Note: "drops a column"})
+	if !strings.Contains(s, "rollback:   manual (dataCompatible=false) — drops a column\n") {
+		t.Errorf("summary missing rollback line:\n%s", s)
+	}
+	if s := build(&appconfig.Rollback{Strategy: "manual"}); !strings.Contains(s, "rollback:   manual (dataCompatible=true)\n") {
+		t.Errorf("summary missing manual line:\n%s", s)
+	}
+}

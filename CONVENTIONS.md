@@ -391,6 +391,7 @@ secrets:                       # EXTRA secret env keys beyond the universal set 
 logging: { enabled: true }
 metrics: { enabled: true }
 tailscaleEgress: false
+rollback: { dataCompatible: false, note: "<what a rollback would break>" }  # optional
 ```
 
 ### Routing & exposure: one route, env-aware
@@ -429,6 +430,35 @@ components:
   - { component: scanner, port: 0, env: { ROLE: scanner } }     # worker; auto-shares the store
   - { component: ui, runtime: { image: ghcr.io/<owner>/media-ui, port: 80 }, db: [] }    # own image; opts out
 ```
+
+### Rollback: the data boundary
+
+A Git revert restores the previous image, values, and topology. It does not restore data:
+databases, buckets, and volumes keep whatever the newer release wrote. The optional
+`rollback` block lets a release say whether the previous image can still read that data.
+
+```yaml
+rollback:
+  strategy: auto          # auto (default) | manual
+  dataCompatible: false   # default true
+  note: "0042 drops users.legacy_id; the previous image still reads it."
+```
+
+- `strategy: auto` keeps Flux upgrade remediation (a failed upgrade is rolled back after
+  3 retries). `manual` renders upgrade remediation `retries: 0`, so a failed upgrade stays
+  failed until a human acts.
+- `dataCompatible: false` says the previous release cannot read the data this one leaves
+  behind. It **forces `manual`** and **requires `note`**. Declaring `strategy: auto`
+  alongside it is rejected rather than coerced.
+- `note` is the sentence shown in the `idpctl plan` summary, the `promote` output, and the
+  committed `platform.yaml`: a single line, at most 200 characters.
+
+The declaration belongs to the revision that ships the migration: add it in the same commit
+as the change that makes the data incompatible, and remove it in a later revision once
+rolling back is safe again. Promotion carries the block with the image it describes. Apps
+without the block render exactly as before. Recovering the data itself (a database restore,
+for example) stays application-specific; the platform documents the boundary, it does not
+cross it.
 
 ---
 

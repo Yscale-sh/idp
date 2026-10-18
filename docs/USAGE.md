@@ -110,6 +110,26 @@ git revert <promotion-commit>
 git push
 ```
 
+A revert returns the umbrella to its previous image, values, and topology. It does not roll
+back data: databases, buckets, and volumes keep whatever the newer release wrote, and the
+previous image may not be able to read it. A release that ships a one-way migration should
+declare that in its `deploy.yaml`:
+
+```yaml
+rollback:
+  dataCompatible: false
+  note: migration 0042 drops the legacy column; roll back only with a DB restore
+```
+
+`idpctl plan` prints the note, `promote` replaces its "rollback = git revert" hint with a
+warning, and Flux will not automatically roll that release back after a failed upgrade. Field
+semantics are in [CONVENTIONS.md](../CONVENTIONS.md#rollback-the-data-boundary).
+
+Promotion carries the rollback declaration recorded in the source umbrella alongside its
+image. That declaration takes precedence over the local `deploy.yaml`, which may describe
+a different release. For older source entries without a declaration, the supplied manifest
+continues to provide it.
+
 ## 4. Expose a dev app behind login (Cloudflare Access)
 
 By default a `public: true` route in dev is served on the LAN (a MetalLB

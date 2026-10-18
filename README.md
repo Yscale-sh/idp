@@ -296,7 +296,9 @@ idpctl remove --env dev --app suite --component worker
 ```
 
 Promotion is digest-forward: it installs the artifact selected in the source environment without
-rebuilding it. Production rejects mutable tags. Rollback is a Git revert.
+rebuilding it. Production rejects mutable tags. Rollback is a Git revert, which restores the
+previous image and configuration but not data a newer release has written; a release that ships a
+one-way migration declares `rollback.dataCompatible: false` so that boundary shows beside the plan.
 
 ## Inspect the system
 
@@ -336,7 +338,8 @@ idpctl tunnel up --env prod --file deploy.yaml
 - Give provider tokens only the permissions required by enabled services.
 - Keep registry push and Git write credentials away from application containers.
 - Review `idpctl plan` before changing an environment.
-- Roll back by reverting the Git commit.
+- Roll back by reverting the Git commit, and declare `rollback.dataCompatible: false` on any release
+  whose data the previous image cannot read.
 
 ## Contributing
 

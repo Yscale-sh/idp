@@ -58,6 +58,9 @@ type UpgradeSpec struct {
 
 type RemediationSpec struct {
 	Retries int `json:"retries"`
+	// RemediateLastFailure is set (false) only for manual-strategy releases, so
+	// Flux leaves the final failed upgrade in place instead of rolling it back.
+	RemediateLastFailure *bool `json:"remediateLastFailure,omitempty"`
 }
 
 type ChartTemplate struct {
@@ -121,6 +124,14 @@ func fluxSource(c *clusterenv.Config) (sourceName, sourceNS string) {
 func BuildHelmRelease(app appconfig.App, env string, c *clusterenv.Config, values Values) HelmRelease {
 	sourceName, sourceNS := fluxSource(c)
 	ns := app.Namespace(env)
+	upgrade := &RemediationSpec{Retries: remediationRetries}
+	if app.Rollback.EffectiveStrategy() == appconfig.RollbackManual {
+		// manual: a failed upgrade stays failed for a human; Flux must not roll
+		// back. Mirrors charts/cluster's cluster.appRemediation, which is the
+		// deployed rule; this struct feeds the policy scan and --stdout output.
+		keep := false
+		upgrade = &RemediationSpec{Retries: 0, RemediateLastFailure: &keep}
+	}
 	return HelmRelease{
 		APIVersion: helmReleaseAPIVersion,
 		Kind:       helmReleaseKind,
@@ -139,7 +150,7 @@ func BuildHelmRelease(app appconfig.App, env string, c *clusterenv.Config, value
 				Remediation:     &RemediationSpec{Retries: remediationRetries},
 			},
 			Upgrade: UpgradeSpec{
-				Remediation: &RemediationSpec{Retries: remediationRetries},
+				Remediation: upgrade,
 			},
 			Chart: ChartTemplate{
 				Spec: ChartSpec{

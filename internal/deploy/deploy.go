@@ -180,6 +180,13 @@ func (p *Plan) Summary() string {
 		}
 		fmt.Fprintf(&b, "route:      %s [%s]\n", route.Host, exposure)
 	}
+	if rb := app.Rollback; rb != nil {
+		line := fmt.Sprintf("rollback:   %s (dataCompatible=%t)", rb.EffectiveStrategy(), rb.IsDataCompatible())
+		if rb.Note != "" {
+			line += " — " + rb.Note
+		}
+		b.WriteString(line + "\n")
+	}
 	return b.String()
 }
 

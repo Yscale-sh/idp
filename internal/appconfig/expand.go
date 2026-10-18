@@ -68,6 +68,9 @@ func (a App) Expand() []App {
 		if c.Metrics != nil {
 			m.Metrics = *c.Metrics
 		}
+		if c.Rollback != nil {
+			m.Rollback = c.Rollback
+		}
 		// env merges (component wins per key); secrets union (deduped).
 		m.Env = mergeEnv(a.Env, c.Env)
 		m.Secrets = unionStrings(a.Secrets, c.Secrets)

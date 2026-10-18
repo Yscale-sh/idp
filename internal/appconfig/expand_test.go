@@ -79,3 +79,22 @@ func TestExpand_MergeAndProvision(t *testing.T) {
 		t.Errorf("Expand mutated the base store slices")
 	}
 }
+
+func TestExpand_RollbackOverridesOrInherits(t *testing.T) {
+	base := App{
+		App:      "x",
+		Runtime:  Runtime{Image: "img", Port: 80},
+		Rollback: &Rollback{Strategy: RollbackManual},
+		Components: []Component{
+			{Component: "api"},
+			{Component: "job", Rollback: &Rollback{Strategy: RollbackAuto}},
+		},
+	}
+	got := base.Expand()
+	if got[0].Rollback == nil || got[0].Rollback.Strategy != RollbackManual {
+		t.Errorf("api should inherit base rollback: %+v", got[0].Rollback)
+	}
+	if got[1].Rollback == nil || got[1].Rollback.Strategy != RollbackAuto {
+		t.Errorf("job should override rollback: %+v", got[1].Rollback)
+	}
+}
