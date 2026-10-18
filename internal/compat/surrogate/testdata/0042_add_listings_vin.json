@@ -1,0 +1,5 @@
+{
+  "migration": "0042_add_listings_vin",
+  "note": "Additive: adds a nullable column. The previous reader ignores columns it does not select.",
+  "ops": [{"op": "addColumn", "column": "vin", "type": "text"}]
+}

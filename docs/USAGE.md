@@ -295,7 +295,7 @@ so it is a read-only view of committed git state, never a writer.
 | `idpctl init` | Scaffold `environments/<env>/cluster.yaml` for a platform instance. |
 | `idpctl new app` | Scaffold a new app's `deploy.yaml`. |
 | `idpctl validate` | Validate the app contract without environment policy. |
-| `idpctl plan` | Validate, apply policy, and render to stdout without writes. |
+| `idpctl plan` | Validate, apply policy, and render to stdout without writes. `--compat-evidence` adds a recorded rollback-compatibility result ([details](DEPLOY_GO_CLI.md#rollback-compatibility-evidence)). |
 | `idpctl render` | Upsert an app into an environment umbrella. |
 | `idpctl promote` | Carry a source environment's pinned image into a target environment. |
 | `idpctl build` | Build and push an image with the in-cluster image-builder. |

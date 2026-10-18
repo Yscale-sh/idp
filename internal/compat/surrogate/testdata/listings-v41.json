@@ -1,0 +1,16 @@
+{
+  "fixture": "synthetic/listings-v41",
+  "note": "Invented rows for the compat surrogate. Not copied from any database.",
+  "table": "listings",
+  "columns": [
+    {"name": "id", "type": "int"},
+    {"name": "legacy_id", "type": "int"},
+    {"name": "title", "type": "text"},
+    {"name": "price_cents", "type": "int"}
+  ],
+  "rows": [
+    [1, 9001, "Synthetic coupe A", 2500000],
+    [2, 9002, "Synthetic roadster B", 4100000],
+    [3, 9003, "Synthetic wagon C", 1875000]
+  ]
+}
