@@ -46,7 +46,7 @@ func TestUmbrellaRollbackRemediation(t *testing.T) {
 				if err := os.WriteFile(file, raw, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				out, err := exec.Command(helm, "template", "audit", "../../charts/cluster", "--show-only", "templates/apps.yaml", "-f", file).CombinedOutput()
+				out, err := exec.Command(helm, "template", "audit", "../../charts/cluster", "--show-only", "templates/apps.yaml", "-f", file).Output()
 				if err != nil {
 					t.Fatalf("helm: %v: %s", err, out)
 				}
