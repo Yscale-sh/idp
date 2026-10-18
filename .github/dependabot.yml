@@ -20,7 +20,7 @@ updates:
     schedule:
       interval: weekly
     # Keep patch releases flowing for pinned build/runtime images (including the
-    # Go 1.25 toolchain), while minor/major jumps remain deliberate upgrades.
+    # Go 1.27 toolchain), while minor/major jumps remain deliberate upgrades.
     ignore:
       - dependency-name: "*"
         update-types:
