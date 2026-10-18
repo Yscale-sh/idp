@@ -1,6 +1,9 @@
 package render
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +23,50 @@ func TestToAppEntry_RollbackNilOmitsKey(t *testing.T) {
 	}
 	if strings.Contains(string(b), "rollback") {
 		t.Fatalf("entry without a rollback block must not emit the key:\n%s", b)
+	}
+}
+
+func TestUmbrellaRollbackRemediation(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm not installed; required by ci-local in strict mode")
+	}
+	for _, env := range []string{"dev", "prod"} {
+		for _, strategy := range []string{"", "auto", "manual"} {
+			t.Run(env+"/"+strategy, func(t *testing.T) {
+				entry := AppEntry{Name: "audit", Namespace: "audit-" + env, ReleaseName: "audit", Values: map[string]any{}}
+				if strategy != "" {
+					entry.Rollback = &RollbackEntry{Strategy: strategy, DataCompatible: strategy != "manual"}
+				}
+				raw, err := yaml.Marshal(map[string]any{"env": env, "apps": []AppEntry{entry}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				file := filepath.Join(t.TempDir(), "values.yaml")
+				if err := os.WriteFile(file, raw, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				out, err := exec.Command(helm, "template", "audit", "../../charts/cluster", "--show-only", "templates/apps.yaml", "-f", file).CombinedOutput()
+				if err != nil {
+					t.Fatalf("helm: %v: %s", err, out)
+				}
+				var hr HelmRelease
+				if err := yaml.Unmarshal(out, &hr); err != nil {
+					t.Fatal(err)
+				}
+				rem := hr.Spec.Upgrade.Remediation
+				if rem == nil {
+					t.Fatal("missing upgrade remediation")
+				}
+				if strategy == "manual" {
+					if rem.Retries != 0 || rem.RemediateLastFailure == nil || *rem.RemediateLastFailure {
+						t.Fatalf("manual release permits remediation: %+v", rem)
+					}
+				} else if rem.Retries != 3 || rem.RemediateLastFailure != nil {
+					t.Fatalf("default remediation changed: %+v", rem)
+				}
+			})
+		}
 	}
 }
 

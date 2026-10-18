@@ -82,8 +82,8 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 				return fmt.Errorf("no environments/%s/cluster.yaml under --source-root (%s)", from, srcRoot)
 			}
 
-			// Provenance: the image reference comes from the source umbrella.
-			image, err := imageFromUmbrella(srcRoot, from, source, workload)
+			// Provenance: the image and its rollback boundary travel together.
+			image, rollback, err := promotionFromUmbrella(srcRoot, from, source, workload)
 			if err != nil {
 				return err
 			}
@@ -91,6 +91,11 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 			app, err := loadApp(file)
 			if err != nil {
 				return err
+			}
+			if rollback != nil {
+				// A newer/older local manifest must not weaken the declaration
+				// recorded with the image that is actually being promoted.
+				app.Rollback = rollback
 			}
 
 			plan, err := deploy.Build(deploy.Request{
@@ -156,13 +161,13 @@ its Flux tracks (flux.branch); commit the rendered file to THAT branch.`,
 	return cmd
 }
 
-// imageFromUmbrella extracts a workload's image reference (repo:tag) from an
+// promotionFromUmbrella extracts a workload's image and rollback declaration from an
 // env's rendered umbrella. Mutable/empty tags are refused outright — a
 // promotion's whole point is pinning a proven artifact.
-func imageFromUmbrella(root, env string, c *clusterenv.Config, workload string) (string, error) {
+func promotionFromUmbrella(root, env string, c *clusterenv.Config, workload string) (string, *appconfig.Rollback, error) {
 	pr, err := render.ReadPlatform(root, env, c)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var handles []string
 	for _, a := range pr.Spec.Values.Apps {
@@ -172,19 +177,23 @@ func imageFromUmbrella(root, env string, c *clusterenv.Config, workload string) 
 		}
 		vals, ok := a.Values.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("workload %q in %s has unexpected values shape", workload, env)
+			return "", nil, fmt.Errorf("workload %q in %s has unexpected values shape", workload, env)
 		}
 		img, _ := vals["image"].(map[string]any)
 		repo, _ := img["repository"].(string)
 		tag, _ := img["tag"].(string)
 		if repo == "" || tag == "" {
-			return "", fmt.Errorf("workload %q in %s has no image.repository/image.tag to pin", workload, env)
+			return "", nil, fmt.Errorf("workload %q in %s has no image.repository/image.tag to pin", workload, env)
 		}
 		switch strings.ToLower(tag) {
 		case "latest", "main", "master", "dev":
-			return "", fmt.Errorf("workload %q in %s runs mutable tag %q — promotion requires a pinned artifact", workload, env, tag)
+			return "", nil, fmt.Errorf("workload %q in %s runs mutable tag %q — promotion requires a pinned artifact", workload, env, tag)
 		}
-		return repo + ":" + tag, nil
+		var rollback *appconfig.Rollback
+		if rb := a.Rollback; rb != nil {
+			rollback = &appconfig.Rollback{Strategy: rb.Strategy, DataCompatible: &rb.DataCompatible, Note: rb.Note}
+		}
+		return repo + ":" + tag, rollback, nil
 	}
-	return "", fmt.Errorf("workload %q not found in %s umbrella (have: %s)", workload, env, strings.Join(handles, ", "))
+	return "", nil, fmt.Errorf("workload %q not found in %s umbrella (have: %s)", workload, env, strings.Join(handles, ", "))
 }

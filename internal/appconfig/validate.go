@@ -5,6 +5,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -273,8 +274,10 @@ func (a *App) validateRollback(add func(field, msg string)) {
 	if !r.IsDataCompatible() && note == "" {
 		add("rollback.note", "is required when rollback.dataCompatible is false (say what a rollback would break)")
 	}
-	if strings.ContainsAny(r.Note, "\r\n") {
-		add("rollback.note", "must be a single line")
+	if strings.ContainsFunc(r.Note, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+	}) {
+		add("rollback.note", "must be a single line without control or formatting characters")
 	}
 	if utf8.RuneCountInString(r.Note) > 200 {
 		add("rollback.note", "must be at most 200 characters")

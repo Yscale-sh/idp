@@ -242,7 +242,7 @@ func TestValidate_Rollback(t *testing.T) {
 			t.Errorf("%s: want error naming field, got %v", field, err)
 		}
 	}
-	for _, note := range []string{"two\nlines", strings.Repeat("a", 201)} {
+	for _, note := range []string{"two\nlines", strings.Repeat("a", 201), "\x1b[2Jsafe", "unsafe\u202esafe", "one\u2028two", "one\t two"} {
 		a := mk(&Rollback{Note: note})
 		if err := a.Validate(); err == nil || !strings.Contains(err.Error(), "rollback.note") {
 			t.Errorf("note %q should be rejected, got %v", note, err)

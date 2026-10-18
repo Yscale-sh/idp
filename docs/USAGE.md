@@ -125,6 +125,11 @@ rollback:
 warning, and Flux will not automatically roll that release back after a failed upgrade. Field
 semantics are in [CONVENTIONS.md](../CONVENTIONS.md#rollback-the-data-boundary).
 
+Promotion carries the rollback declaration recorded in the source umbrella alongside its
+image. That declaration takes precedence over the local `deploy.yaml`, which may describe
+a different release. For older source entries without a declaration, the supplied manifest
+continues to provide it.
+
 ## 4. Expose a dev app behind login (Cloudflare Access)
 
 By default a `public: true` route in dev is served on the LAN (a MetalLB
